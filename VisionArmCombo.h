@@ -1,23 +1,25 @@
 #ifndef VISION_ARM_COMBO_H_
 #define VISION_ARM_COMBO_H_
 #define _CRT_SECURE_NO_WARNINGS
-#include <pcl\point_cloud.h>
-#include <pcl\point_types.h>
-#include <pcl\common\pca.h>
-#include <pcl\io\pcd_io.h>
-#include <pcl\visualization\pcl_visualizer.h>
-#include <pcl\sample_consensus\method_types.h>
-#include <pcl\sample_consensus\model_types.h>
-#include <pcl\segmentation\sac_segmentation.h>
-#include <pcl\ModelCoefficients.h>
-#include <pcl\filters\extract_indices.h>
-#include <pcl\filters\voxel_grid.h>
-#include <pcl\filters\model_outlier_removal.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/common/pca.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/ModelCoefficients.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/model_outlier_removal.h>
+#include <pcl/io/pcd_io.h>
 #include <vector>
 #include <ctime>
 #include "RobotArmClient.h" // need to be 1st due to winsock
 #include "KeyenceLineProfiler.h"
 #include "KinectThread.h"
+#include "PathPlanner.h"
 
 struct VisionArmCombo
 {
@@ -38,6 +40,10 @@ struct VisionArmCombo
 
 	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer_;
 
+	Eigen::Matrix4f cam2hand_kinect_;
+
+
+
 	// Distance vector of calibration plane in sensor frame
 	std::vector<Eigen::Vector4d*> normalized_plane_coefficients_vec_sensor_frame_;
 	std::vector<Eigen::Matrix4d*> hand_pose_vec_;
@@ -49,6 +55,7 @@ struct VisionArmCombo
 
 	pcl::VoxelGrid<PointT> sor_;
 
+	PathPlanner pp_;
 
 	VisionArmCombo();
 
@@ -81,6 +88,14 @@ struct VisionArmCombo
 	void pp_callback(const pcl::visualization::PointPickingEvent& event, void*);
 
 	void mapWorkspaceUsingKinectArm();
+
+	void addArmModelToViewer(std::vector<PathPlanner::RefPoint> & ref_points, boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer);
+
+	void addOBBArmModelToViewer(std::vector<PathPlanner::OBB> & arm_obbs, boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer);
+
+	void showOccupancyGrid(PathPlanner & pp, boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer);
+
+	void viewPlannedPath(PathPlanner & pp, boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer, float* start_pose, float* goal_pose);
 
 };
 

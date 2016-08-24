@@ -12,6 +12,12 @@ VisionArmCombo::VisionArmCombo()
 
 	kinect_cloud_.reset(new PointCloudT);
 	kinect_cloud_->is_dense = true;
+
+	// kinect
+	cam2hand_kinect_ = Eigen::Matrix4f::Identity();
+	cam2hand_kinect_(0, 3) = 0.0540247f;
+	cam2hand_kinect_(1, 3) = 0.1026325f;
+	cam2hand_kinect_(2, 3) = 0.0825227f;
 }
 
 void VisionArmCombo::pp_callback(const pcl::visualization::PointPickingEvent& event, void*)
@@ -471,28 +477,61 @@ void VisionArmCombo::calibrateScannerPoseSolver(int iterations)
 
 void VisionArmCombo::mapWorkspaceUsingKinectArm()
 {
-	initRobotArmClient();
+	//initRobotArmClient();
 
-	initKinectThread();
+	//initKinectThread();
 
 	int scan_count = 0;
 
-	Eigen::Matrix4f cam2hand;
-	cam2hand = Eigen::Matrix4f::Identity();
-	cam2hand(0, 3) = 0.0540247f;
-	cam2hand(1, 3) = 0.1026325f;
-	cam2hand(2, 3) = 0.0825227f;
-
-
 	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
 
-	viewer->addCoordinateSystem(0.1);
+	viewer->addCoordinateSystem(0.3);
 
 	viewer->registerPointPickingCallback(&VisionArmCombo::pp_callback, *this);
 
 	viewer->spinOnce();
 
-	while (true)
+	float start_pose[6] = {-122.42f, -137.83f, -95.37f, 45.60f, 87.80f, -2.40f};
+	float goal_pose[6] = {-60.31f, -137.23f, -98.76f, 45.61f, 87.80f, -2.41f};
+	
+
+	for (int i = 0; i < 6; i++) start_pose[i] = start_pose[i] / 180.f*M_PI;
+	for (int i = 0; i < 6; i++) goal_pose[i] = goal_pose[i] / 180.f*M_PI;
+
+	pcl::io::loadPCDFile("scene.pcd", *kinect_cloud_);
+
+	viewer->addPointCloud(kinect_cloud_);	
+
+	// get self collision free 
+	//pp_.PRMCEPreprocessing(); pp_.savePathPlanner("pp");
+	pp_.loadPathPlanner("pp");
+	//return;
+
+	if (!pp_.planPath(start_pose, goal_pose))
+	{
+		std::cout << "path not found\n";
+		//return;
+	}
+
+	viewPlannedPath(pp_, viewer, start_pose, goal_pose);
+
+	pp_.resetOccupancyGrid();
+
+	pp_.addPointCloudToOccupancyGrid(kinect_cloud_);
+
+	if (!pp_.planPath(start_pose, goal_pose))
+	{
+		std::cout << "path not found\n";
+		//return;
+	}
+
+	showOccupancyGrid(pp_, viewer);
+
+	viewPlannedPath(pp_, viewer, start_pose, goal_pose);
+
+	return;
+
+	/*while (true)
 	{
 		std::cout << "Move robot hand then press Enter to scan or 'q'+Enter to close\n";
 
@@ -506,21 +545,32 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm()
 
 		kinect_thread_->getCurPointCloud(point_cloud);
 
-
 		// get robot hand pose
 		double array6[6];
+
+		double joint_array6[6];
 
 		Eigen::Matrix4f hand2base;
 
 		robot_arm_client_->getCartesianInfo(array6);
 
+		robot_arm_client_->getCurJointPose(joint_array6);
+
 		array6ToEigenMat4(array6, hand2base);
 
-		std::cout << "hand2pose\n" << hand2base << "\n";
+		//std::cout << "hand2pose\n" << hand2base << "\n";
+
+		std::cout << "joint pos: ";
+		
+		for (int i = 0; i < 6; i++)
+			//std::cout << joint_array6[i]/M_PI*180. << " ";
+			std::cout << joint_array6[i] << " ";
+
+		std::cout << std::endl<<"\n";
 
 		Eigen::Matrix4f cam2base;
 
-		cam2base = hand2base*cam2hand;
+		cam2base = hand2base*cam2hand_kinect_;
 
 		PointCloudT::Ptr cloud_in_base(new PointCloudT);
 
@@ -538,7 +588,6 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm()
 		kinect_cloud_->clear();
 		*kinect_cloud_ += *point_cloud;
 
-
 		viewer->removeAllPointClouds();
 
 		viewer->addPointCloud(kinect_cloud_, "cloud", 0);
@@ -546,10 +595,82 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm()
 		std::cout << "Number of scans: " << ++scan_count << "\n";
 
 		viewer->spin();
+
 	}
 
-	robot_arm_client_->stopRecvTCP();
+	pcl::io::savePCDFileBinary("scene.pcd", *kinect_cloud_);
+
+	std::cout << "move arm to START pose then hit Enter\n";	std::getchar();
 	
+	double start_joint_array6[6];
+	robot_arm_client_->getCurJointPose(start_joint_array6);
+	std::cout << "start joint pos: ";
+	for (int i = 0; i < 6; i++)
+		//std::cout << joint_array6[i]/M_PI*180. << " ";
+		std::cout << start_joint_array6[i] << " ";
+	std::cout << std::endl << "\n";
+
+
+	std::cout << "move arm to END pose then hit Enter\n"; std::getchar();
+
+	double end_joint_array6[6];
+	robot_arm_client_->getCurJointPose(end_joint_array6);
+	std::cout << "end joint pos: ";
+	for (int i = 0; i < 6; i++)
+		//std::cout << joint_array6[i]/M_PI*180. << " ";
+		std::cout << end_joint_array6[i] << " ";
+	std::cout << std::endl << "\n";
+
+	std::cout << "plan path\n";
+
+	//pp_.generateInitRandomNodes(kinect_cloud_);
+
+	//pp_.searchPath(start_joint_array6, end_joint_array6);
+
+	for (auto c : pp_.collision_vec_)
+	{
+		viewer->removeAllShapes();
+
+		for (int i = 0; i < 6; i++)
+		{
+			pcl::ModelCoefficients cylinder_coeff;
+			cylinder_coeff.values.resize(7);
+
+			PointT p = c[i];
+			PointT p1 = c[i + 1];
+
+			cylinder_coeff.values[0] = p.x; cylinder_coeff.values[1] = p.y; cylinder_coeff.values[2] = p.z;
+			cylinder_coeff.values[3] = p1.x - p.x; cylinder_coeff.values[4] = p1.y - p.y; cylinder_coeff.values[5] = p1.z - p.z;
+			cylinder_coeff.values[6] = 0.05f;
+			viewer->addCylinder(cylinder_coeff, "cylinder" + std::to_string(i), 0);
+
+			//std::cout << p1 << "\n";
+		}
+
+		viewer->spin();
+	}
+
+	viewer->removeAllShapes();
+
+	for (int i = 0; i < 6; i++)
+	{
+		pcl::ModelCoefficients cylinder_coeff;
+		cylinder_coeff.values.resize(7);
+
+		PointT p = pp_.arm_joint_points_[i];
+		PointT p1 = pp_.arm_joint_points_[i + 1];
+
+		cylinder_coeff.values[0] = p.x; cylinder_coeff.values[1] = p.y; cylinder_coeff.values[2] = p.z;
+		cylinder_coeff.values[3] = p1.x - p.x; cylinder_coeff.values[4] = p1.y - p.y; cylinder_coeff.values[5] = p1.z - p.z;
+		cylinder_coeff.values[6] = 0.05f;
+		viewer->addCylinder(cylinder_coeff, "cylinder" + std::to_string(i), 0);
+
+		//std::cout << p1 << "\n";
+	}
+
+	viewer->spin();*/
+	
+	robot_arm_client_->stopRecvTCP();
 }
 
 /*
@@ -683,3 +804,133 @@ void VisionArmCombo::extractCalibrationPlaneCoefficientsSensorFrame()
 	}
 }
 
+void VisionArmCombo::addArmModelToViewer(std::vector<PathPlanner::RefPoint>& ref_points, boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer)
+{
+	viewer->removeAllShapes();
+
+	for (int i = 0; i < ref_points.size()-1; i++)
+	{
+		pcl::ModelCoefficients cylinder_coeff;
+		cylinder_coeff.values.resize(7);
+
+		PointT p; p.x = ref_points[i].coordinates[0]; p.y = ref_points[i].coordinates[1]; p.z = ref_points[i].coordinates[2];
+		PointT p1; p1.x = ref_points[i + 1].coordinates[0]; p1.y = ref_points[i + 1].coordinates[1]; p1.z = ref_points[i + 1].coordinates[2];
+
+		cylinder_coeff.values[0] = p.x; cylinder_coeff.values[1] = p.y; cylinder_coeff.values[2] = p.z;
+		cylinder_coeff.values[3] = p1.x - p.x; cylinder_coeff.values[4] = p1.y - p.y; cylinder_coeff.values[5] = p1.z - p.z;
+		cylinder_coeff.values[6] = pp_.arm_radius_lookup[i];
+
+		viewer->addCylinder(cylinder_coeff, "cylinder" + std::to_string(i), 0);
+	}
+
+	viewer->spin();
+}
+
+void VisionArmCombo::addOBBArmModelToViewer(std::vector<PathPlanner::OBB> & arm_obbs, boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer)
+{
+	viewer->removeAllShapes();
+	viewer->removeAllCoordinateSystems();
+	viewer->addCoordinateSystem(0.3, "world", 0);
+
+	for (int j = 0; j < arm_obbs.size(); j++)
+	{
+		pcl::ModelCoefficients cube_coeff;
+		cube_coeff.values.resize(10);
+		for (int i = 0; i < 3; i++) cube_coeff.values[i] = arm_obbs[j].C(i);
+		Eigen::Quaternionf quat(arm_obbs[j].A);
+
+		cube_coeff.values[3] = quat.x();
+		cube_coeff.values[4] = quat.y();
+		cube_coeff.values[5] = quat.z();
+		cube_coeff.values[6] = quat.w();
+
+		cube_coeff.values[7] = arm_obbs[j].a(0)*2.f;
+		cube_coeff.values[8] = arm_obbs[j].a(1)*2.f;
+		cube_coeff.values[9] = arm_obbs[j].a(2)*2.f;
+
+		viewer->addCube(cube_coeff, "cube"+std::to_string(j), 0);
+
+		Eigen::Affine3f transform;
+		Eigen::Matrix4f temp_mat = Eigen::Matrix4f::Identity();
+		temp_mat.block<3, 3>(0, 0) = arm_obbs[j].A;;
+		temp_mat.block<3, 1>(0, 3) << arm_obbs[j].C(0), arm_obbs[j].C(1), arm_obbs[j].C(2);
+		transform.matrix() = temp_mat;
+
+		//if(j>0) std::cout << "obb collision of " <<j-1<<" and "<<j<<" = " << pp_.collisionOBB(arm_obbs[j-1], arm_obbs[j]) <<"\n";	
+		viewer->addCoordinateSystem(0.2, transform, "co"+std::to_string(j), 0);
+	}
+
+	viewer->spin();
+}
+
+void VisionArmCombo::showOccupancyGrid(PathPlanner & pp, boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer)
+{
+	PointCloudT::Ptr cloud(new PointCloudT);
+
+	for (int z = 0; z < pp.grid_height_; z++)
+	{
+		for (int y = 0; y < pp.grid_depth_; y++)
+		{
+			for (int x = 0; x < pp.grid_width_; x++)
+			{
+				int cell_idx = x + y*pp.grid_width_ + z*pp.grid_depth_*pp.grid_width_;
+
+				PathPlanner::Cell cell = pp.grid_[cell_idx];
+
+				if (cell.isOccupiedCounter == pp_.prmce_round_counter_ )
+				{
+					PointT p;
+					p.x = ((x + 0.5f)*pp_.cell_size_ + pp_.grid_offset_x_)*0.01f; 
+					p.y = ((y + 0.5f)*pp_.cell_size_ + pp_.grid_offset_y_)*0.01f; 
+					p.z = ((z + 0.5f)*pp_.cell_size_ + pp_.grid_offset_z_)*0.01f;
+					p.r = p.g = p.b = 255;
+					cloud->points.push_back(p);
+				}
+
+				if (cell.sweptVolumneCounter == pp_.prmce_swept_volume_counter_)
+				{
+					PointT p;
+					p.x = ((x + 0.5f)*pp_.cell_size_ + pp_.grid_offset_x_)*0.01f;
+					p.y = ((y + 0.5f)*pp_.cell_size_ + pp_.grid_offset_y_)*0.01f;
+					p.z = ((z + 0.5f)*pp_.cell_size_ + pp_.grid_offset_z_)*0.01f;
+					p.r = 255; p.g = p.b = 0;
+					cloud->points.push_back(p);
+				}
+			}
+		}
+	}
+
+	std::cout << "vox cloud size: " << cloud->points.size() << "\n";
+
+	viewer->addPointCloud(cloud, "grid", 0);
+
+	viewer->spin();
+}
+
+void VisionArmCombo::viewPlannedPath(PathPlanner & pp, boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer, float* start_pose, float* goal_pose)
+{
+	std::vector<PathPlanner::RefPoint> ref_points;
+	std::vector<Eigen::Matrix3f> rot_mats;
+	std::vector<PathPlanner::OBB> arm_obbs;
+
+	std::cout << "start pose\n";
+
+	// visualization
+	pp.computeReferencePointsOnArm(start_pose, ref_points, rot_mats);
+	pp.getArmOBBModel(ref_points, rot_mats, arm_obbs); addOBBArmModelToViewer(arm_obbs, viewer);
+
+	for (auto index : pp.shortest_path_index_vec_)
+	{
+		float config[6];
+
+		memcpy(config, pp.random_nodes_buffer_ + index * 6, 6 * sizeof(float));
+
+		pp.computeReferencePointsOnArm(config, ref_points, rot_mats);
+		pp.getArmOBBModel(ref_points, rot_mats, arm_obbs); addOBBArmModelToViewer(arm_obbs, viewer);
+	}
+
+	std::cout << "goal pose\n";
+
+	pp.computeReferencePointsOnArm(goal_pose, ref_points, rot_mats);
+	pp.getArmOBBModel(ref_points, rot_mats, arm_obbs); addOBBArmModelToViewer(arm_obbs, viewer);
+}
