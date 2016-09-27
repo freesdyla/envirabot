@@ -46,7 +46,9 @@ RobotArmClient::RobotArmClient()
 
 		// Disable Nagle algorithm for low-latency send
 		char value = 1;
-		std::cout<<"set sock opt: "<<setsockopt(ConnectSocket, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(value))<<std::endl;
+
+		if(setsockopt(ConnectSocket, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(value)) != 0)
+			std::cout<<"robot arm socket connect fail"<<std::endl;
 
 		// Connect to server.
 		iResult = connect(ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen);
@@ -101,9 +103,13 @@ void RobotArmClient::startRecvTCP()
 			getCartesionInfoFromURPackage(recvbuf + 444);	// 125 Hz
 			//getCartesionInfoFromURPackage(recvbuf + 307);	// 10 Hz
 
-			updateMutex.unlock();
+			getActualJointPosFromURPackage();
 
 			distanceToDst = EuclideanDistance(cur_cartesian_info_array, dst_cartesian_info_array);
+
+			distanceToDstConfig_ = EuclideanDistance(cur_joint_pos_array, dst_joint_pos_array);
+
+			updateMutex.unlock();
 
 			//std::cout << distanceToDst << std::endl;
 
@@ -165,17 +171,52 @@ void RobotArmClient::getCartesionInfoFromURPackage(char* x_start_ptr)
 	}
 }
 
-int RobotArmClient::moveHand(double* dst_cartesian_info, float speed)
+void RobotArmClient::getActualJointPosFromURPackage()
+{
+	char* start_ptr = recvbuf + 252;
+
+	for (int i = 0; i < 6; i++)
+	{
+		reverse8CharsToDouble(start_ptr + 7 + i * 8, cur_joint_pos_array + i);
+	}
+}
+
+int RobotArmClient::moveHandL(double* dst_cartesian_info, float acceleration, float speed)
 {
 	char msg[128];
 
-	sprintf(msg, "movel(p[%f,%f,%f,%f,%f,%f],a=1.2,v=%f)  \n", 
+	sprintf(msg, "movel(p[%f,%f,%f,%f,%f,%f],a=%f,v=%f)\n", 
 		dst_cartesian_info[0], dst_cartesian_info[1], dst_cartesian_info[2], 
-		dst_cartesian_info[3], dst_cartesian_info[4], dst_cartesian_info[5], speed); 
+		dst_cartesian_info[3], dst_cartesian_info[4], dst_cartesian_info[5], acceleration, speed);
 
 	//std::cout << "len" << strlen(msg)<<std::endl;
+	updateMutex.lock();
+	distanceToDst = 1000.f;
+	updateMutex.unlock();
 	
 	return send(ConnectSocket, msg, strlen(msg), 0);
+}
+
+int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float acceleration, bool wait2dst)
+{
+	char msg[128];
+
+	sprintf(msg, "movej([%f,%f,%f,%f,%f,%f],a=%f,v=%f)\n",
+		dst_joint_config[0], dst_joint_config[1], dst_joint_config[2],
+		dst_joint_config[3], dst_joint_config[4], dst_joint_config[5], acceleration, speed);
+
+	//std::cout << "len" << strlen(msg)<<std::endl;
+	updateMutex.lock();
+	distanceToDstConfig_ = 1000.f;
+	updateMutex.unlock();
+
+	int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+	if (num_byte == SOCKET_ERROR) return SOCKET_ERROR;
+
+	if(wait2dst) waitTillHandReachDstConfig(dst_joint_config);
+
+	return num_byte;
 }
 
 void RobotArmClient::getCartesianInfo(double* array6)
@@ -183,6 +224,15 @@ void RobotArmClient::getCartesianInfo(double* array6)
 	updateMutex.lock();
 
 	std::memcpy(array6, cur_cartesian_info_array, 6 * 8);
+
+	updateMutex.unlock();
+}
+
+void RobotArmClient::getCurJointPose(double* array6)
+{
+	updateMutex.lock();
+
+	std::memcpy(array6, cur_joint_pos_array, 6 * 8);
 
 	updateMutex.unlock();
 }
@@ -225,21 +275,43 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 	return 0;
 }
 
+int RobotArmClient::waitTillHandReachDstConfig(double* dst_joint_config)
+{
+	setDstConfigInfo(dst_joint_config);
+
+	while (true)
+	{
+		if (distanceToDstConfig_ < 0.0005)
+			break;
+
+		Sleep(4);
+		//std::cout << distanceToDst << std::endl;
+	}
+
+	return 0;
+}
+
 void RobotArmClient::setDstCartesianInfo(double* array6)
 {
 	updateMutex.lock();
-
 	std::memcpy(dst_cartesian_info_array, array6, 48);
+	distanceToDst = 1000.f;
+	updateMutex.unlock();
+}
 
+
+void RobotArmClient::setDstConfigInfo(double* array6)
+{
+	updateMutex.lock();
+	std::memcpy(dst_joint_pos_array, array6, 48);
+	distanceToDst = 1000.f;
 	updateMutex.unlock();
 }
 
 void RobotArmClient::getDistanceToDst(double& distance)
 {
 	updateMutex.lock();
-
 	distance = distanceToDst;
-
 	updateMutex.unlock();
 }
 

@@ -14,7 +14,7 @@ void KeyenceLineProfiler::init()
 
 	if (nRc == LJV7IF_RC_OK)
 	{
-		std::cout << "init dll success" << std::endl;
+		//std::cout << "init dll success" << std::endl;
 		device_initialized = true;
 	}
 	else
@@ -27,7 +27,7 @@ void KeyenceLineProfiler::init()
 
 	if (nRc == LJV7IF_RC_OK)
 	{
-		std::cout << "usb open success" << std::endl;
+		//std::cout << "usb open success" << std::endl;
 		device_initialized = true;
 	}
 	else
@@ -72,16 +72,12 @@ void KeyenceLineProfiler::start(DWORD dwProfileCnt)
 	// start high-speed data communication
 	nRc = LJV7IF_StopHighSpeedDataCommunication(DEVICE_ID);
 
-	if (nRc == LJV7IF_RC_OK)
-		std::cout << "stop before start success"<<std::endl;
-	else
+	if (nRc != LJV7IF_RC_OK)
 		std::cout << "stop before start fail" << std::endl;
 
 	nRc = LJV7IF_HighSpeedDataCommunicationFinalize(DEVICE_ID);
 
-	if (nRc == LJV7IF_RC_OK)
-		std::cout << "finalize before start success" << std::endl;
-	else
+	if (nRc != LJV7IF_RC_OK)
 		std::cout << "finalize before start fail" << std::endl;
 
 	// Open the communication path
@@ -90,9 +86,7 @@ void KeyenceLineProfiler::start(DWORD dwProfileCnt)
 
 	nRc = LJV7IF_HighSpeedDataUsbCommunicationInitalize(DEVICE_ID, ReceiveHighSpeedData, dwProfileCnt, dwThreadId);
 
-	if (nRc == LJV7IF_RC_OK)
-		std::cout << "high speed usb start success" << std::endl;
-	else
+	if (nRc != LJV7IF_RC_OK)
 	{
 		std::cout << "high speed usb start start fail" << std::endl;
 		return;
@@ -104,9 +98,7 @@ void KeyenceLineProfiler::start(DWORD dwProfileCnt)
 
 	nRc = LJV7IF_PreStartHighSpeedDataCommunication(DEVICE_ID, &req, &m_profileInfo);
 
-	if (nRc == LJV7IF_RC_OK)
-		std::cout << "pre start high speed success" << std::endl;
-	else
+	if (nRc != LJV7IF_RC_OK)
 	{
 		std::cout << "pre start high speed fail" << std::endl;
 		return;
@@ -134,9 +126,9 @@ void KeyenceLineProfiler::start(DWORD dwProfileCnt)
 */
 void KeyenceLineProfiler::ReceiveHighSpeedData(BYTE* pBuffer, DWORD dwSize, DWORD dwCount, DWORD dwNotify, DWORD dwUser)
 {
-	//clock_t toc = clock();
-	//printf("Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
-	//tic = toc;
+	/*clock_t toc = clock();
+	printf("Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+	tic = toc;*/
 
 	int nProfDataCnt = (dwSize - sizeof(LJV7IF_PROFILE_HEADER)-sizeof(LJV7IF_PROFILE_FOOTER)) / sizeof(DWORD);
 
@@ -151,7 +143,7 @@ void KeyenceLineProfiler::ReceiveHighSpeedData(BYTE* pBuffer, DWORD dwSize, DWOR
 		m_vecProfileData.push_back(PROFILE_DATA(m_profileInfo, pHeader, pnProfileData, pFooter));
 	}
 
-	//std::cout << "dwCount: " << dwCount << " size: " << m_vecProfileData.size() << std::endl;
+	//std::cout << "dwCount: " << dwCount << " ";// << " size: " << m_vecProfileData.size() << std::endl;
 }
 
 void KeyenceLineProfiler::stop()
@@ -160,16 +152,12 @@ void KeyenceLineProfiler::stop()
 
 	nRc = LJV7IF_StopHighSpeedDataCommunication(DEVICE_ID);
 
-	if (nRc == LJV7IF_RC_OK)
-		std::cout << "stop after start success" << std::endl;
-	else
+	if (nRc != LJV7IF_RC_OK)
 		std::cout << "stop after start fail" << std::endl;
 
 	nRc = LJV7IF_HighSpeedDataCommunicationFinalize(DEVICE_ID);
 
-	if (nRc == LJV7IF_RC_OK)
-		std::cout << "finalize after start success" << std::endl;
-	else
+	if (nRc != LJV7IF_RC_OK)
 		std::cout << "finalize after start fail" << std::endl;	
 }
 

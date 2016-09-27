@@ -201,6 +201,7 @@ struct PathPlanner
 	float alpha_[6];
 
 	Eigen::Matrix4f DH_mat_vec_[6];
+	Eigen::Matrix4f fk_mat_;	//transformation of last frame
 
 	pcl::octree::OctreePointCloudSearch<PointT> octree_;
 	
@@ -230,16 +231,28 @@ struct PathPlanner
 
 	float arm_radius_lookup[8] = {0.08f, 0.08f, 0.06f, 0.06f, 0.045f, 0.045f, 0.045f, 0.045f};
 
-	int prmce_round_counter_, prmce_swept_volume_counter_;
+	// UR10 joint range
+	double joint_range_[12] = { -200./180.*M_PI, 20./180.*M_PI,	// base
+								-180./180.*M_PI, 0./180.*M_PI,	// shoulder
+								-160.f/180.f*M_PI, -10.f/180.f*M_PI,	// elbow
+								-170./180.*M_PI, 10./180.* M_PI,	// wrist 1
+								10.f/180.f*M_PI, 170.f/180.f*M_PI,	// wrist 2
+								-210.f/180.f*M_PI, -170.f/180.f*M_PI // wrist 3
+								};
+
+	int prmce_round_counter_;
+
+	int prmce_swept_volume_counter_;
+
 	bool prmce_collision_found_;	// used for collision check via swept volume
 
-	bool path_planner_ready;
+	bool path_planner_ready_;
+
+	const int start_check_obb_idx_ = 5;	
 
 	PathPlanner();
 
 	~PathPlanner();
-	
-	void generateInitRandomNodes(PointCloudT::Ptr cloud);
 
 	Eigen::Matrix4f constructDHMatrix(int target_joint_id, float target_joint_pos);
 
@@ -248,8 +261,6 @@ struct PathPlanner
 	bool collisionCheck(float* joint_array6, float radius);
 
 	bool checkCollisionBetweenTwoConfig(float* center_config, float* neighbor_config, float dist, float step_size);
-
-	bool searchPath(float* start_joint_pos, float* end_joint_pos);
 
 	int initGrid(int width, int depth, int height, int cell_size, int offset_x, int offset_y, int offset_z);
 
@@ -286,7 +297,7 @@ struct PathPlanner
 
 	void viewOccupancyGrid(boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer);
 
-	bool planPath(float* start_joint_pos, float* end_joint_pos);
+	bool planPath(float* start_joint_pos, float* end_joint_pos, bool smooth, bool try_direct_path);
 
 	bool collisionCheckTwoConfigs(float* config1, float* config2);
 
@@ -296,6 +307,10 @@ struct PathPlanner
 	bool loadPathPlanner(std::string filename);
 
 	void resetOccupancyGrid();
+
+	void smoothPath();
+
+	bool collisionCheckForSingleConfig(float* config);
 };
 
 #endif

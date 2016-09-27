@@ -43,7 +43,13 @@ struct RobotArmClient
 
 	double dst_cartesian_info_array[6];
 
+	double cur_joint_pos_array[6];
+
+	double dst_joint_pos_array[6];
+
 	double distanceToDst;
+
+	double distanceToDstConfig_;
 
 	std::vector<std::thread> URMsgHandler;
 
@@ -59,19 +65,29 @@ struct RobotArmClient
 
 	void getCartesianInfo(double* array6);
 
+	void getCurJointPose(double* array6);
+
 	void reverse8CharsToDouble(char* end, double* d);
 	
 	void getCartesionInfoFromURPackage(char* x_start_ptr);
 
-	int moveHand(double* dst_cartesian_info, float speed);
+	void getActualJointPosFromURPackage();
+
+	int moveHandL(double* dst_cartesian_info, float acceleration, float speed);
+
+	int moveHandJ(double* dst_joint_config, float speed, float acceleration, bool wait2dst);
 
 	void printCartesianInfo(double* array6);
 
 	int waitTillHandReachDstPose(double* dst_pose6);
 
+	int waitTillHandReachDstConfig(double* dst_joint_config);
+
 	double EuclideanDistance(double* pose6_1, double* pose6_2);
 
 	void setDstCartesianInfo(double* array6);
+
+	void setDstConfigInfo(double* array6);
 
 	void getDistanceToDst(double& distance);
 

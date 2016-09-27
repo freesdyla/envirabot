@@ -199,10 +199,10 @@ void KinectThread::updateFrame()
 					CameraSpacePoint cameraSpacePoint = { 0.0f, 0.0f, 0.0f };
 					pCoordinateMapper->MapDepthPointToCameraSpace(depthSpacePoint, depth, &cameraSpacePoint);
 
-					if (cameraSpacePoint.Z > 2.5f)
+					if (cameraSpacePoint.Z > 2.f)
 						continue;
 
-					// need to negate x and y to have Kinect Fusion world coordinate system
+					// need to negate x and y to have Kinect Fusion world coordinate system, normal camera coordinate system x->left, y->down
 					point.x = -cameraSpacePoint.X;
 					point.y = -cameraSpacePoint.Y;
 					point.z = cameraSpacePoint.Z;

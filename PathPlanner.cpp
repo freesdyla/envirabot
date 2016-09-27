@@ -2,8 +2,8 @@
 
 PathPlanner::PathPlanner() :
 	octree_(0.01f),
-	num_nodes_(1000),
-	ref_p_nn_(15),
+	num_nodes_(5000),
+	ref_p_nn_(20),
 	prmcegraph_(num_nodes_),
 	num_joints_(6),
 	//rand_gen_(time(0))
@@ -13,7 +13,7 @@ PathPlanner::PathPlanner() :
 	prmce_round_counter_(1),
 	prmce_swept_volume_counter_(1),
 	prmce_collision_found_(false),
-	path_planner_ready(false)
+	path_planner_ready_(false)
 {
 	// DH parameters
 	a_[0] = a_[3] = a_[4] = a_[5] = 0.f; a_[1] = -0.612f; a_[2] = -0.5732f;
@@ -29,162 +29,8 @@ PathPlanner::~PathPlanner()
 	delete[] start_end_ref_points_;
 }
 
-void PathPlanner::generateInitRandomNodes(PointCloudT::Ptr cloud)
-{
-	clock_t tic = clock();
-	octree_.deleteTree();
-	octree_.setInputCloud(cloud);
-	octree_.addPointsFromInputCloud();
-
-	collision_vec_.clear();
-
-	float joint_array6[6];
-
-	for (int i = 0; i < num_nodes_;)
-	{
-		// random set of joint pos
-		for (int j = 0; j < 6; j++) joint_array6[j] = distri_vec_[j](rand_gen_);
-
-		if (!collisionCheck(joint_array6, arm_radius_) && abs(arm_joint_points_[6].x) < 1.f && arm_joint_points_[6].y < -0.1f && arm_joint_points_[6].z > -0.1f
-			//&& arm_joint_points_[6].z < 0.5f
-			)
-		{
-			memcpy(random_nodes_buffer_ + i * 6, joint_array6, 6*sizeof(float));
-			if(i%50==0) std::cout << "random node " << i << "\n";
-			i++;
-			
-			collision_vec_.push_back(arm_joint_points_);
-		}
-		//else collision_vec_.push_back(arm_joint_points_);
-	}
-
-	// forward kinematics for all random nodes and calculate 6 reference points on the arm
-	float* tmp_random_nodes_buffer_ptr = random_nodes_buffer_;
-
-	for (int i = 0; i < num_nodes_; i++)
-	{
-		forwardKinematicsUR10(tmp_random_nodes_buffer_ptr);
-
-		Eigen::Matrix4f accum_dh_mat; accum_dh_mat = Eigen::Matrix4f::Identity();
-
-		for (int j = 0; j < 6; j++)
-		{
-			accum_dh_mat = accum_dh_mat * DH_mat_vec_[j];
-
-			// reference_points_buffer size: num_nodes*6*3
-			float* ptr = reference_points_buffer_ +  i* 18 + j * 3;
-
-			*ptr = accum_dh_mat(0, 3);
-			*(++ptr) = accum_dh_mat(1, 3);
-			*(++ptr) = accum_dh_mat(2, 3);
-		}
-
-		tmp_random_nodes_buffer_ptr += 6;
-	}
-
-	flann::Matrix<float> reference_points_mat = flann::Matrix<float>(reference_points_buffer_, num_nodes_, 18);
-	
-	referen_point_index_ = new flann::Index<flann::L2<float>>(reference_points_mat, flann::KDTreeIndexParams(4));
-
-	referen_point_index_->buildIndex();
-
-	flann::Matrix<float> ref_p_query_mat = flann::Matrix<float>(reference_points_buffer_, num_nodes_, 18);
-
-	int ref_p_nn = 5;
-
-	flann::Matrix<int> ref_p_indices_mat(new int[num_nodes_*ref_p_nn], num_nodes_, ref_p_nn);
-	flann::Matrix<float> ref_p_dists_mat(new float[num_nodes_*ref_p_nn], num_nodes_, ref_p_nn);
-
-	referen_point_index_->knnSearch(ref_p_query_mat, ref_p_indices_mat, ref_p_dists_mat, ref_p_nn, flann::SearchParams(128));
-
-	for (int i = 0; i < num_nodes_; i++)
-	{
-		for (int n_idx = 0; n_idx < ref_p_nn; n_idx++)
-		{
-			int neighbor_idx = *(ref_p_indices_mat.ptr() + ref_p_nn*i + n_idx);
-
-			//std::cout << "center idx " << i << " knn " << n_idx << " idx " <<  neighbor_idx << " dist " << *(ref_p_dists_mat.ptr() + ref_p_nn*i + n_idx) << "\n";
-			
-			std::vector<PointT> arm_ref_points;
-			
-			for (int p_idx = 0; p_idx < 6; p_idx++)
-			{
-				float* coordinate = reference_points_buffer_ + neighbor_idx * 18 + p_idx * 3;
-				PointT point;
-				point.x = *coordinate;
-				point.y = *(++coordinate);
-				point.z = *(++coordinate);
-
-				arm_ref_points.push_back(point);
-			}
-			
-			//collision_vec_.push_back(arm_ref_points);
-		}
-	}
-	
-	// BUILD GRAPH
-	//add edges
-	float step_size = 3.0f / 180.f*M_PI;
-
-	// add edge based on radius search
-	for (int node_id = 0; node_id < num_nodes_; node_id++)
-	{
-		if (node_id % 50 == 0) std::cout << "add edge for node " << node_id << "\n";
-		//std::cout << "Node id "<<node_id << " \n";
-
-		// check collision between center node and neighbor node
-		for (int n_idx = 1; n_idx < ref_p_nn; n_idx++)
-		{
-			int neighbor_id = *(ref_p_indices_mat.ptr() + ref_p_nn*node_id + n_idx);
-			float l2_workspace_dist = *(ref_p_dists_mat.ptr() + ref_p_nn*node_id + n_idx);
-
-			//std::cout << " neighbor " << neighbor_id ;
-
-			// test if an edge can be added
-			float* node_joint_pos = random_nodes_buffer_ + node_id*6;
-			float* neighbor_joint_pos = random_nodes_buffer_ + neighbor_id*6;
-
-			//L2 norm in Cspace
-			float l2_cspace_dist = 0.0f;
-			for (int i = 0; i < 6; i++) l2_cspace_dist += pow(node_joint_pos[i] - neighbor_joint_pos[i], 2.0f);
-			l2_cspace_dist = sqrt(l2_cspace_dist);
-
-			//std::cout << " cspace dist " << l2_cspace_dist;
-
-			// interpolate two points in Cspace
-			if (!boost::edge(node_id, neighbor_id, prmcegraph_).second && !checkCollisionBetweenTwoConfig(node_joint_pos, neighbor_joint_pos, l2_cspace_dist, step_size))
-			{
-				// add edge
-				prmceedge_descriptor e; bool inserted;
-				prmceedge edge(node_id, neighbor_id);
-			
-				boost::tie(e, inserted) = boost::add_edge(edge.first, edge.second, prmcegraph_);
-				prmcegraph_[e].weight = l2_workspace_dist;	// weight = node-neigbor distance in Cspace
-			}
-			//std::cout << "\n";
-		}
-	}
-
-	// check number of edges
-	//std::pair<prmcegraph_t::edge_iterator, prmcegraph_t::edge_iterator> es = boost::edges(prmcegraph_);
-	//std::copy(es.first, es.second, std::ostream_iterator<prmceedge_descriptor>{std::cout, " "}); std::cout << "\n";
-
-	std::cout << "num of edges: " << boost::num_edges(prmcegraph_) << "\n";
-
-	// check connected components
-	connected_component_.resize(boost::num_vertices(prmcegraph_));
-	int num_cc = boost::connected_components(prmcegraph_, &connected_component_[0]);
-
-	for (auto label : connected_component_) std::cout << label << " "; std::cout << "\n";
-
-	std::cout << "cc num: " << num_cc << "\n";
-
-	clock_t toc = clock();
-	printf("Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
-}
-
 /*
-	false: no collision
+	false: no collision, this is old
 */
 bool PathPlanner::collisionCheck(float* joint_array6, float radius)
 {
@@ -276,7 +122,24 @@ Eigen::Matrix4f PathPlanner::constructDHMatrix(int target_joint_id, float target
 {
 	Eigen::Matrix4f DH_mat;
 	DH_mat = Eigen::Matrix4f::Identity();
-	DH_mat(0, 0) = cos(target_joint_pos);
+	float cos_target = cos(target_joint_pos);
+	float sin_target = sin(target_joint_pos);
+	float cos_alp_tar = cos(alpha_[target_joint_id]);
+	float sin_alp_tar = sin(alpha_[target_joint_id]);
+
+	DH_mat(0, 0) = cos_target;
+	DH_mat(0, 1) = -sin_target*cos_alp_tar;
+	DH_mat(0, 2) = sin_target*sin_alp_tar;
+	DH_mat(0, 3) = a_[target_joint_id] * cos_target;
+	DH_mat(1, 0) = sin_target;
+	DH_mat(1, 1) = cos_target*cos_alp_tar;
+	DH_mat(1, 2) = -cos_target*sin_alp_tar;
+	DH_mat(1, 3) = a_[target_joint_id] * sin_target;
+	DH_mat(2, 1) = sin_alp_tar;
+	DH_mat(2, 2) = cos_alp_tar;
+	DH_mat(2, 3) = d_[target_joint_id];
+
+	/*DH_mat(0, 0) = cos(target_joint_pos);
 	DH_mat(0, 1) = -sin(target_joint_pos)*cos(alpha_[target_joint_id]);
 	DH_mat(0, 2) = sin(target_joint_pos)*sin(alpha_[target_joint_id]);
 	DH_mat(0, 3) = a_[target_joint_id]*cos(target_joint_pos);
@@ -287,13 +150,15 @@ Eigen::Matrix4f PathPlanner::constructDHMatrix(int target_joint_id, float target
 	DH_mat(2, 1) = sin(alpha_[target_joint_id]);
 	DH_mat(2, 2) = cos(alpha_[target_joint_id]);
 	DH_mat(2, 3) = d_[target_joint_id];
-
+*/
 	return DH_mat;
 }
 
 void PathPlanner::forwardKinematicsUR10(float* joint_array6)
 {
 	for (int i = 0; i < 6; i++)	DH_mat_vec_[i] = constructDHMatrix(i, joint_array6[i]);
+	fk_mat_ = DH_mat_vec_[0];
+	for (int i = 1; i < 6; i++) fk_mat_ = fk_mat_*DH_mat_vec_[i];
 }
 
 /*
@@ -321,200 +186,6 @@ bool PathPlanner::checkCollisionBetweenTwoConfig(float* center_config, float* ne
 
 	// no collision
 	return false;
-}
-
-bool PathPlanner::searchPath(float* start_joint_pos, float* end_joint_pos)
-{
-	//L2 norm in Cspace
-	float l2_cspace_dist = 0.0f;
-	for (int i = 0; i < 6; i++) l2_cspace_dist += pow(start_joint_pos[i] - end_joint_pos[i], 2.0f);
-	l2_cspace_dist = sqrt(l2_cspace_dist);
-
-	std::cout << " cspace dist " << l2_cspace_dist;
-
-	// interpolate two points in Cspace
-	std::cout << "collision between start and goal: " << checkCollisionBetweenTwoConfig(start_joint_pos, end_joint_pos, l2_cspace_dist, 3.0f / 180.f*M_PI)<<"\n";
-	
-	int nn = 5;
-
-	// L2 in workspace
-	float start_end_l2_workspace[2 * 18];
-
-	// start 
-	forwardKinematicsUR10(start_joint_pos);
-
-	Eigen::Matrix4f accum_dh_mat; accum_dh_mat = Eigen::Matrix4f::Identity();
-
-	for (int j = 0; j < 6; j++)
-	{
-		accum_dh_mat = accum_dh_mat * DH_mat_vec_[j];
-
-		// reference_points_buffer size: num_nodes*6*3
-		float* ptr = start_end_l2_workspace + j * 3;
-
-		*ptr = accum_dh_mat(0, 3);
-		*(++ptr) = accum_dh_mat(1, 3);
-		*(++ptr) = accum_dh_mat(2, 3);
-	}
-
-	// goal
-	forwardKinematicsUR10(end_joint_pos);
-
-	accum_dh_mat = Eigen::Matrix4f::Identity();
-
-	for (int j = 0; j < 6; j++)
-	{
-		accum_dh_mat = accum_dh_mat * DH_mat_vec_[j];
-
-		// reference_points_buffer size: num_nodes*6*3
-		float* ptr = start_end_l2_workspace + 18 + j * 3;
-
-		*ptr = accum_dh_mat(0, 3);
-		*(++ptr) = accum_dh_mat(1, 3);
-		*(++ptr) = accum_dh_mat(2, 3);
-	}
-
-	flann::Matrix<float> query_mat = flann::Matrix<float>(start_end_l2_workspace, 2, 18);
-
-	// search the nearest neighbor
-	flann::Matrix<int> indices_mat(new int[2*nn], 2, nn);
-	flann::Matrix<float> dists_mat(new float[2*nn], 2, nn);
-
-	// index_ for L2 in Cspace !
-	referen_point_index_->knnSearch(query_mat, indices_mat, dists_mat, nn, flann::SearchParams(128));
-
-	for (int i = 0; i < 2*nn; i++) std::cout << "index: " << *(indices_mat.ptr() + i) << " distance " << *(dists_mat.ptr() + i) << " cc label "<< connected_component_[*(indices_mat.ptr() + i)]<<"\n";
-
-	int start = *indices_mat.ptr();
-	int goal = *(indices_mat.ptr() + nn);
-
-
-	// check collision on path
-	float step_size = 0.01f;
-
-	for (int i = 0; i < nn; i++)
-	{
-		int neighbor = *(indices_mat.ptr() + i);
-
-		if (!checkCollisionBetweenTwoConfig(start_joint_pos, random_nodes_buffer_ + neighbor*num_joints_, *(dists_mat.ptr() + i), step_size))
-		{
-			start = *(indices_mat.ptr() + i);
-			break;
-		}
-		else
-		{
-			std::cout << "collision free start node not found\n";
-			return false;
-		}
-	}
-
-	for (int i = 0; i < nn; i++)
-	{
-		int neighbor = *(indices_mat.ptr() + nn + i);
-
-		if (!checkCollisionBetweenTwoConfig(end_joint_pos, random_nodes_buffer_ + neighbor*num_joints_, *(dists_mat.ptr() + nn + i), step_size))
-		{
-			goal = *(indices_mat.ptr() + nn + i);
-			break;
-		}
-		else
-		{
-			std::cout << "collision free goal node not found\n";
-			return false;
-		}
-	}
-
-	std::cout << "start index " << start << " -- goal index " << goal << "\n";
-
-	std::vector<prmcevertex_descriptor> p(boost::num_vertices(prmcegraph_));
-
-	std::vector<float> d(boost::num_vertices(prmcegraph_));
-
-	/*boost::dijkstra_shortest_paths(prmgraph_, start,
-	boost::predecessor_map(boost::make_iterator_property_map(p.begin(), boost::get(boost::vertex_index, prmgraph_))).
-	distance_map(boost::make_iterator_property_map(d.begin(), boost::get(boost::vertex_index, prmgraph_))));
-
-
-	std::cout << "distances and parents:" << std::endl;
-	boost::graph_traits < prmgraph_t >::vertex_iterator vi, vend;
-	for (boost::tie(vi, vend) = boost::vertices(prmgraph_); vi != vend; ++vi) {
-	std::cout << "distance(" << *vi << ") = " << d[*vi] << ", ";
-	std::cout << "parent(" << *vi << ") = " << p[*vi] << std::
-	endl;
-	}
-	std::cout << std::endl;
-
-	std::cout << "Shortest path from " << start << "-" << component[start] << " to " << goal << "-" << component[goal] << ": ";
-	*/
-
-	// dijkstra shortest path
-	/*bool found_path = false;
-	try 
-	{
-		boost::dijkstra_shortest_paths(prmcegraph_, start,
-			boost::predecessor_map(boost::make_iterator_property_map(p.begin(), boost::get(boost::vertex_index, prmcegraph_))).
-				weight_map(boost::get(&PRMCEEdge::weight, prmcegraph_)).
-					distance_map(boost::make_iterator_property_map(d.begin(), boost::get(boost::vertex_index, prmcegraph_))).
-						visitor(astar_goal_visitor<prmcevertex_descriptor>(goal)));
-	}
-	catch (found_goal fg) 
-	{
-		shortest_path_index_vec.clear();
-		for (prmcevertex_descriptor v = goal;; v = p[v])
-		{
-			shortest_path_index_vec.push_back(v);
-			if (p[v] == v) break;
-		}
-
-		std::reverse(std::begin(shortest_path_index_vec_), std::end(shortest_path_index_vec_));
-
-		std::cout << "Shortest path from " << start << "-" << connected_component_[start] << " to " << goal << "-" << connected_component_[goal] << ": \n";
-		std::list<prmcevertex_descriptor>::iterator spi = shortest_path_index_vec.begin();
-		std::cout << goal << "-" << connected_component_[goal];
-		for (++spi; spi != shortest_path_index_vec.end(); ++spi) std::cout << " -> " << *spi << "-" << connected_component_[start];
-
-		std::cout << std::endl << "Total travel distance: " << d[goal] << std::endl;
-
-		found_path = true;
-	}*/
-
-	// A star shortest path
-	bool found_path = false;
-	try {
-		boost::astar_search_tree
-			(prmcegraph_, start,
-				distance_heuristic<prmcegraph_t, float, float*, int>(reference_points_buffer_, goal, num_ref_points_*3),
-					boost::predecessor_map(boost::make_iterator_property_map(p.begin(), boost::get(boost::vertex_index, prmcegraph_))).
-						weight_map(boost::get(&PRMCEEdge::weight, prmcegraph_)).
-							distance_map(boost::make_iterator_property_map(d.begin(), boost::get(boost::vertex_index, prmcegraph_))).
-								visitor(astar_goal_visitor<prmcevertex_descriptor>(goal)));
-	}
-	catch (found_goal fg) 
-	{
-		shortest_path_index_vec_.clear();
-
-		for (prmcevertex_descriptor v = goal;; v = p[v])
-		{
-			shortest_path_index_vec_.push_back(v);
-			if (p[v] == v)
-				break;
-		}
-
-		std::reverse(std::begin(shortest_path_index_vec_), std::end(shortest_path_index_vec_));
-
-		std::cout << "Shortest path from " << start << "-" << connected_component_[start] << " to " << goal << "-" << connected_component_[goal] << ": ";
-		std::vector<prmcevertex_descriptor>::iterator spi = shortest_path_index_vec_.begin();
-		std::cout << goal << "-" << connected_component_[goal];
-		for (++spi; spi != shortest_path_index_vec_.end(); ++spi) std::cout << " -> " << *spi << "-" << connected_component_[start];
-
-		std::cout << std::endl << "Total travel distance: " << d[goal] << std::endl;
-
-		std::cout << "shortest path end: " << *shortest_path_index_vec_.end() << "\n";
-
-		found_path = true;
-	}
-	
-	return found_path;
 }
 
 // reset the grid, origin of the 3d grid is at bottom left corner
@@ -596,6 +267,10 @@ bool PathPlanner::addEdgeDescriptor2Cell(std::vector<prmceedge_descriptor> & edg
 	return true;
 }
 
+
+/*
+	rot_mats, UR10 DH frames 1 to 6
+*/
 void PathPlanner::computeReferencePointsOnArm(float* joint_pos, std::vector<RefPoint> & reference_points, std::vector<Eigen::Matrix3f> & rot_mats)
 {
 	// forward kinematics 
@@ -795,11 +470,29 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 {
 	arm_obbs.clear();
 
+	RefPoint tmp_rp, tmp_rp1;
+
 	// add rover base
 	OBB obb;
 	obb.C << 0.f, 0.2f, -0.48f;
 	obb.A = Eigen::Matrix3f::Identity();
 	obb.a << 0.37f, 0.38f, 0.47f;
+	arm_obbs.push_back(obb);
+
+	// add chamber window top wall, robot arm base center to front edge 16.5cm, robot-to-window 20cm, wall thickness 5cm
+	// floor-to-base height 0.964m, 
+	obb.C << 0.f, -0.39f, 1.161f;
+	obb.a << 1.3f, 0.025f, 0.155f;
+	arm_obbs.push_back(obb);
+
+	// add chamber inside wall
+	obb.C << 0.f, -1.19f, 0.17f;
+	obb.a << 1.3f, 0.025f, 1.4f;
+	arm_obbs.push_back(obb);
+
+	// add chamber table
+	obb.C << 0.f, -0.7f, -0.732f;
+	obb.a << 1.3f, 0.5f, 0.01f;
 	arm_obbs.push_back(obb);
 
 	// frame 1 arm, UR10 DH figure, y axis
@@ -815,27 +508,40 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 
 	// 2nd long arm, frame 3
 	for (int i = 0; i < 3; i++) ref_points[4].coordinates[i] += rot_mats[2](i, 0)*0.06f;
-	for (int i = 0; i < 3; i++) ref_points[5].coordinates[i] -= rot_mats[2](i, 0)*0.05f;
-	constructOBB(ref_points[4], ref_points[5], rot_mats[2], 0.056f, 0, obb);
+	for (int i = 0; i < 3; i++) ref_points[5].coordinates[i] -= rot_mats[2](i, 0)*0.046f;
+	constructOBB(ref_points[4], ref_points[5], rot_mats[2], 0.045f, 0, obb);
 	arm_obbs.push_back(obb);
 
 	// frame 4
 	for (int i = 0; i < 3; i++) ref_points[6].coordinates[i] -= rot_mats[3](i, 2)*0.06f;
-	RefPoint tmp_rp;
+	
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[3](i, 2)*0.051f;
 	constructOBB(ref_points[6], tmp_rp, rot_mats[3], 0.052f, 2, obb);
 	arm_obbs.push_back(obb);
 
 	// frame 5
-	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[4](i, 2)*0.06f;
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[4](i, 2)*0.045f;
 	constructOBB(tmp_rp, ref_points[8], rot_mats[4], 0.045f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// sensor block
-	for (int i = 0; i < 3; i++) ref_points[7].coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 2)*0.15f;
-	for (int i = 0; i < 3; i++) ref_points[8].coordinates[i] += rot_mats[5](i, 2)*0.002f;
-	constructOBB(ref_points[8], ref_points[7], rot_mats[5], 0.14f, 2, obb);
+	// sensor block (kinect)
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.14f + rot_mats[5](i, 2)*0.041f + rot_mats[5](i, 1)*0.1f;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.14f + rot_mats[5](i, 2)*0.041f + rot_mats[5](i, 1)*0.1f;
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.04f, 0, obb);
 	arm_obbs.push_back(obb);
+
+	// laser scanner
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.09f + rot_mats[5](i, 2)*0.05f + rot_mats[5](i, 1)*0.01f;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.09f + rot_mats[5](i, 2)*0.05f + rot_mats[5](i, 1)*0.01f;
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.045f, 0, obb);
+	arm_obbs.push_back(obb);
+
+	// probe stick	(0.035425, -0.0445422, 0.184104)
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.035425f + rot_mats[5](i, 1)*(-0.0445422f) + rot_mats[5](i, 2)*0.005f;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.035425f + rot_mats[5](i, 1)*(-0.0445422f) + rot_mats[5](i, 2)*0.184104f;
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.005f, 2, obb);
+	arm_obbs.push_back(obb);
+
 }
 
 bool PathPlanner::selfCollision(float* joint_pos)
@@ -846,11 +552,11 @@ bool PathPlanner::selfCollision(float* joint_pos)
 
 	computeReferencePointsOnArm(joint_pos, reference_points, rot_mats);
 
-	if (reference_points.back().coordinates[1] > 0.f) return true;
+	if (reference_points.back().coordinates[1] > 0.3f) return true;
 
 	getArmOBBModel(reference_points, rot_mats, arm_obbs);
 
-	for (int i = 2; i < arm_obbs.size(); i++)
+	for (int i = start_check_obb_idx_; i < arm_obbs.size(); i++)
 	{
 		for (int j = 0; j < i; j++)
 		{
@@ -861,7 +567,6 @@ bool PathPlanner::selfCollision(float* joint_pos)
 			}
 		}
 	}
-
 	return false;
 }
 
@@ -912,8 +617,18 @@ int PathPlanner::voxelizeLine(RefPoint & p1, RefPoint & p2, std::vector<RefPoint
 	{
 		for (int x = 0; x <= adx; x++)
 		{
-			int y = x*dy / adx;
-			int z = x*dz / adx;
+			int y, z;
+
+			if (adx == 0)
+			{
+				y = z = 0;
+			}
+			else
+			{
+				y = x*dy / adx;
+				z = x*dz / adx;
+			}
+			
 			int cell_idx = (x1+x*signx) + (y1+y)*grid_width_ + (z1+z)*grid_width_*grid_depth_;
 
 			if (cell_idx < grid_.size())
@@ -953,8 +668,18 @@ int PathPlanner::voxelizeLine(RefPoint & p1, RefPoint & p2, std::vector<RefPoint
 	{
 		for (int y = 0; y <= ady; y++)
 		{
-			int x = y*dx / ady;
-			int z = y*dz / ady;
+			int x, z;
+
+			if (ady == 0)
+			{
+				x = z = 0;
+			}
+			else
+			{
+				x = y*dx / ady;
+				z = y*dz / ady;
+			}
+
 			int cell_idx = (x1 + x) + (y1 + y*signy)*grid_width_ + (z1 + z)*grid_width_*grid_depth_;
 
 			if (cell_idx < grid_.size())
@@ -996,8 +721,18 @@ int PathPlanner::voxelizeLine(RefPoint & p1, RefPoint & p2, std::vector<RefPoint
 	{
 		for (int z = 0; z <= adz; z++)
 		{
-			int x = z*dx / adz;
-			int y = z*dy / adz;
+			int x, y;
+
+			if (adz == 0)
+			{
+				x = y = 0;
+			}
+			else
+			{
+				x = z*dx / adz;
+				y = z*dy / adz;
+			}
+			
 			int cell_idx = (x1 + x) + (y1 + y)*grid_width_ + (z1 + z*signz)*grid_width_*grid_depth_;
 
 			if (cell_idx < grid_.size())
@@ -1110,7 +845,7 @@ int PathPlanner::voxelizeOBB(OBB & obb, std::vector<prmceedge_descriptor> & edge
 int PathPlanner::voxelizeArmConfig(std::vector<OBB> & arm_obbs, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume=false)
 {
 	int num_voxelized = 0;
-	for (int i = 2; i < arm_obbs.size(); i++) num_voxelized += voxelizeOBB(arm_obbs[i], edge_vec, set_swept_volume);
+	for (int i = start_check_obb_idx_; i < arm_obbs.size(); i++) num_voxelized += voxelizeOBB(arm_obbs[i], edge_vec, set_swept_volume);
 	return num_voxelized; 
 }
 
@@ -1184,12 +919,12 @@ void PathPlanner::PRMCEPreprocessing()
 	// GENERATE RANDOM SELF-COLLISION-FREE CONFIGURATIONS
 	distri_vec_.resize(6);
 	// unit: rad
-	std::uniform_real_distribution<float> d1(-M_PI, 0.f);	// Base
-	std::uniform_real_distribution<float> d2(-M_PI, 0.f);	// Shoulder
-	std::uniform_real_distribution<float> d3(-160.f / 180.f*M_PI, 20.f / 180.f*M_PI);	// Elbow
-	std::uniform_real_distribution<float> d4(-0.5f * M_PI, 0.5f * M_PI);	// Wrist 1
-	std::uniform_real_distribution<float> d5(0.0f, M_PI);	// Wrist 2
-	std::uniform_real_distribution<float> d6(-200.f / 180.f*M_PI, -160.f / 180.f*M_PI);		// Wrist3
+	std::uniform_real_distribution<float> d1((float)joint_range_[0], (float)joint_range_[1]);	// Base
+	std::uniform_real_distribution<float> d2((float)joint_range_[2], (float)joint_range_[3]);	// Shoulder
+	std::uniform_real_distribution<float> d3((float)joint_range_[4], (float)joint_range_[5]);	// Elbow
+	std::uniform_real_distribution<float> d4((float)joint_range_[6], (float)joint_range_[7]);	// Wrist 1
+	std::uniform_real_distribution<float> d5((float)joint_range_[8], (float)joint_range_[9]);	// Wrist 2
+	std::uniform_real_distribution<float> d6((float)joint_range_[10], (float)joint_range_[11]);		// Wrist3
 
 	distri_vec_[0] = d1;
 	distri_vec_[1] = d2;
@@ -1372,11 +1107,16 @@ void PathPlanner::PRMCEPreprocessing()
 
 	toc = clock();
 	printf("map edges Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
-	path_planner_ready = true;
+	path_planner_ready_ = true;
 }
 
 void PathPlanner::addPointCloudToOccupancyGrid(PointCloudT::Ptr cloud)
 {
+	if (!path_planner_ready_)
+	{
+		std::cout << "Path Planner not loaded!\n";
+		return;
+	}
 	clock_t tic = clock();
 	for (int i = 0; i < cloud->points.size(); i++)	blockCells(cloud->points[i]);
 	clock_t toc = clock();
@@ -1417,9 +1157,9 @@ void PathPlanner::viewOccupancyGrid(boost::shared_ptr<pcl::visualization::PCLVis
 	viewer->spin();
 }
 
-bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos)
+bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool smooth=false, bool try_direct_path = true)
 {
-	if (!path_planner_ready)
+	if (!path_planner_ready_)
 	{
 		std::cout << "NO Path Planner Loaded!\n";
 		return false;
@@ -1437,6 +1177,16 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos)
 		std::cout << "end config self collision \n";
 		return false;
 	}
+
+	// check path from start to goal directly
+	if (try_direct_path && !collisionCheckTwoConfigs(start_joint_pos, end_joint_pos))
+	{
+		shortest_path_index_vec_.clear();
+		prmce_swept_volume_counter_++;
+		return true;
+	}
+
+	prmce_swept_volume_counter_++;
 
 	std::vector<RefPoint> reference_points_start, reference_points_end;
 
@@ -1511,11 +1261,23 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos)
 
 	std::cout << "start index " << start << " -- goal index " << goal << "\n";
 
+	std::cout << "start config: ";
+	for (int i = 0; i < num_joints_; i++)
+		std::cout << (*(random_nodes_buffer_ + start*num_joints_ + i))*180./M_PI << " ";
+	std::cout << "\n";
+
+	std::cout << "goal config: ";
+	for (int i = 0; i < num_joints_; i++)
+		std::cout << (*(random_nodes_buffer_ + goal*num_joints_ + i))*180./M_PI << " ";
+	std::cout << "\n";
+
 	tic = clock();
 
 	std::vector<prmcevertex_descriptor> p(boost::num_vertices(prmcegraph_));
 
 	std::vector<float> d(boost::num_vertices(prmcegraph_));
+
+	
 
 	/*boost::dijkstra_shortest_paths(prmgraph_, start,
 	boost::predecessor_map(boost::make_iterator_property_map(p.begin(), boost::get(boost::vertex_index, prmgraph_))).
@@ -1534,35 +1296,35 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos)
 	*/
 
 	// dijkstra shortest path
-	//bool found_path = false;
-	//try
-	//{
-	//	boost::dijkstra_shortest_paths(prmcegraph_, start,
-	//		boost::predecessor_map(boost::make_iterator_property_map(p.begin(), boost::get(boost::vertex_index, prmcegraph_))).
-	//			weight_map(boost::get(&PRMCEEdge::weight, prmcegraph_)).
-	//				distance_map(boost::make_iterator_property_map(d.begin(), boost::get(boost::vertex_index, prmcegraph_))).
-	//					visitor(astar_goal_visitor<prmcevertex_descriptor>(goal)));
-	//}
-	//catch (found_goal fg)
-	//{
-	//	shortest_path_index_vec_.clear();
-	//	for (prmcevertex_descriptor v = goal;; v = p[v])
-	//	{
-	//		shortest_path_index_vec_.push_back(v);
-	//		if (p[v] == v) break;
-	//	}
+	/*bool found_path = false;
+	try
+	{
+		boost::dijkstra_shortest_paths(prmcegraph_, start,
+			boost::predecessor_map(boost::make_iterator_property_map(p.begin(), boost::get(boost::vertex_index, prmcegraph_))).
+				weight_map(boost::get(&PRMCEEdge::weight, prmcegraph_)).
+					distance_map(boost::make_iterator_property_map(d.begin(), boost::get(boost::vertex_index, prmcegraph_))).
+						visitor(astar_goal_visitor<prmcevertex_descriptor>(goal)));
+	}
+	catch (found_goal fg)
+	{
+		shortest_path_index_vec_.clear();
+		for (prmcevertex_descriptor v = goal;; v = p[v])
+		{
+			shortest_path_index_vec_.push_back(v);
+			if (p[v] == v) break;
+		}
 
-	//	std::reverse(std::begin(shortest_path_index_vec_), std::end(shortest_path_index_vec_));
+		std::reverse(std::begin(shortest_path_index_vec_), std::end(shortest_path_index_vec_));
 
-	//	std::cout << "Shortest path from " << start << " to " << goal <<": \n";
-	//	std::vector<prmcevertex_descriptor>::iterator spi = shortest_path_index_vec_.begin();
-	//	
-	//	for (++spi; spi != shortest_path_index_vec_.end(); ++spi) std::cout << " -> " << *spi;
+		std::cout << "Dijkstra Shortest path from " << start << " to " << goal <<": \n";
+		std::vector<prmcevertex_descriptor>::iterator spi = shortest_path_index_vec_.begin();
+		
+		for (++spi; spi != shortest_path_index_vec_.end(); ++spi) std::cout << " -> " << *spi;
 
-	//	std::cout << std::endl << "Total travel distance: " << d[goal] << std::endl;
+		std::cout << std::endl << "Total travel distance: " << d[goal] << std::endl;
 
-	//	found_path = true;
-	//}
+		found_path = d[goal] < 500.f ? true : false;
+	}*/
 
 	// A star shortest path
 	bool found_path = false;
@@ -1599,6 +1361,11 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos)
 
 	toc = clock();
 	printf("grahp search Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+
+	if (smooth)
+	{
+		smoothPath();
+	}
 
 	delete[] indices_mat.ptr();
 	delete[] dists_mat.ptr();
@@ -1661,7 +1428,7 @@ void PathPlanner::savePathPlanner(std::string filename)
 
 bool PathPlanner::loadPathPlanner(std::string filename)
 {
-	if (path_planner_ready)
+	if (path_planner_ready_)
 	{
 		std::cout << "Path Planner Already Load!\n";
 		return false;
@@ -1688,7 +1455,7 @@ bool PathPlanner::loadPathPlanner(std::string filename)
 
 		referen_point_index_->buildIndex();
 
-		success = path_planner_ready =true;
+		success = path_planner_ready_ =true;
 	}
 	else std::cout << filename << " does not exist!\n";
 
@@ -1713,4 +1480,70 @@ void PathPlanner::resetOccupancyGrid()
 
 	clock_t toc = clock();
 	printf("reset grid Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+}
+
+void PathPlanner::smoothPath()
+{
+	if (shortest_path_index_vec_.size() < 3) return;
+
+	clock_t tic = clock();
+	int cur_vertex = 0;
+	int new_vertex = 2;
+	
+	std::vector<prmcevertex_descriptor> smooth_path;
+	smooth_path.push_back(shortest_path_index_vec_[0]);
+
+	while (new_vertex < shortest_path_index_vec_.size())
+	{
+		while (new_vertex < shortest_path_index_vec_.size() &&
+			!collisionCheckTwoConfigs(random_nodes_buffer_ + shortest_path_index_vec_[cur_vertex]*num_joints_, 
+										random_nodes_buffer_ + shortest_path_index_vec_[new_vertex]*num_joints_))
+		{
+			new_vertex++;
+			prmce_swept_volume_counter_++;
+		}
+
+		prmce_swept_volume_counter_++;
+		cur_vertex = new_vertex - 1;
+
+		smooth_path.push_back(shortest_path_index_vec_[cur_vertex]);
+
+		new_vertex++;
+	}
+	
+	clock_t toc = clock();
+	printf("smooth path Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+
+	std::cout << "smooth path: ";
+	for (auto e : smooth_path) std::cout << e << "->";
+	std::cout << "\n";
+
+	shortest_path_index_vec_.swap(smooth_path);
+}
+
+bool PathPlanner::collisionCheckForSingleConfig(float* config)
+{
+	if (selfCollision(config))
+	{
+		std::cout << "self collision\n";
+		return true;
+	}
+
+	// collision check with environment
+	prmce_collision_found_ = false;
+
+	std::vector<RefPoint> reference_points;
+	std::vector<Eigen::Matrix3f> rot_mats;
+	std::vector<OBB> arm_obbs;
+	std::vector<prmceedge_descriptor> edge_vec;
+
+	computeReferencePointsOnArm(config, reference_points, rot_mats);
+
+	getArmOBBModel(reference_points, rot_mats, arm_obbs);
+
+	int num_voxelized = voxelizeArmConfig(arm_obbs, edge_vec, true);
+
+	prmce_swept_volume_counter_++;
+
+	return prmce_collision_found_;
 }
