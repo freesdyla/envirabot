@@ -1,0 +1,424 @@
+#define MOVE_ON_TAPE 0
+#define STOP_ON_MARKER 1	
+option explicit
+
+dim rc_gear_input as integer	'rc remote pulse input for rc/tape mode switch
+dim rc_up_down_input as integer	'up value > down value. controlled by the right joystick
+dim rc_left_right_input as integer 'left value > right value. controlled by the right joystick
+dim rc_rotate_input as integer	'left joystick, left value > right value
+dim rc_up_down_center as integer
+dim rc_left_right_center as integer
+dim rc_rotate_center as integer
+dim rc_dead_band as integer
+
+dim rc_translate_magnitude as integer
+dim rc_translate_angle as integer
+
+dim target_translate_speed as integer
+dim target_translate_angle as integer	'+y = 0 degree
+dim target_translate_angle45 as integer
+dim target_rotation_speed as integer
+
+dim motor_output_front_left as integer
+dim motor_output_rear_left as integer
+dim motor_output_front_right as integer
+dim motor_output_rear_right as integer
+
+dim front_mag_track_pos as integer	
+dim rear_mag_track_pos as integer
+dim left_mag_track_pos as integer
+dim right_mag_track_pos as integer
+
+dim front_track_center as integer
+dim rear_track_center as integer
+dim left_track_center as integer
+dim right_track_center as integer
+
+dim left_track_error as integer
+dim right_track_error as integer
+dim front_track_error as integer
+dim rear_track_error as integer
+dim lateral_error as integer
+dim heading_error as integer
+dim pre_lateral_error as integer
+dim pre_heading_error as integer
+
+dim lateral_error_delta as integer
+dim heading_error_delta as integer
+
+dim lateral_error_sum as integer
+dim heading_error_sum as integer
+
+dim throttle as integer
+
+'PID parameters
+dim straight_lateral_kp as integer
+dim straight_heading_kp as integer
+dim straight_lateral_kd as integer
+dim straight_heading_kd as integer
+dim straight_lateral_ki_inverse as integer
+dim straight_heading_ki_inverse as integer
+
+dim lateral_control_output as integer
+dim heading_control_output as integer
+dim control_output_clamp as integer	'clamp threshold
+
+dim front_tape_detect as boolean
+dim rear_tape_detect as boolean
+
+dim pre_front_tape_detect as boolean
+dim pre_rear_tape_detect as boolean
+
+dim tape_pos_array[8] as integer
+dim rear_sensor_left_marker as boolean
+dim pre_rear_sensor_left_marker as boolean
+
+dim cur_rover_status as integer
+dim pre_rover_status as integer
+dim new_marker_found as boolean
+dim default_straight_throttle as integer
+
+dim new_user_target_marker as integer
+dim pre_user_target_marker as integer
+
+dim pre_throttle as integer
+
+dim cur_marker as integer
+dim pre_marker as integer
+dim target_marker as integer
+dim pre_target_marker as integer
+
+dim full_stop_delay_count as integer
+dim delay_count as integer
+
+'user defined variables 
+setcommand(_VAR, 1, 0)	'target marker id
+'setcommand(_VAR, 2, 0)	'enter or exit chamber command
+'setcommand(_VAR, 3, 0)	'target stop location in chamber
+
+cur_rover_status = 0
+
+rc_up_down_center = 1497
+rc_left_right_center = 1505
+rc_rotate_center = 1334
+rc_dead_band = 10
+
+front_track_center = 0
+rear_track_center = 0	
+left_track_center = 0	
+right_track_center = 0	
+
+straight_lateral_kp = 4
+straight_heading_kp = 4
+straight_lateral_kd = 0
+straight_heading_kd = 0
+straight_lateral_ki_inverse = 200
+straight_heading_ki_inverse = 200
+
+control_output_clamp = 500
+
+default_straight_throttle = 250
+
+delay_count = 200
+
+cur_marker = 1
+
+target_marker = 1
+
+
+main:
+	new_user_target_marker = getvalue(_VAR, 1)	
+	if pre_user_target_marker <> new_user_target_marker
+		if new_user_target_marker >= 1 and new_user_target_marker <=3
+			target_marker = new_user_target_marker
+		end if
+		print("new_user_target_marker: ", new_user_target_marker, " tagert: ", target_marker,"\n")
+	end if
+	
+	rear_sensor_left_marker = getvalue(_MGM, 5)
+	
+	if pre_rear_sensor_left_marker <> rear_sensor_left_marker
+		print("rear sensor left marker ", rear_sensor_left_marker, "\n")
+	end if
+	
+	front_tape_detect = getvalue(_MGD, 1)
+	rear_tape_detect = getvalue(_MGD, 3)
+	
+	if pre_front_tape_detect <> front_tape_detect
+		print("front tape detect ", front_tape_detect, "\n")
+	end if
+	
+	if pre_rear_tape_detect <> rear_tape_detect
+		print("rear tape detect ", rear_tape_detect, "\n")
+	end if
+	
+	rc_gear_input = GetValue(_PLSIN, 7)
+	
+	if rc_gear_input<1400 
+		gosub tape_follow
+	else
+		gosub rc_remote
+	end if
+	'print("1: ", motor_output_front_left, "  2: ", motor_output_front_right, "  3: ", motor_output_rear_left, "  4: ", motor_output_rear_right, "\n")
+	gosub apply_motor_output
+	
+	pre_user_target_marker = new_user_target_marker
+	
+	pre_rear_sensor_left_marker = rear_sensor_left_marker
+	
+	pre_front_tape_detect = front_tape_detect
+	pre_rear_tape_detect = rear_tape_detect
+
+	
+	wait(10)
+goto main
+
+
+tape_follow:
+	tape_pos_array[0] = getvalue(_MGT, 2)	'front sensor left tape
+	tape_pos_array[1] = getvalue(_MGT, 1)	'front right	
+	tape_pos_array[2] = getvalue(_MGT, 7)	'rear left
+	tape_pos_array[3] = getvalue(_MGT, 8)	'rear right
+	'tape_pos_array[4] = getvalue(_MGT, 11)	'right left
+	'tape_pos_array[5] = getvalue(_MGT, 10)	'right right
+	'tape_pos_array[6] = getvalue(_MGT, 4)	'left left
+	'tape_pos_array[7] = getvalue(_MGT, 5)	'left right
+	
+	if front_tape_detect and rear_tape_detect	'RoAd only go straight
+		gosub tracking_on_tape
+	else	'no tape detected, stop
+		gosub zero_motor_output
+	end if
+
+	pre_lateral_error = lateral_error
+	pre_heading_error = heading_error
+
+	pre_rover_status = cur_rover_status
+	
+	pre_marker = cur_marker
+	pre_target_marker = target_marker
+	pre_throttle = throttle
+	return
+	
+
+tracking_on_tape:
+	if not pre_rear_sensor_left_marker and rear_sensor_left_marker	
+		new_marker_found = true
+	end if		
+	
+	'FINITE STATE MACHINE
+	if cur_rover_status = STOP_ON_MARKER'************************************
+		
+		'action
+		throttle = 0
+		if full_stop_delay_count < delay_count
+			full_stop_delay_count += 1
+		end if
+		
+		'transition check
+		if cur_marker <> target_marker
+			cur_rover_status = MOVE_ON_TAPE
+			full_stop_delay_count = 0
+		end if
+		
+	elseif cur_rover_status = MOVE_ON_TAPE'************************************
+	
+		'action
+		if cur_marker < target_marker
+			throttle = default_straight_throttle
+			if new_marker_found
+				cur_marker += 1
+			end if
+		elseif cur_marker > target_marker
+			throttle = -default_straight_throttle	'reverse
+			if new_marker_found
+				cur_marker -= 1
+			end if
+		end if
+
+		'transition check
+		if cur_marker = target_marker
+			cur_rover_status = STOP_ON_MARKER
+		end if 
+		
+	end if
+	
+	new_marker_found = false
+	
+	if pre_rover_status <> cur_rover_status or pre_target_marker <> target_marker or pre_throttle <> throttle	
+		print("target marker: ",target_marker, "\t cur_rover_status: ", cur_rover_status, "\t throttle: ", throttle,"\n")
+	end if
+	
+	
+	if full_stop_delay_count < delay_count
+		front_mag_track_pos = tape_pos_array[0]
+		
+		rear_mag_track_pos = tape_pos_array[2]
+		
+		front_track_error = front_track_center - front_mag_track_pos 
+		
+		rear_track_error = rear_mag_track_pos - rear_track_center
+		
+		lateral_error = front_track_error + rear_track_error
+		
+		heading_error = front_track_error - rear_track_error
+			
+		gosub integral_derivate_control_update
+		
+		lateral_control_output = lateral_error*straight_lateral_kp' + lateral_error_sum/straight_lateral_ki_inverse + lateral_error_delta*straight_lateral_kd
+		
+		heading_control_output = heading_error*straight_heading_kp' + heading_error_sum/straight_heading_ki_inverse + heading_error_delta*straight_heading_kd 
+		
+		gosub clamp_control_output
+		
+		rc_up_down_input = throttle
+		
+		rc_left_right_input = lateral_control_output
+	
+		rc_rotate_input = -heading_control_output
+		
+		gosub compute_motor_output
+		'print("lateral e sum: ",lateral_error_sum," heading e sum: ",heading_error_sum,"\n")
+		'print("lateral e : ", lateral_error, " heading e: ", heading_error, "\n")
+	else	'give some time to reach steady state then stop all motor
+		gosub zero_motor_output
+	end if
+	
+	return
+
+	
+	
+rc_remote:	'based on document Building a Magnetic Track Guided AGV
+	rc_up_down_input = GetValue(_PLSIN, 5)	' pulse input 5
+	rc_left_right_input = GetValue(_PLSIN, 6)
+	rc_rotate_input = GetValue(_PLSIN, 8)
+	
+	'print("updown: ", rc_up_down_input, " leftright:", rc_left_right_input, " rotate: ", rc_rotate_input,"\n")
+	
+	'right hand rule, z pointing up
+	'scale rc remote joystick pulse input to -1000~+1000
+	if rc_up_down_input < rc_up_down_center - rc_dead_band
+		rc_up_down_input = (rc_up_down_input - rc_up_down_center)*2
+		if rc_up_down_input > 0 then rc_up_down_input = 0
+	elseif rc_up_down_input > rc_up_down_center + rc_dead_band
+		rc_up_down_input = (rc_up_down_input - rc_up_down_center)*2
+		if rc_up_down_input < 0 then rc_up_down_input = 0
+	else
+		rc_up_down_input = 0	
+	end if
+	
+	if rc_left_right_input < rc_left_right_center - rc_dead_band
+		rc_left_right_input = (rc_left_right_input - rc_left_right_center)*2
+		if rc_left_right_input > 0 then rc_left_right_input = 0
+	elseif rc_left_right_input > rc_left_right_center + rc_dead_band
+		rc_left_right_input = (rc_left_right_input - rc_left_right_center)*2
+		if rc_left_right_input < 0 then rc_left_right_input = 0
+	else
+		rc_left_right_input = 0	
+	end if
+	
+	rc_left_right_input = -rc_left_right_input
+	
+	if rc_rotate_input < rc_rotate_center - rc_dead_band
+		rc_rotate_input = (rc_rotate_input - rc_rotate_center)*2
+		if rc_rotate_input > 0 then rc_rotate_input = 0
+	elseif rc_rotate_input > rc_rotate_center + rc_dead_band
+		rc_rotate_input = (rc_rotate_input - rc_rotate_center)*2	
+		if rc_rotate_input < 0 then rc_rotate_input = 0
+	else
+		rc_rotate_input = 0	
+	end if
+	
+	gosub compute_motor_output
+	
+	'print("updown: ", rc_up_down_input, " leftright:", rc_left_right_input, " rotate: ", rc_rotate_input,"\n")
+	'print("rc translate magnitude:", rc_translate_magnitude, " angle:", rc_translate_angle, "\n")
+	'print("1: ", motor_output_front_left, "  2: ", motor_output_front_right, "  3: ", motor_output_rear_left, "  4: ", motor_output_rear_right, "\n")
+	return
+	
+	
+compute_motor_output:
+	rc_translate_magnitude = (sqrt(rc_left_right_input*rc_left_right_input + rc_up_down_input*rc_up_down_input))/1000
+	
+	if rc_up_down_input <> 0
+		rc_translate_angle =  (atan(rc_left_right_input*1000/rc_up_down_input))/10 ' atan takes input * 1000 and returns angle in degrees * 10
+		if rc_left_right_input >= 0 and rc_up_down_input < 0
+			rc_translate_angle += 180
+		elseif rc_left_right_input < 0 and rc_up_down_input < 0
+			rc_translate_angle -= 180
+		end if
+	elseif rc_left_right_input > 0
+		rc_translate_angle = 90
+	elseif rc_left_right_input < 0
+		rc_translate_angle = -90
+	else
+		rc_translate_angle = 0
+	end if
+	
+	target_translate_speed = rc_translate_magnitude
+	target_translate_angle = rc_translate_angle
+	target_rotation_speed = -rc_rotate_input
+	target_translate_angle45 = target_translate_angle + 45 
+	motor_output_front_left = (target_translate_speed*sin(target_translate_angle45))/1000+target_rotation_speed
+	motor_output_front_right = -(target_translate_speed*cos(target_translate_angle45))/1000+target_rotation_speed
+	motor_output_rear_left = (target_translate_speed*cos(target_translate_angle45))/1000+target_rotation_speed
+	motor_output_rear_right = -(target_translate_speed*sin(target_translate_angle45))/1000+target_rotation_speed
+	return
+
+	
+apply_motor_output:
+	SetCANCommand(2, _G, 1, motor_output_front_right) 'Front Right
+	SetCANCommand(2, _G, 2, motor_output_rear_right) 'Rear Right
+	SetCommand(_G, 1, motor_output_front_left) 'Front Left
+	SetCommand(_G, 2, motor_output_rear_left) 'Rear Left
+	return
+	
+	
+zero_motor_output:
+	motor_output_front_left = 0
+	motor_output_rear_left = 0
+	motor_output_front_right = 0
+	motor_output_rear_right = 0
+	return
+	
+	
+clamp_control_output:
+	'clamp lateral control output
+	if lateral_control_output > control_output_clamp
+		lateral_control_output = control_output_clamp
+	elseif lateral_control_output < -control_output_clamp
+		lateral_control_output = -control_output_clamp
+	end if
+	'clamp heading control output
+	if heading_control_output > control_output_clamp
+		heading_control_output = control_output_clamp
+	elseif heading_control_output < -control_output_clamp
+		heading_control_output = -control_output_clamp
+	end if
+	return
+	
+	
+clear_integral_derivative_error:
+	lateral_error_sum = 0
+	heading_error_sum = 0
+	lateral_error_delta = 0
+	heading_error_delta = 0
+	return
+
+	
+integral_derivate_control_update:
+	lateral_error_delta = lateral_error - pre_lateral_error
+	heading_error_delta = heading_error - pre_heading_error
+	
+	'handle overflow
+	if lateral_error_sum + lateral_error < lateral_error_sum
+		lateral_error_sum = 0
+	end if
+	
+	if heading_error_sum + heading_error < heading_error_sum
+		heading_error_sum = 0
+	end if
+	
+	lateral_error_sum += lateral_error
+	heading_error_sum += heading_error
+	return

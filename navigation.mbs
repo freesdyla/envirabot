@@ -1,0 +1,733 @@
+#define STOP_ON_MAIN 0
+#define ON_MAIN 1	'moving on the main straight tape
+#define FORWARD_ON_BRANCH 2		'moving from main straight to branch
+#define REVERSE_ON_BRANCH 3	'moving from branch back to main straight tape
+#define STOP_AT_DOOR 4
+#define STOP_IN_CHAMBER 5
+#define CRAB_IN_CHAMBER 6
+option explicit
+
+dim rc_gear_input as integer	'rc remote pulse input for rc/tape mode switch
+dim rc_up_down_input as integer	'up value > down value. controlled by the right joystick
+dim rc_left_right_input as integer 'left value > right value. controlled by the right joystick
+dim rc_rotate_input as integer	'left joystick, left value > right value
+dim rc_up_down_center as integer
+dim rc_left_right_center as integer
+dim rc_rotate_center as integer
+dim rc_dead_band as integer
+
+dim rc_translate_magnitude as integer
+dim rc_translate_angle as integer
+
+dim target_translate_speed as integer
+dim target_translate_angle as integer	'+y = 0 degree
+dim target_translate_angle45 as integer
+dim target_rotation_speed as integer
+
+dim motor_output_front_left as integer
+dim motor_output_rear_left as integer
+dim motor_output_front_right as integer
+dim motor_output_rear_right as integer
+
+dim straight_line_select as integer
+dim crab_line_select as integer
+
+dim front_mag_track_pos as integer	
+dim rear_mag_track_pos as integer
+dim left_mag_track_pos as integer
+dim right_mag_track_pos as integer
+
+dim front_track_center as integer
+dim rear_track_center as integer
+dim left_track_center as integer
+dim right_track_center as integer
+
+dim left_track_error as integer
+dim right_track_error as integer
+dim front_track_error as integer
+dim rear_track_error as integer
+dim lateral_error as integer
+dim heading_error as integer
+dim pre_lateral_error as integer
+dim pre_heading_error as integer
+
+dim lateral_error_delta as integer
+dim heading_error_delta as integer
+
+dim lateral_error_sum as integer
+dim heading_error_sum as integer
+
+dim throttle as integer
+
+'PID parameters
+dim crab_lateral_kp as integer
+dim crab_heading_kp as integer
+dim straight_lateral_kp as integer
+dim straight_heading_kp as integer
+dim crab_lateral_kd as integer
+dim crab_heading_kd as integer
+dim straight_lateral_kd as integer
+dim straight_heading_kd as integer
+dim crab_lateral_ki_inverse as integer
+dim crab_heading_ki_inverse as integer
+dim straight_lateral_ki_inverse as integer
+dim straight_heading_ki_inverse as integer
+
+dim lateral_control_output as integer
+dim heading_control_output as integer
+dim control_output_clamp as integer	'clamp threshold
+
+dim front_tape_detect as boolean
+dim rear_tape_detect as boolean
+dim left_tape_detect as boolean
+dim right_tape_detect as boolean
+
+dim pre_front_tape_detect as boolean
+dim pre_rear_tape_detect as boolean
+dim pre_left_tape_detect as boolean
+dim pre_right_tape_detect as boolean
+
+dim tape_pos_array[8] as integer
+dim target_tape_segment as integer	'0~15
+dim cur_tape_segment as integer		'0~15
+dim front_sensor_left_marker as boolean
+dim front_sensor_right_marker as boolean
+dim pre_front_sensor_left_marker as boolean
+dim pre_front_sensor_right_marker as boolean
+dim branch_line_select_on_marker_detect as integer
+dim cur_rover_status as integer
+dim pre_rover_status as integer
+dim leaving_marker as integer
+dim default_straight_throttle as integer
+dim default_crab_throttle as integer
+
+dim stopped_at_door as boolean
+dim on_branch as boolean
+dim enter_chamber as boolean
+dim exit_chamber as boolean
+
+dim new_user_target_chamber as integer
+dim pre_user_target_chamber as integer
+dim new_user_enter_or_exit_chamber as integer
+dim pre_user_enter_or_exit_chamber as integer
+dim new_user_target_loc_in_chamber as integer
+dim pre_user_target_loc_in_chamber as integer
+
+dim pre_tape_segment as integer
+dim pre_target_tape_segment as integer
+dim pre_straight_line_select as integer
+dim pre_throttle as integer
+
+dim in_chamber as boolean
+dim loc_in_chamber as integer
+dim target_loc_in_chamber as integer
+dim right_sensor_right_marker as boolean
+dim pre_right_sensor_right_marker as boolean
+
+'user defined variables 
+'1: target chamber id
+setcommand(_VAR, 1, 0)	'target chamber id
+setcommand(_VAR, 2, 0)	'enter or exit chamber command
+setcommand(_VAR, 3, 0)	'target stop location in chamber
+
+cur_tape_segment = 0	'0=home, 1=chamber 1(left), 2=segment between chamber 1 and 2, 3=chamber 2(right), 3=segment between chamber 2 and 3...
+target_tape_segment = 0	'0=home, 1=chamber 1, ...
+cur_rover_status = 0
+
+rc_up_down_center = 1497
+rc_left_right_center = 1505
+rc_rotate_center = 1334
+rc_dead_band = 10
+
+front_track_center = 0
+rear_track_center = 0	
+left_track_center = 0	
+right_track_center = 0	
+
+crab_lateral_kp = 2
+crab_heading_kp = 3
+crab_lateral_kd = 0
+crab_heading_kd = 0
+crab_lateral_ki_inverse = 200000
+crab_heading_ki_inverse = 200000
+
+straight_lateral_kp = 4
+straight_heading_kp = 4
+straight_lateral_kd = 0
+straight_heading_kd = 0
+straight_lateral_ki_inverse = 200
+straight_heading_ki_inverse = 200
+
+control_output_clamp = 500
+
+default_straight_throttle = 250
+default_crab_throttle = 260
+
+branch_line_select_on_marker_detect = -1
+leaving_marker = -1
+
+main:
+	new_user_target_chamber = getvalue(_VAR, 1)	
+	if pre_user_target_chamber <> new_user_target_chamber
+		if new_user_target_chamber > 0 and new_user_target_chamber <=8
+			target_tape_segment = new_user_target_chamber * 2 - 1
+		elseif new_user_target_chamber = 0
+			target_tape_segment = 0
+		end if
+		print("new_user_target_chamber: ", new_user_target_chamber, " tagert: ", target_tape_segment,"\n")
+	end if
+	
+	new_user_enter_or_exit_chamber = getvalue(_VAR, 2)
+	if pre_user_enter_or_exit_chamber <> new_user_enter_or_exit_chamber
+		if new_user_enter_or_exit_chamber = 1
+			enter_chamber = true
+			print("enter_chamber\n")
+		elseif new_user_enter_or_exit_chamber = 2
+			exit_chamber = true
+			print("exit_chamber\n")
+		end if
+	end if
+	
+	new_user_target_loc_in_chamber = getvalue(_VAR, 3)
+	if new_user_target_loc_in_chamber <> pre_user_target_loc_in_chamber 
+		if new_user_target_loc_in_chamber >= 0 and new_user_target_loc_in_chamber <= 3
+			target_loc_in_chamber = new_user_target_loc_in_chamber
+			print("new_user_target_loc_in_chamber: ", new_user_target_loc_in_chamber,"\n")
+		end if
+	end if
+	
+	front_sensor_right_marker = getvalue(_MGM, 1)
+	front_sensor_left_marker = getvalue(_MGM, 2)
+	right_sensor_right_marker = getvalue(_MGM, 7)
+	
+	if pre_front_sensor_right_marker <> front_sensor_right_marker
+		print("front sensor right marker ", front_sensor_right_marker, "\n")
+	end if
+	
+	if pre_front_sensor_left_marker <> front_sensor_left_marker
+		print("front sensor left marker ", front_sensor_left_marker, "\n")
+	end if
+	
+	if pre_right_sensor_right_marker <> right_sensor_right_marker
+		print("right sensor right marker ", right_sensor_right_marker, "\n")
+	end if
+	
+	front_tape_detect = getvalue(_MGD, 1)
+	left_tape_detect = getvalue(_MGD, 2)
+	rear_tape_detect = getvalue(_MGD, 3)
+	right_tape_detect = getvalue(_MGD, 4)
+	
+	if pre_front_tape_detect <> front_tape_detect
+		print("front tape detect ", front_tape_detect, "\n")
+	end if
+	
+	if pre_left_tape_detect <> left_tape_detect
+		print("left tape detect ", left_tape_detect, "\n")
+	end if
+	
+	if pre_rear_tape_detect <> rear_tape_detect
+		print("rear tape detect ", rear_tape_detect, "\n")
+	end if
+	
+	if pre_right_tape_detect <> right_tape_detect
+		print("right tape detect ", right_tape_detect, "\n")
+	end if
+	
+	rc_gear_input = GetValue(_PLSIN, 7)
+	
+	if rc_gear_input<1400 
+		gosub tape_follow
+	else
+		gosub rc_remote
+	end if
+	'print("1: ", motor_output_front_left, "  2: ", motor_output_front_right, "  3: ", motor_output_rear_left, "  4: ", motor_output_rear_right, "\n")
+	gosub apply_motor_output
+	
+	pre_user_target_chamber = new_user_target_chamber
+	pre_user_enter_or_exit_chamber = new_user_enter_or_exit_chamber
+	pre_user_target_loc_in_chamber = new_user_target_loc_in_chamber
+	
+	pre_front_sensor_left_marker = front_sensor_left_marker
+	pre_front_sensor_right_marker = front_sensor_right_marker
+	pre_right_sensor_right_marker = right_sensor_right_marker
+	
+	pre_front_tape_detect = front_tape_detect
+	pre_left_tape_detect = left_tape_detect
+	pre_rear_tape_detect = rear_tape_detect
+	pre_right_tape_detect = right_tape_detect
+	
+	wait(10)
+goto main
+
+
+tape_follow:
+	tape_pos_array[0] = getvalue(_MGT, 2)	'front sensor left tape
+	tape_pos_array[1] = getvalue(_MGT, 1)	'front right	
+	tape_pos_array[2] = getvalue(_MGT, 7)	'rear left
+	tape_pos_array[3] = getvalue(_MGT, 8)	'rear right
+	tape_pos_array[4] = getvalue(_MGT, 11)	'right left
+	tape_pos_array[5] = getvalue(_MGT, 10)	'right right
+	tape_pos_array[6] = getvalue(_MGT, 4)	'left left
+	tape_pos_array[7] = getvalue(_MGT, 5)	'left right
+	
+	if front_tape_detect or rear_tape_detect or left_tape_detect or right_tape_detect
+		gosub tracking_on_tape
+	else	'no tape detected, stop
+		gosub zero_motor_output
+	end if
+
+	pre_lateral_error = lateral_error
+	pre_heading_error = heading_error
+
+	pre_rover_status = cur_rover_status
+	
+	pre_tape_segment = cur_tape_segment
+	pre_target_tape_segment = target_tape_segment
+	pre_straight_line_select = straight_line_select
+	pre_throttle = throttle
+	return
+	
+
+tracking_on_tape:
+	if pre_front_sensor_left_marker and not front_sensor_left_marker	'going off a left marker
+		leaving_marker = 0
+	elseif pre_front_sensor_right_marker and not front_sensor_right_marker		'going off a right marker
+		leaving_marker = 1
+	end if		
+	
+	'if leaving_marker <> -1
+	'	print("leaving marker: ",leaving_marker,"\n")
+	'end if
+	
+	if not pre_front_sensor_left_marker and front_sensor_left_marker	'found left marker
+		branch_line_select_on_marker_detect = 0
+	elseif not pre_front_sensor_right_marker and front_sensor_right_marker		'found right marker
+		branch_line_select_on_marker_detect = 1
+	end if
+	
+	'if branch_line_select_on_marker_detect <> -1
+	'	print("branch_line_select_on_marker_detect: ",branch_line_select_on_marker_detect,"\n")
+	'end if
+	
+	'FINITE STATE MACHINE
+	if cur_rover_status = STOP_ON_MAIN'************************************
+		
+		'action
+		throttle = 0
+		if on_branch
+			cur_tape_segment -= 1
+			on_branch = false
+			enter_chamber = false
+			exit_chamber = false
+		end if
+		
+		'transition check
+		if cur_tape_segment <> target_tape_segment - 1
+			if cur_tape_segment <> target_tape_segment
+				cur_rover_status = ON_MAIN
+			end if
+		else
+			cur_rover_status = FORWARD_ON_BRANCH
+		end if
+		
+	elseif cur_rover_status = ON_MAIN'************************************
+	
+		'action
+		if cur_tape_segment < target_tape_segment and cur_tape_segment <> target_tape_segment - 1	'keep reverse on main until marker gone
+			throttle = default_straight_throttle
+			if branch_line_select_on_marker_detect <> -1
+				cur_tape_segment += 2
+				gosub set_straight_line_select_as_opposite_branch_line_select
+			end if
+		elseif cur_tape_segment > target_tape_segment
+			throttle = -default_straight_throttle	'reverse
+			if branch_line_select_on_marker_detect <> -1
+				cur_tape_segment -= 2
+				straight_line_select = branch_line_select_on_marker_detect
+			end if
+		end if
+
+		'transition check
+		if throttle < -10 and leaving_marker <> -1	'in reverse
+			if cur_tape_segment = target_tape_segment - 1 or cur_tape_segment = target_tape_segment 
+				wait(400)
+				cur_rover_status = STOP_ON_MAIN
+				'print("STOP ON MAIN\n")
+			end if 
+		elseif throttle > 10	'in forward
+			if cur_tape_segment = target_tape_segment - 1
+				cur_rover_status = FORWARD_ON_BRANCH
+			end if
+		end if
+		
+	elseif cur_rover_status = FORWARD_ON_BRANCH'*****************************
+		
+		'transition
+		if on_branch and branch_line_select_on_marker_detect = 0
+			cur_rover_status = STOP_AT_DOOR
+		elseif stopped_at_door and left_tape_detect and right_tape_detect
+			cur_rover_status = STOP_IN_CHAMBER
+		end if
+	
+		'action
+		throttle = default_straight_throttle
+		if not on_branch and branch_line_select_on_marker_detect <> -1
+			cur_tape_segment += 1
+			on_branch = true
+			straight_line_select = branch_line_select_on_marker_detect
+		end if
+		
+	elseif cur_rover_status = REVERSE_ON_BRANCH'******************************
+	
+		'transition check
+		if not stopped_at_door and leaving_marker <> -1
+			wait(400)
+			cur_rover_status = STOP_ON_MAIN
+			'print("from reverse on branch to stop on main\n")
+		end if	
+		
+		'action
+		throttle = -default_straight_throttle
+		if stopped_at_door and leaving_marker = 0
+			stopped_at_door = false
+			'print("stopped at door set false\n")
+		end if
+		
+	elseif cur_rover_status = STOP_AT_DOOR
+	
+		'action
+		throttle = 0
+		stopped_at_door = true
+		
+		'transition check
+		if cur_tape_segment <> target_tape_segment
+			cur_rover_status = REVERSE_ON_BRANCH
+		elseif enter_chamber
+			cur_rover_status = FORWARD_ON_BRANCH
+		end if
+		
+	elseif cur_rover_status = STOP_IN_CHAMBER'**********************************
+		
+		'action
+		throttle = 0
+		if not in_chamber
+			loc_in_chamber = 0
+			in_chamber = true
+		end if
+		
+		'transition check
+		if exit_chamber and loc_in_chamber = 0
+			cur_rover_status = REVERSE_ON_BRANCH
+			in_chamber = false
+		elseif target_loc_in_chamber <> loc_in_chamber
+			cur_rover_status = CRAB_IN_CHAMBER
+		end if
+	
+	elseif cur_rover_status = CRAB_IN_CHAMBER'*********************************
+	
+		'action
+		if target_loc_in_chamber > loc_in_chamber
+			throttle = default_crab_throttle	'crab right
+			if right_sensor_right_marker and not pre_right_sensor_right_marker
+					loc_in_chamber += 1
+					'wait(10)	
+			end if
+		elseif target_loc_in_chamber < loc_in_chamber
+			throttle = -default_crab_throttle	'crab left
+			if right_sensor_right_marker and not pre_right_sensor_right_marker
+					loc_in_chamber -= 1
+					'wait(10)	
+			elseif front_tape_detect and left_tape_detect and rear_tape_detect and right_tape_detect
+				loc_in_chamber = 0
+				wait(400)
+			end if
+		end if
+		
+		'transition check
+		if loc_in_chamber = target_loc_in_chamber
+			cur_rover_status = STOP_IN_CHAMBER
+		end if
+	end if
+	
+	leaving_marker = -1
+	
+	branch_line_select_on_marker_detect = -1
+	
+	if pre_straight_line_select <> straight_line_select or pre_rover_status <> cur_rover_status or pre_tape_segment <> cur_tape_segment or pre_target_tape_segment <> target_tape_segment or pre_throttle <> throttle	
+		print("cur tape: ",cur_tape_segment,"\t target tape: ",target_tape_segment,"\t straight_line_select: ",straight_line_select, "\t cur_rover_status: ", cur_rover_status, "\t throttle: ", throttle,"\n")
+	end if
+	
+	if in_chamber	'crab
+		right_mag_track_pos = tape_pos_array[4]
+		left_mag_track_pos = tape_pos_array[6]
+		
+		left_track_error = left_track_center - left_mag_track_pos
+	
+		right_track_error = right_mag_track_pos - right_track_center
+		
+		lateral_error = left_track_error + right_track_error
+		
+		heading_error = left_track_error - right_track_error
+		
+		'gosub integral_derivate_control_update
+		
+		lateral_control_output = lateral_error*crab_lateral_kp' + lateral_error_sum/crab_lateral_ki_inverse + lateral_error_delta*crab_lateral_kd
+		
+		heading_control_output = heading_error*crab_heading_kp' + heading_error_sum/crab_heading_ki_inverse + heading_error_delta*crab_heading_kd 
+		
+		gosub clamp_control_output
+		
+		rc_up_down_input = lateral_control_output
+		
+		rc_left_right_input = throttle
+	else	'go straight
+		'0=left tape, 1=right tape
+		if straight_line_select = 0
+			front_mag_track_pos = tape_pos_array[0]
+			rear_mag_track_pos = tape_pos_array[2]
+		else
+			front_mag_track_pos = tape_pos_array[1]
+			rear_mag_track_pos = tape_pos_array[3]
+		end if
+		
+		front_track_error = front_track_center - front_mag_track_pos 
+		
+		rear_track_error = rear_mag_track_pos - rear_track_center
+		
+		lateral_error = front_track_error + rear_track_error
+		
+		heading_error = front_track_error - rear_track_error
+			
+		gosub integral_derivate_control_update
+		
+		lateral_control_output = lateral_error*straight_lateral_kp' + lateral_error_sum/straight_lateral_ki_inverse + lateral_error_delta*straight_lateral_kd
+		
+		heading_control_output = heading_error*straight_heading_kp' + heading_error_sum/straight_heading_ki_inverse + heading_error_delta*straight_heading_kd 
+		
+		gosub clamp_control_output
+		
+		rc_up_down_input = throttle
+		
+		rc_left_right_input = lateral_control_output
+	end if
+
+	rc_rotate_input = -heading_control_output
+	
+	gosub compute_motor_output
+	'print("lateral e sum: ",lateral_error_sum," heading e sum: ",heading_error_sum,"\n")
+	'print("lateral e : ", lateral_error, " heading e: ", heading_error, "\n")
+	return
+
+	
+set_straight_line_select_as_opposite_branch_line_select:
+	if branch_line_select_on_marker_detect = 0
+		straight_line_select = 1
+	elseif branch_line_select_on_marker_detect = 1
+		straight_line_select = 0
+	end if
+	return	
+
+	
+crab_on_tape:
+	'if rc remote on, this can change line select
+	if rc_gear_input > 100
+		'use right joystick left right direction to control crab line select
+		rc_left_right_input = GetValue(_PLSIN, 6)
+		if rc_left_right_input > rc_left_right_center + 100
+			crab_line_select = 0	
+		elseif rc_left_right_input < rc_left_right_center - 100
+			crab_line_select = 1
+		end if	
+	end if
+	
+	'0=left tape, 1=right tape
+	if crab_line_select = 0
+		right_mag_track_pos = tape_pos_array[4]
+		left_mag_track_pos = tape_pos_array[6]
+	else
+		right_mag_track_pos = tape_pos_array[5]
+		left_mag_track_pos = tape_pos_array[7]
+	end if
+
+	left_track_error = left_track_center - left_mag_track_pos
+	
+	right_track_error = right_mag_track_pos - right_track_center
+	
+	lateral_error = left_track_error + right_track_error
+	
+	heading_error = left_track_error - right_track_error
+	
+	'gosub integral_derivate_control_update
+	
+	lateral_control_output = lateral_error*crab_lateral_kp' + lateral_error_sum/crab_lateral_ki_inverse + lateral_error_delta*crab_lateral_kd
+	
+	heading_control_output = heading_error*crab_heading_kp' + heading_error_sum/crab_heading_ki_inverse + heading_error_delta*crab_heading_kd 
+
+	gosub clamp_control_output
+	
+	rc_up_down_input = lateral_control_output
+	
+	rc_left_right_input = throttle
+	
+	rc_rotate_input = -heading_control_output
+	
+	gosub compute_motor_output
+	
+	'print("le: ", left_track_error, " re: ", right_track_error, "\n")
+	'print("lateral_control_output: ",lateral_control_output,"\n")
+	'print("heading_control_output: ",heading_control_output,"\n")
+	'print("lateral e : ", lateral_error, " heading e: ", heading_error, "\n")
+	'print("lateral e sum: ", lateral_error_sum, " heading e sum: ", heading_error_sum, "\n")
+	'print("lateral e der: ", lateral_error_delta, " heading e der: ", heading_error_delta, "\n")
+	'print("\n")
+	return
+	
+	
+rc_overwrite_line_select:
+	'if rc remote on, this can change line select
+	if rc_gear_input > 100
+		'use right joystick left right direction to control straight line select
+		rc_left_right_input = GetValue(_PLSIN, 6)
+		if rc_left_right_input > rc_left_right_center + 100
+			straight_line_select = 0	
+		elseif rc_left_right_input < rc_left_right_center - 100
+			straight_line_select = 1
+		end if	
+	end if
+	return
+
+	
+rc_remote:	'based on document Building a Magnetic Track Guided AGV
+	rc_up_down_input = GetValue(_PLSIN, 5)	' pulse input 5
+	rc_left_right_input = GetValue(_PLSIN, 6)
+	rc_rotate_input = GetValue(_PLSIN, 8)
+	
+	'print("updown: ", rc_up_down_input, " leftright:", rc_left_right_input, " rotate: ", rc_rotate_input,"\n")
+	
+	'right hand rule, z pointing up
+	'scale rc remote joystick pulse input to -1000~+1000
+	if rc_up_down_input < rc_up_down_center - rc_dead_band
+		rc_up_down_input = (rc_up_down_input - rc_up_down_center)*2
+		if rc_up_down_input > 0 then rc_up_down_input = 0
+	elseif rc_up_down_input > rc_up_down_center + rc_dead_band
+		rc_up_down_input = (rc_up_down_input - rc_up_down_center)*2
+		if rc_up_down_input < 0 then rc_up_down_input = 0
+	else
+		rc_up_down_input = 0	
+	end if
+	
+	if rc_left_right_input < rc_left_right_center - rc_dead_band
+		rc_left_right_input = (rc_left_right_input - rc_left_right_center)*2
+		if rc_left_right_input > 0 then rc_left_right_input = 0
+	elseif rc_left_right_input > rc_left_right_center + rc_dead_band
+		rc_left_right_input = (rc_left_right_input - rc_left_right_center)*2
+		if rc_left_right_input < 0 then rc_left_right_input = 0
+	else
+		rc_left_right_input = 0	
+	end if
+	
+	rc_left_right_input = -rc_left_right_input
+	
+	if rc_rotate_input < rc_rotate_center - rc_dead_band
+		rc_rotate_input = (rc_rotate_input - rc_rotate_center)*2
+		if rc_rotate_input > 0 then rc_rotate_input = 0
+	elseif rc_rotate_input > rc_rotate_center + rc_dead_band
+		rc_rotate_input = (rc_rotate_input - rc_rotate_center)*2	
+		if rc_rotate_input < 0 then rc_rotate_input = 0
+	else
+		rc_rotate_input = 0	
+	end if
+	
+	gosub compute_motor_output
+	
+	'print("updown: ", rc_up_down_input, " leftright:", rc_left_right_input, " rotate: ", rc_rotate_input,"\n")
+	'print("rc translate magnitude:", rc_translate_magnitude, " angle:", rc_translate_angle, "\n")
+	'print("1: ", motor_output_front_left, "  2: ", motor_output_front_right, "  3: ", motor_output_rear_left, "  4: ", motor_output_rear_right, "\n")
+	return
+	
+	
+compute_motor_output:
+	rc_translate_magnitude = (sqrt(rc_left_right_input*rc_left_right_input + rc_up_down_input*rc_up_down_input))/1000
+	
+	if rc_up_down_input <> 0
+		rc_translate_angle =  (atan(rc_left_right_input*1000/rc_up_down_input))/10 ' atan takes input * 1000 and returns angle in degrees * 10
+		if rc_left_right_input >= 0 and rc_up_down_input < 0
+			rc_translate_angle += 180
+		elseif rc_left_right_input < 0 and rc_up_down_input < 0
+			rc_translate_angle -= 180
+		end if
+	elseif rc_left_right_input > 0
+		rc_translate_angle = 90
+	elseif rc_left_right_input < 0
+		rc_translate_angle = -90
+	else
+		rc_translate_angle = 0
+	end if
+	
+	target_translate_speed = rc_translate_magnitude
+	target_translate_angle = rc_translate_angle
+	target_rotation_speed = -rc_rotate_input
+	target_translate_angle45 = target_translate_angle + 45 
+	motor_output_front_left = (target_translate_speed*sin(target_translate_angle45))/1000+target_rotation_speed
+	motor_output_front_right = -(target_translate_speed*cos(target_translate_angle45))/1000+target_rotation_speed
+	motor_output_rear_left = (target_translate_speed*cos(target_translate_angle45))/1000+target_rotation_speed
+	motor_output_rear_right = -(target_translate_speed*sin(target_translate_angle45))/1000+target_rotation_speed
+	return
+
+	
+apply_motor_output:
+	SetCANCommand(2, _G, 1, motor_output_front_right) 'Front Right
+	SetCANCommand(2, _G, 2, motor_output_rear_right) 'Rear Right
+	SetCommand(_G, 1, motor_output_front_left) 'Front Left
+	SetCommand(_G, 2, motor_output_rear_left) 'Rear Left
+	return
+	
+	
+zero_motor_output:
+	motor_output_front_left = 0
+	motor_output_rear_left = 0
+	motor_output_front_right = 0
+	motor_output_rear_right = 0
+	return
+	
+	
+clamp_control_output:
+	'clamp lateral control output
+	if lateral_control_output > control_output_clamp
+		lateral_control_output = control_output_clamp
+	elseif lateral_control_output < -control_output_clamp
+		lateral_control_output = -control_output_clamp
+	end if
+	'clamp heading control output
+	if heading_control_output > control_output_clamp
+		heading_control_output = control_output_clamp
+	elseif heading_control_output < -control_output_clamp
+		heading_control_output = -control_output_clamp
+	end if
+	return
+	
+	
+clear_integral_derivative_error:
+	lateral_error_sum = 0
+	heading_error_sum = 0
+	lateral_error_delta = 0
+	heading_error_delta = 0
+	return
+
+	
+integral_derivate_control_update:
+	lateral_error_delta = lateral_error - pre_lateral_error
+	heading_error_delta = heading_error - pre_heading_error
+	
+	'handle overflow
+	if lateral_error_sum + lateral_error < lateral_error_sum
+		lateral_error_sum = 0
+	end if
+	
+	if heading_error_sum + heading_error < heading_error_sum
+		heading_error_sum = 0
+	end if
+	
+	lateral_error_sum += lateral_error
+	heading_error_sum += heading_error
+	return
