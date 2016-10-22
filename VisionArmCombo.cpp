@@ -4,6 +4,47 @@ VisionArmCombo::VisionArmCombo() :
 	voxel_grid_size_(0.002f),
 	counter_(0)
 {
+	initVisionCombo();
+}
+
+void VisionArmCombo::initVisionCombo()
+{
+	tool_center_point_ << 0.0360241, -0.0434969, 0.183875;	//9/22/2016
+
+	probe_to_hand_ = Eigen::Matrix4d::Identity();
+
+	probe_to_hand_.col(3).head<3>() = tool_center_point_.cast<double>();
+
+	probe_to_hand_ = probe_to_hand_.inverse();
+
+	cv::FileStorage fs("kinectRGBCalibration.yml", cv::FileStorage::READ);
+
+	fs["camera_matrix"] >> kinect_rgb_camera_matrix_cv_;
+
+	fs["distortion_coefficients"] >> kinect_rgb_dist_coeffs_cv_;
+
+	fs.release();
+
+	fs.open("kinectRGBHandEyeCalibration.yml", cv::FileStorage::READ);
+
+	fs["hand to eye"] >> kinect_rgb_hand_to_eye_cv_;
+
+	fs.release();
+
+	cvTransformToEigenTransform(kinect_rgb_hand_to_eye_cv_, hand_to_rgb_);
+
+	marker_dictionary_ = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_50);
+
+	detector_params_ = cv::aruco::DetectorParameters::create();
+
+	detector_params_->doCornerRefinement = true; // do corner refinement in markers
+
+	marker_length_ = 0.1016f;	//4 inch
+
+	cur_rgb_to_marker_ = Eigen::Matrix4d::Identity();
+
+	return;
+
 	pre_point_ << 0, 0, 0;
 
 	guessHandToScanner_ = Eigen::Matrix4f::Identity();
@@ -31,17 +72,6 @@ VisionArmCombo::VisionArmCombo() :
 	}
 	else std::cout << "lineScannerHandEyeCalibration load fail\n";
 	file.close();
-
-	//tool_center_point_ << 0.04, -0.04, 0.19;
-	//tool_center_point_ << 0.035425, -0.0445422, 0.184104;
-
-	tool_center_point_ << 0.0360241, -0.0434969, 0.183875;	//9/22/2016
-
-	probe_to_hand_ = Eigen::Matrix4d::Identity();
-	
-	probe_to_hand_.col(3).head<3>() = tool_center_point_.cast<double>();
-
-	probe_to_hand_ = probe_to_hand_.inverse();
 
 	scan_start_to_hand_ = Eigen::Matrix4d::Identity();
 
@@ -90,7 +120,7 @@ VisionArmCombo::VisionArmCombo() :
 
 	sor_.setMeanK(50);
 	sor_.setStddevMulThresh(1.0);
-	
+
 
 	viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
 	viewer_->addCoordinateSystem(0.3);
@@ -129,6 +159,17 @@ void VisionArmCombo::array6ToEigenMat4d(double* array6, Eigen::Matrix4d & mat4d)
 	rotationMatrix = Eigen::AngleAxisd(angle, axis);
 	mat4d.block<3, 3>(0, 0) = rotationMatrix;
 	mat4d(0, 3) = array6[0]; mat4d(1, 3) = array6[1]; mat4d(2, 3) = array6[2];
+}
+
+void VisionArmCombo::eigenMat4dToArray6(Eigen::Matrix4d & mat4d, double * array6)
+{
+	Eigen::AngleAxisd angle_axis(mat4d.topLeftCorner<3,3>());
+
+	array6[0] = mat4d(0, 3); array6[1] = mat4d(1, 3); array6[2] = mat4d(2, 3);
+
+	Eigen::Vector3d rotation_vector = angle_axis.angle()*angle_axis.axis();
+
+	array6[3] = rotation_vector[0]; array6[4] = rotation_vector[1]; array6[5] = rotation_vector[2];
 }
 
 void VisionArmCombo::array6ToEigenMat4(double* array6, Eigen::Matrix4f & mat4)
@@ -2563,6 +2604,15 @@ void VisionArmCombo::getCurHandPose(Eigen::Matrix4f & pose)
 	array6ToEigenMat4(array6, pose);
 }
 
+void VisionArmCombo::getCurHandPoseD(Eigen::Matrix4d & pose)
+{
+	double array6[6];
+
+	robot_arm_client_->getCartesianInfo(array6);
+
+	array6ToEigenMat4d(array6, pose);
+}
+
 void VisionArmCombo::probeScannedSceneTest(PointCloudT::Ptr cloud)
 {
 	//viewer_->removeAllPointClouds();
@@ -2895,4 +2945,464 @@ void VisionArmCombo::display()
 {
 	if (view_time_ == 0) viewer_->spin();
 	else viewer_->spinOnce(view_time_);
+}
+
+void VisionArmCombo::calibrateKinectRGBCamera()
+{
+	if (robot_arm_client_ == NULL) initRobotArmClient();
+	if (kinect_thread_ == NULL)	initKinectThread();
+
+	int nframes = 10;
+
+	if (nframes % 2 != 0 || nframes < 6)
+	{
+		std::cout << "number of frames not even or not enough\n";
+		return;
+	}
+
+	cv::Mat cameraMatrix, distCoeffs;
+	std::vector<cv::Mat> image_vec;
+	std::vector<Eigen::Matrix4d*> tcp_pose_vec; tcp_pose_vec.resize(nframes);
+	cv::Size boardSize, imageSize;
+	float squareSize, aspectRatio;
+
+	std::vector<std::vector<cv::Point2f>> imagePoints;
+
+	// IMPORTANT
+	cv::SimpleBlobDetector::Params params;
+	params.maxArea = 200 * 200;
+	params.minArea = 20 * 20;
+	cv::Ptr<cv::FeatureDetector> blobDetect = cv::SimpleBlobDetector::create(params);
+
+	imageSize.width = kinect_thread_->cColorWidth;
+	imageSize.height = kinect_thread_->cColorHeight;
+
+	boardSize.width = 4;
+	boardSize.height = 11;
+
+	squareSize = 0.02f;
+
+	for (int i = 0; i < nframes; i++)
+	{
+		cv::Mat view, viewGray;
+
+		std::vector<cv::Point2f> pointbuf;
+
+		while (true)
+		{
+			view = kinect_thread_->getCurRGB();
+
+			cv::cvtColor(view, viewGray, CV_BGR2GRAY);
+
+			pointbuf.clear();
+
+			// ASYMMETRIC CIRCLE GRID PATTERN
+			bool found = findCirclesGrid(view, boardSize, pointbuf, cv::CALIB_CB_ASYMMETRIC_GRID | cv::CALIB_CB_CLUSTERING, blobDetect);
+
+			cv::Mat view_copy;
+			
+			view.copyTo(view_copy);
+
+			if (found)
+			{
+				cv::drawChessboardCorners(view_copy, boardSize, cv::Mat(pointbuf), found);
+				cv::circle(view_copy, pointbuf[0], 30, cv::Scalar(0, 255, 0), 4);
+				cv::circle(view_copy, pointbuf[1], 30, cv::Scalar(0, 0, 255), 4);
+			}
+
+			cv::Mat shrinked;
+
+			cv::resize(view_copy, shrinked, cv::Size(), 0.5, 0.5);
+
+			cv::imshow("rgb", shrinked);
+
+			int key = cv::waitKey(1);
+
+			//hit space
+			if (key == 32)	break;
+		}
+
+		std::cout << "Image " << i << " done\n";
+
+		cv::Mat view_save;
+
+		view.copyTo(view_save);
+
+		image_vec.push_back(view_save);
+
+		imagePoints.push_back(pointbuf);
+
+		double array6[6];
+
+		robot_arm_client_->getCartesianInfo(array6);
+
+		Eigen::Matrix4d* tcp_pose = new Eigen::Matrix4d;
+
+		array6ToEigenMat4d(array6, *tcp_pose);
+
+		std::cout << *tcp_pose << "\n";
+
+		tcp_pose_vec[i] = tcp_pose;
+	}
+
+	cameraMatrix = cv::Mat::eye(3, 3, CV_64F);
+
+	distCoeffs = cv::Mat::zeros(8, 1, CV_64F);
+
+	std::vector<std::vector<cv::Point3f>> objectPoints(1);
+
+	std::vector<cv::Point3f> corners;
+
+	for (int i = 0; i < boardSize.height; i++)
+	{
+		for (int j = 0; j < boardSize.width; j++)
+		{
+			corners.push_back(cv::Point3f(float((2 * j + i % 2)*squareSize), float(i*squareSize), 0));
+		}
+	}
+
+	objectPoints[0] = corners;
+
+	objectPoints.resize(imagePoints.size(), objectPoints[0]);
+
+	std::vector<cv::Mat> camera_rotation_vec, camera_translation_vec;	//camera to calibration pattern
+
+	double rms = cv::calibrateCamera(objectPoints, imagePoints, imageSize, cameraMatrix, distCoeffs, camera_rotation_vec, camera_translation_vec, 0);
+
+	printf("RMS error reported by calibrateCamera: %g\n", rms);
+
+	/*for (int i = 0; i < image_vec.size(); i++)
+	{
+		std::cout << "rotation\n" << camera_rotation_vec[i] << "\ntranslation\n" << camera_translation_vec[i]<<"\n";
+		cv::imshow("image", image_vec[i]);
+		cv::waitKey(0);
+	}*/
+
+	bool ok = cv::checkRange(cameraMatrix) && cv::checkRange(distCoeffs);
+
+	cv::FileStorage fs("kinectRGBCalibration.yml", cv::FileStorage::WRITE);
+
+	fs << "camera_matrix" << cameraMatrix;
+	fs << "distortion_coefficients" << distCoeffs;
+	fs << "nframes" << nframes;
+	fs << "camera poses" << "[";
+	for (int i = 0; i < nframes; i++)
+	{
+		cv::Mat rotation;
+		cv::Rodrigues(camera_rotation_vec[i], rotation);
+		cv::Mat transform = cv::Mat::eye(4, 4,CV_64F);
+		cv::Mat sub = transform(cv::Rect(0, 0, 3, 3));
+		rotation.copyTo(sub);
+		sub = transform(cv::Rect(3, 0, 1, 3));
+		camera_translation_vec[i].copyTo(sub);
+
+		fs << transform;
+	}
+	fs << "]";
+
+	fs << "TCP poses" << "[";
+	for (int i = 0; i < nframes; i++)
+	{
+		cv::Mat tcp_pose(4, 4, CV_64F);
+		for (int y = 0; y < 4; y++)
+			for (int x = 0; x < 4; x++)
+				tcp_pose.at<double>(y, x) = (*tcp_pose_vec[i])(y, x);
+
+		fs << tcp_pose;
+	}
+	fs << "]";
+
+	fs.release();
+}
+
+/*
+	robot sensor calibration solving ax=xb on euclidean group 1994
+*/
+void VisionArmCombo::KinectRGBHandEyeCalibration()
+{
+	cv::FileStorage fs("kinectRGBCalibration.yml", cv::FileStorage::READ);
+	cv::FileNode camera_poses = fs["camera poses"];
+	cv::FileNode tcp_poses = fs["TCP poses"];
+
+	int nframes;
+
+	fs["nframes"] >> nframes;
+
+	std::vector<Eigen::Matrix4d*> camera_pose_vec; 
+	std::vector<Eigen::Matrix4d*> tcp_pose_vec;	
+
+	// iterate through a sequence using FileNodeIterator
+	for (cv::FileNodeIterator it = camera_poses.begin(); it != camera_poses.end(); ++it)
+	{
+		cv::Mat camera_pose;
+		(*it) >> camera_pose;
+
+		Eigen::Matrix4d* transform = new Eigen::Matrix4d;
+
+		for (int y = 0; y < 4; y++)
+			for (int x = 0; x < 4; x++)
+				(*transform)(y, x) = camera_pose.at<double>(y, x);
+
+		camera_pose_vec.push_back(transform);
+	}
+
+	for (cv::FileNodeIterator it = tcp_poses.begin(); it != tcp_poses.end(); ++it)
+	{
+		cv::Mat tcp_pose;
+		(*it) >> tcp_pose;
+
+		Eigen::Matrix4d* transform = new Eigen::Matrix4d;
+
+		for (int y = 0; y < 4; y++)
+			for (int x = 0; x < 4; x++)
+				(*transform)(y, x) = tcp_pose.at<double>(y, x);
+
+		tcp_pose_vec.push_back(transform);
+	}
+
+	fs.release();
+
+	// hand eye calibration
+	Eigen::Matrix3d M = Eigen::Matrix3d::Zero();
+	Eigen::MatrixXd C(3 * nframes *(nframes-1), 3);
+	Eigen::VectorXd d(3 * nframes * (nframes-1));
+	Eigen::VectorXd bA(3 * nframes * (nframes-1));
+	Eigen::VectorXd bB(3 * nframes * (nframes-1));
+
+	int count = 0;
+
+	for (int i = 0; i < nframes; i++)
+	{
+		for (int j = 0; j < nframes; j++)
+		{
+			if (i == j) continue;
+
+			// TCP pose motion
+			Eigen::Matrix4d A;
+			A = (*tcp_pose_vec[i]).inverse() * (*tcp_pose_vec[j]);	//base to robot hand
+
+			// camera pose motion
+			Eigen::Matrix4d B;
+			B = (*camera_pose_vec[i])*(*camera_pose_vec[j]).inverse();	//camera to calibration board
+
+			//log Rotation
+			Eigen::Matrix3d alpha, beta;
+
+			double theta = acos(0.5*(A.block<3, 3>(0, 0).trace() - 1.));
+
+			alpha = theta*0.5 / sin(theta)*(A.block<3, 3>(0, 0) - A.block<3, 3>(0, 0).transpose());
+
+			theta = acos(0.5*(B.block<3, 3>(0, 0).trace() - 1.));
+
+			beta = theta*0.5 / sin(theta)*(B.block<3, 3>(0, 0) - B.block<3, 3>(0, 0).transpose());
+
+			M = M + beta*alpha.transpose();
+
+			C.block<3, 3>(count * 3, 0) = Eigen::Matrix3d::Identity() - A.block<3, 3>(0, 0);
+			bA.block<3, 1>(count * 3, 0) = A.block<3, 1>(0, 3);
+			bB.block<3, 1>(count * 3, 0) = B.block<3, 1>(0, 3);
+			count++;
+		}
+	}
+
+	Eigen::EigenSolver<Eigen::Matrix3d> es(M.transpose()*M);
+
+	Eigen::Matrix3d lambda;
+
+	lambda = es.eigenvalues().real().cwiseSqrt().cwiseInverse().asDiagonal();
+	
+	Eigen::Matrix3d hand_to_eye_rotation = es.eigenvectors().real()*lambda*es.eigenvectors().real().inverse()*M.transpose();
+
+	for (int i = 0; i < nframes*(nframes - 1); i++)
+		bB.block<3, 1>(i * 3, 0) = hand_to_eye_rotation*bB.block<3, 1>(i * 3, 0);
+
+	d = bA - bB;
+
+	Eigen::Vector3d hand_to_eye_translation = (C.transpose()*C).inverse()*C.transpose()*d;
+
+	cv::Mat hand_to_eye = cv::Mat::eye(4, 4, CV_64F);
+
+	for (int y = 0; y < 3; y++)
+		for (int x = 0; x < 3; x++)
+			hand_to_eye.at<double>(y, x) = hand_to_eye_rotation(y, x);
+
+	for (int i = 0; i < 3; i++)
+		hand_to_eye.at<double>(i, 3) = hand_to_eye_translation(i);
+
+	std::cout << "hand to eye\n" << hand_to_eye << "\n";
+
+	cv::FileStorage fs1("kinectRGBHandEyeCalibration.yml", cv::FileStorage::WRITE);
+
+	fs1 << "hand to eye" << hand_to_eye;
+
+	fs1.release();
+}
+
+void VisionArmCombo::markerDetection()
+{
+	cv::Mat markerImage;
+	/*//make pot grid with marker 
+	int marker_img_size = 1400;	//multiple of 5+2
+	int grid_width = 7;
+	int grid_height = 5;
+
+	cv::aruco::drawMarker(marker_dictionary_, 0, marker_img_size, markerImage, 1);
+
+	cv::Mat block;
+	block.create(marker_img_size, marker_img_size, CV_8UC3);
+	std::memset(block.ptr(), 255, marker_img_size * marker_img_size * 3);
+	
+	cv::circle(block, cv::Point2f(marker_img_size*0.5f, marker_img_size*0.5f), marker_img_size / 3, cv::Scalar(0, 0, 0), 4);
+
+	cv::circle(block, cv::Point2f(marker_img_size*0.5f, marker_img_size*0.5f), 40, cv::Scalar(0, 0, 0), 40);
+
+	//cv::imshow("block", block);
+
+	//cv::waitKey(0);
+
+	cv::Mat block_grid;
+
+	block_grid.create(marker_img_size * grid_height, marker_img_size * grid_width, CV_8UC3);
+
+	for (int y = 0; y < grid_height; y++)
+	{
+		for (int x = 0; x < grid_width; x++)
+		{
+			block.copyTo(block_grid(cv::Rect(x*marker_img_size, y*marker_img_size, marker_img_size, marker_img_size)));
+		}
+	}
+
+	cv::Mat marker_img;
+
+	cv::cvtColor(markerImage, marker_img, CV_GRAY2BGR);
+	marker_img.copyTo(block_grid(cv::Rect((grid_width/2)*marker_img_size, (grid_height/2)*marker_img_size, marker_img_size, marker_img_size)));
+
+	cv::imwrite("block_grid.png", block_grid);
+
+	cv::Mat shrink;
+	cv::resize(block_grid, shrink, cv::Size(), 0.1, 0.1);
+
+	cv::imshow("block gird", shrink);
+	cv::waitKey(0);
+
+	return;
+	*/
+
+	/*	//generate marker images and save
+	for (int i = 0; i < 50; i++)
+	{
+		cv::aruco::drawMarker(marker_dictionary_, i, 700, markerImage, 1);
+
+		cv::imshow("marker", markerImage);
+
+		cv::imwrite("Markers\\marker_" + std::to_string(i) + ".png", markerImage);
+
+		cv::waitKey(100);
+	}*/
+
+	if (robot_arm_client_ == NULL) initRobotArmClient();
+
+	if (kinect_thread_ == NULL)	initKinectThread();
+
+	cv::Mat rgb;
+	cv::Vec3d rot;
+	cv::Vec3d tran;
+
+	ArmConfig config;
+	config.setJointPos(-81.19, -87.82, -134.09, -45.84, 89.79, -173.62);
+	config.toRad();
+
+	robot_arm_client_->moveHandJ(config.joint_pos_d, 0.1, 0.1, true);
+
+
+	while (true)
+	{
+		rgb = kinect_thread_->getCurRGB();
+
+		std::vector<int> markerIds; 
+		std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
+		cv::aruco::detectMarkers(rgb, marker_dictionary_, markerCorners, markerIds, detector_params_, rejectedCandidates);
+		
+		std::vector<cv::Vec3d> rvecs, tvecs;
+
+		cv::aruco::estimatePoseSingleMarkers(markerCorners, marker_length_, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, rvecs, tvecs);
+
+		cv::aruco::drawDetectedMarkers(rgb, markerCorners, markerIds);
+
+		for (unsigned int i = 0; i < markerIds.size(); i++)
+		{
+			cv::aruco::drawAxis(rgb, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, rvecs[i], tvecs[i], marker_length_*0.5f);
+			std::cout <<"id "<< i<<" rot " << rvecs[i] << " tran " << tvecs[i]<<"\n";
+			rot = rvecs[i];
+			tran = tvecs[i];
+		}
+
+		cv::imshow("marker", rgb);
+
+		int key = cv::waitKey(10);
+
+		if (key == 113)	//q
+		{
+			break;
+		}
+	}
+
+	cv::Mat rgb_to_marker_rot_cv;
+
+	cv::Rodrigues(rot, rgb_to_marker_rot_cv);
+
+	for (int y = 0; y < 3; y++)
+		for (int x = 0; x < 3; x++)
+			cur_rgb_to_marker_(y, x) = rgb_to_marker_rot_cv.at<double>(y, x);
+
+	for (int y = 0; y < 3; y++) cur_rgb_to_marker_(y, 3) = tran[y];
+
+	std::cout << "rgb to marker:\n" << cur_rgb_to_marker_ << "\n";
+
+	Eigen::Matrix4d base_to_hand;
+
+	getCurHandPoseD(base_to_hand);
+
+	Eigen::Matrix3d  rotate_x_pi;
+
+	rotate_x_pi = Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX());
+
+	Eigen::Matrix4d marker_to_gripper = Eigen::Matrix4d::Identity();
+
+	marker_to_gripper.topLeftCorner<3, 3>() = rotate_x_pi.matrix();
+
+	
+
+	Eigen::Matrix4d base_to_marker = base_to_hand*hand_to_rgb_*cur_rgb_to_marker_;
+
+	for (int y = -2; y <= 2; y++)
+	{
+		for (int x = -3; x <= 3; x++)
+		{
+			std::getchar();
+
+			marker_to_gripper.col(3).head(3) << x* marker_length_, y* marker_length_, 0.03;
+
+			Eigen::Matrix4d probe_pose_eigen = base_to_marker*marker_to_gripper*probe_to_hand_;
+
+			std::cout << "probe pose:\n" << probe_pose_eigen << "\n";
+
+			// move arm
+			double pose[6];
+
+			eigenMat4dToArray6(probe_pose_eigen, pose);
+
+			robot_arm_client_->moveHandL(pose, 0.05, 0.05);
+
+			std::getchar();
+		}
+	}
+
+}
+
+void VisionArmCombo::cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::Matrix4d & eigen_transform)
+{
+	for (int y = 0; y < 4; y++)
+		for (int x = 0; x < 4; x++)
+			eigen_transform(y, x) = cv_transform.at<double>(y, x);
 }

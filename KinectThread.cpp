@@ -235,7 +235,6 @@ void KinectThread::startStream()
 	while (STREAMING)
 	{
 		updateFrame();
-
 	}
 }
 
@@ -248,4 +247,28 @@ void KinectThread::getCurPointCloud(PointCloudT::Ptr cloud)
 	*cloud += *m_cloud;
 
 	m_updateMutex.unlock();
+}
+
+cv::Mat KinectThread::getCurRGB()
+{
+	cv::Mat bgra;
+	bgra.create(cColorHeight, cColorWidth, CV_8UC4);
+
+	m_updateMutex.lock();
+
+	std::memcpy(bgra.ptr(0), colorFrameBuffer, cColorHeight*cColorWidth * 4);
+
+	m_updateMutex.unlock();
+	
+	cv::Mat bgr;
+
+	cv::cvtColor(bgra, bgr, CV_BGRA2BGR);
+
+	cv::Mat output;
+	// kinect outputs horizontal flipped rgb
+	cv::flip(bgr, output, 1);
+
+	//cv::imshow("rgb", output);
+	//cv::waitKey(0);
+	return output;
 }

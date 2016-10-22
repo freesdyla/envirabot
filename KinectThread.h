@@ -7,6 +7,10 @@
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/visualization/cloud_viewer.h>
 #include <pcl/filters/voxel_grid.h>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/core/core.hpp>
 #include <Kinect.h>
 #include <thread>
 #include <vector>
@@ -68,6 +72,8 @@ struct KinectThread
 
 	clock_t m_tic;
 
+	cv::Mat m_rgb;
+
 	KinectThread();
 
 	~KinectThread();
@@ -77,6 +83,8 @@ struct KinectThread
 	void updateFrame();
 
 	void getCurPointCloud(PointCloudT::Ptr cloud);
+
+	cv::Mat getCurRGB();
 }; 
 
 #endif // !KINECT_THREAD_H_

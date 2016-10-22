@@ -32,6 +32,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/core/core.hpp>
+#include <opencv2/aruco.hpp>
 #include <vector>
 #include <ctime>
 #include "RobotArmClient.h" // need to be 1st due to winsock
@@ -179,13 +180,27 @@ struct VisionArmCombo
 
 	float scan_radius_;
 
+	cv::Mat kinect_rgb_hand_to_eye_cv_, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_;
+
+	cv::Ptr<cv::aruco::Dictionary> marker_dictionary_;
+
+	cv::Ptr<cv::aruco::DetectorParameters> detector_params_;
+
+	float marker_length_;
+
+	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_;
+
 	VisionArmCombo();
 
 	double magnitudeVec3(double * vec);
 
 	void array6ToEigenMat4d(double * array6, Eigen::Matrix4d & mat4d);
 
+	void eigenMat4dToArray6(Eigen::Matrix4d & mat4d, double * array6);
+
 	void array6ToEigenMat4(double* array6, Eigen::Matrix4f & mat4);
+
+	void initVisionCombo();
 	
 	void initRobotArmClient();
 
@@ -246,6 +261,8 @@ struct VisionArmCombo
 
 	void getCurHandPose(Eigen::Matrix4f & pose);
 
+	void getCurHandPoseD(Eigen::Matrix4d & pose);
+
 	void probeScannedSceneTest(PointCloudT::Ptr cloud);
 
 	void smallClusterRemoval(PointCloudT::Ptr cloud_in, double clusterTolerance, int minClusterSize, PointCloudT::Ptr cloud_out);
@@ -257,6 +274,19 @@ struct VisionArmCombo
 	void probeLeaf(PointT & probe_point, pcl::Normal & normal);
 
 	void display();
+
+	void calibrateKinectRGBCamera();
+
+	void KinectRGBHandEyeCalibration();
+
+	void markerDetection();
+
+	void cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::Matrix4d & eigen_transform);
+
+	// RoAd functions
+	
+
+
 };
 
 
