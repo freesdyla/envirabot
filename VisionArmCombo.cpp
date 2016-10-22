@@ -7,8 +7,20 @@ VisionArmCombo::VisionArmCombo() :
 	initVisionCombo();
 }
 
+VisionArmCombo::~VisionArmCombo()
+{
+	motor_controller_.Disconnect();
+}
+
 void VisionArmCombo::initVisionCombo()
 {
+	int status = motor_controller_.Connect("COM2");
+
+	if (status != RQ_SUCCESS)
+		std::cout << "Error connecting to motor controller: " << status << "\n";
+
+	return;
+
 	tool_center_point_ << 0.0360241, -0.0434969, 0.183875;	//9/22/2016
 
 	probe_to_hand_ = Eigen::Matrix4d::Identity();
@@ -42,6 +54,8 @@ void VisionArmCombo::initVisionCombo()
 	marker_length_ = 0.1016f;	//4 inch
 
 	cur_rgb_to_marker_ = Eigen::Matrix4d::Identity();
+
+	
 
 	return;
 
@@ -3405,4 +3419,30 @@ void VisionArmCombo::cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::
 	for (int y = 0; y < 4; y++)
 		for (int x = 0; x < 4; x++)
 			eigen_transform(y, x) = cv_transform.at<double>(y, x);
+}
+
+int VisionArmCombo::sendRoboteqVar(int id, int value)
+{
+	int status = motor_controller_.SetCommand(_VAR, id, value);
+
+	// send success, but status != RQ_SUCCESS, roboteq bug
+	//if ( status != RQ_SUCCESS)
+	//{
+		//cout << "set Roboteq VAR failed --> " << status << endl;
+		//return -1;
+	//}
+
+	sleepms(10);
+
+	//int result = -1;
+	//status = motor_controller_.GetValue(_VAR, id, result);
+
+	//if (status != RQ_SUCCESS)
+//	{
+	//	cout << "get var failed --> " << status << endl;
+	//}
+
+//	std::cout << "result: " << result << "\n";
+
+	return 0;
 }

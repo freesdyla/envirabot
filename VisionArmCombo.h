@@ -33,13 +33,18 @@
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/core/core.hpp>
 #include <opencv2/aruco.hpp>
+#include <Eigen/Eigenvalues>
 #include <vector>
 #include <ctime>
 #include "RobotArmClient.h" // need to be 1st due to winsock
 #include "KeyenceLineProfiler.h"
 #include "KinectThread.h"
 #include "PathPlanner.h"
-#include <Eigen/Eigenvalues>
+//roboteq
+#include "Constants.h"	
+#include "ErrorCodes.h"	
+#include "RoboteqDevice.h"
+
 
 struct VisionArmCombo
 {
@@ -49,14 +54,6 @@ struct VisionArmCombo
 	typedef pcl::PointCloud<PointNT> PointNCloudT;
 	typedef pcl::PointXYZL PointLT;
 	typedef pcl::PointCloud<PointLT> PointLCloudT;
-
-	// laser hand-eye calibration
-	struct PointsPlaneNormalTCPPose
-	{
-		PointCloudT::Ptr cloud;
-		Eigen::Vector3d normal;
-		Eigen::Matrix4d TCPPose;
-	};
 
 	struct ArmConfig
 	{
@@ -190,7 +187,11 @@ struct VisionArmCombo
 
 	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_;
 
+	RoboteqDevice motor_controller_;
+
 	VisionArmCombo();
+
+	~VisionArmCombo();
 
 	double magnitudeVec3(double * vec);
 
@@ -284,7 +285,7 @@ struct VisionArmCombo
 	void cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::Matrix4d & eigen_transform);
 
 	// RoAd functions
-	
+	int sendRoboteqVar(int id, int value);
 
 
 };

@@ -1,22 +1,26 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "VisionArmCombo.h"
-
 #include <iostream>
-#include "RobotArmClient.h" // need to be 1st due to winsock
-#include "KeyenceLineProfiler.h"
-
 #include <ctime>
-#include "KinectThread.h"
-#include "PathPlanner.h"
-
-
 
 int main(int argc, char**argv)
 {
 	VisionArmCombo vac;
 
-	vac.markerDetection();
+	int i = 1;
+	while(true)
+	{
+		std::getchar();
+		vac.sendRoboteqVar(1, i);
+		i++;
+		if (i > 3)
+		{
+			i = 1;
+		}
+	}
+
+	//vac.markerDetection();
 
 	//vac.calibrateKinectRGBCamera();
 
