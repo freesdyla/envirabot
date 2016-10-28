@@ -58,6 +58,12 @@ struct KeyenceLineProfiler
 
 	static clock_t tic;
 
+	LJV7IF_HIGH_SPEED_PRE_START_REQ req;
+
+	DWORD dwThreadId;
+
+	int nRc;
+
 	void init();
 
 	void finalize();

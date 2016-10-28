@@ -14,14 +14,41 @@ VisionArmCombo::~VisionArmCombo()
 
 void VisionArmCombo::initVisionCombo()
 {
-	int status = motor_controller_.Connect("COM2");
+	viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
+	viewer_->addCoordinateSystem(0.3);
+	viewer_->setSize(1200, 1000);
+	viewer_->setPosition(0, 0);
+	viewer_->registerPointPickingCallback(&VisionArmCombo::pp_callback, *this);
 
-	if (status != RQ_SUCCESS)
-		std::cout << "Error connecting to motor controller: " << status << "\n";
+	// load line scanner hand eye calibration matrix
+	handToScanner_ = guessHandToScanner_;
+	std::ifstream file("lineScannerHandEyeCalibration.bin", std::ios::in | std::ios::binary);
+	if (file.is_open())
+	{
+		char buffer[64];
+		file.read(buffer, 64);
+		for (int i = 0; i < 4; i++)
+			for (int j = 0; j < 4; j++)
+			{
+				float* ptr = (float*)buffer + i * 4 + j;
+				handToScanner_.row(i)(j) = *(ptr);
+			}
+		//std::cout << "handToScanner:\n" << handToScanner_ << "\n";
+	}
+	else std::cout << "lineScannerHandEyeCalibration load fail\n";
+	file.close();
 
-	return;
+	cv::FileStorage fs("tool_center_point_calib.yml", cv::FileStorage::READ);
+	cv::Vec3d tcp;
+	fs["tcp"] >> tcp;
+	fs.release();
 
-	tool_center_point_ << 0.0360241, -0.0434969, 0.183875;	//9/22/2016
+	for (int i = 0; i < 3; i++) tool_center_point_(i) = tcp[i]; //tool_center_point_(0) -= 0.002;
+	//tool_center_point_ << 0.0360241, -0.0434969, 0.183875;	//9/22/2016
+
+	//tool_center_point_ << 0.0348893, -0.0440583, 0.18337;	//10/24/2016
+
+	//std::cout << "tcp: " << tcp<<"\n";
 
 	probe_to_hand_ = Eigen::Matrix4d::Identity();
 
@@ -29,7 +56,9 @@ void VisionArmCombo::initVisionCombo()
 
 	probe_to_hand_ = probe_to_hand_.inverse();
 
-	cv::FileStorage fs("kinectRGBCalibration.yml", cv::FileStorage::READ);
+	marker_length_ = 0.1016f;	//4 inch
+
+	fs.open("kinectRGBCalibration.yml", cv::FileStorage::READ);
 
 	fs["camera_matrix"] >> kinect_rgb_camera_matrix_cv_;
 
@@ -51,11 +80,14 @@ void VisionArmCombo::initVisionCombo()
 
 	detector_params_->doCornerRefinement = true; // do corner refinement in markers
 
-	marker_length_ = 0.1016f;	//4 inch
-
 	cur_rgb_to_marker_ = Eigen::Matrix4d::Identity();
 
-	
+	return;
+
+	int status = motor_controller_.Connect("COM2");
+
+	if (status != RQ_SUCCESS)
+		std::cout << "Error connecting to motor controller: " << status << "\n";
 
 	return;
 
@@ -69,23 +101,7 @@ void VisionArmCombo::initVisionCombo()
 	guessHandToScanner_(1, 3) = 0.005;
 	guessHandToScanner_(2, 3) = 0.095;
 
-	// load line scanner hand eye calibration matrix
-	handToScanner_ = guessHandToScanner_;
-	std::ifstream file("lineScannerHandEyeCalibration.bin", std::ios::in | std::ios::binary);
-	if (file.is_open())
-	{
-		char buffer[64];
-		file.read(buffer, 64);
-		for (int i = 0; i < 4; i++)
-			for (int j = 0; j < 4; j++)
-			{
-				float* ptr = (float*)buffer + i * 4 + j;
-				handToScanner_.row(i)(j) = *(ptr);
-			}
-		//std::cout << "handToScanner:\n" << handToScanner_ << "\n";
-	}
-	else std::cout << "lineScannerHandEyeCalibration load fail\n";
-	file.close();
+	
 
 	scan_start_to_hand_ = Eigen::Matrix4d::Identity();
 
@@ -134,13 +150,6 @@ void VisionArmCombo::initVisionCombo()
 
 	sor_.setMeanK(50);
 	sor_.setStddevMulThresh(1.0);
-
-
-	viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
-	viewer_->addCoordinateSystem(0.3);
-	viewer_->setSize(1200, 1000);
-	viewer_->setPosition(0, 0);
-	viewer_->registerPointPickingCallback(&VisionArmCombo::pp_callback, *this);
 }
 
 void VisionArmCombo::pp_callback(const pcl::visualization::PointPickingEvent& event, void*)
@@ -213,15 +222,9 @@ void VisionArmCombo::initKinectThread()
 	kinect_thread_ = new KinectThread();
 }
 
-int VisionArmCombo::calibrateToolCenterPoint(Eigen::Vector3d & vec3d, int numPoseNeeded)
+void VisionArmCombo::calibrateToolCenterPoint(int numPoseNeeded)
 {
-	initRobotArmClient();
-
-	if (robot_arm_client_ == NULL)
-	{
-		std::cout << "robot arm clinet not initialized" << std::endl;
-		return -1;
-	}
+	if (robot_arm_client_ == NULL) initRobotArmClient(); 
 
 	int poseIdx = 0;
 
@@ -236,8 +239,10 @@ int VisionArmCombo::calibrateToolCenterPoint(Eigen::Vector3d & vec3d, int numPos
 	if (numPoseNeeded % 2 != 0 || numPoseNeeded < 4)
 	{
 		std::cout << "Num of poses needed wrong" << std::endl;
-		return -1;
+		return;
 	}
+
+	Eigen::Vector3d vec3d;
 
 	while (true)
 	{
@@ -250,7 +255,42 @@ int VisionArmCombo::calibrateToolCenterPoint(Eigen::Vector3d & vec3d, int numPos
 		if (poseIdx == numPoseNeeded - 1)
 		{
 			//std::cout << "size: "<<poseVec.size() << std::endl;
-			Eigen::MatrixXd A(3 * numPoseNeeded / 2, 3);
+			Eigen::MatrixXd A(3 * (numPoseNeeded)*(numPoseNeeded-1), 3);
+			Eigen::VectorXd b(3 * (numPoseNeeded)*(numPoseNeeded-1));
+
+			int idx = 0;
+
+			for (int i = 0; i < numPoseNeeded; i++)
+			{
+				for (int j = 0; j < numPoseNeeded; j++)
+				{
+					if (i != j)
+					{
+						Eigen::Matrix4d T0;
+
+						array6ToEigenMat4d(poseVec[i], T0);
+
+						//std::cout << "T0" << std::endl << T0 << std::endl;
+
+						Eigen::Matrix4d T1;
+
+						array6ToEigenMat4d(poseVec[j], T1);
+
+						//std::cout << "T1" << std::endl << T1 << std::endl;
+
+						T0 = T0 - T1;
+
+						//std::cout << "T0-T1" << std::endl << T0 << std::endl;
+
+						A.block<3, 3>(3 *idx, 0) = T0.block<3, 3>(0, 0);
+
+						b.block<3, 1>(3 *idx, 0) = T0.block<3, 1>(0, 3);
+						++idx;
+					}
+				}
+			}
+
+		/*	Eigen::MatrixXd A(3 * numPoseNeeded / 2, 3);
 			Eigen::VectorXd b(3 * numPoseNeeded / 2);
 
 			for (int i = 0; i < numPoseNeeded; i += 2)
@@ -273,10 +313,10 @@ int VisionArmCombo::calibrateToolCenterPoint(Eigen::Vector3d & vec3d, int numPos
 
 				A.block<3, 3>(3 * (i / 2), 0) = T0.block<3, 3>(0, 0);
 				b.block<3, 1>(3 * (i / 2), 0) = T0.block<3, 1>(0, 3);
-			}
+			}*/
 
 			// Solve Ax=b
-			std::cout << "A:" << std::endl << A << std::endl << "b:" << std::endl << b << std::endl;
+			//std::cout << "A:" << std::endl << A << std::endl << "b:" << std::endl << b << std::endl;
 
 			vec3d = A.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
 
@@ -290,10 +330,16 @@ int VisionArmCombo::calibrateToolCenterPoint(Eigen::Vector3d & vec3d, int numPos
 		poseIdx++;
 	}
 
-	std::cout << "Press Enter" << std::endl;
-	std::getchar();
+	cv::FileStorage fs("tool_center_point_calib.yml", cv::FileStorage::WRITE);
 
-	return 0;
+	cv::Vec3d tcp;
+	tcp[0] = vec3d(0); tcp[1] = vec3d(1); tcp[2] = vec3d(2);
+
+	fs << "tcp" << tcp;
+
+	fs.release();
+	
+	std::cout << "Saved" << std::endl;
 }
 
 /*
@@ -318,17 +364,28 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 	double curPoseD[6];
 	robot_arm_client_->getCartesianInfo(curPoseD);
 
-	robot_arm_client_->printCartesianInfo(curPoseD);
+	//robot_arm_client_->printCartesianInfo(curPoseD);
 
 	double endPoseD[6];
 	std::memcpy(endPoseD, curPoseD, 48);
 	for (int i = 0; i < 3; i++) endPoseD[i] += vec3d[i];
 
+	double sync_pose[6];
+
 	if (line_profiler_->device_initialized == false)
 		line_profiler_->init();
 
+	line_profiler_->m_vecProfileData.clear();
+	double tcp_sync_speed[6];
+	robot_arm_client_->setStartPoseXYZ();
 	robot_arm_client_->moveHandL(endPoseD, acceleration, speed);
+	robot_arm_client_->waitTillTCPMove();
+	
 	line_profiler_->start(20);
+	robot_arm_client_->getTCPSpeed(tcp_sync_speed);
+
+	//robot_arm_client_->getCartesianInfo(sync_pose);
+	
 	robot_arm_client_->waitTillHandReachDstPose(endPoseD);
 	line_profiler_->stop();
 
@@ -337,6 +394,10 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 
 	int num_profiles = line_profiler_->m_vecProfileData.size();
 
+	double sync_speed = sqrt(tcp_sync_speed[0] * tcp_sync_speed[0] + tcp_sync_speed[1] * tcp_sync_speed[1] + tcp_sync_speed[2] * tcp_sync_speed[2]);
+
+	std::cout <<"tcp sync speed: "<<sync_speed<< "\n";
+
 	std::cout << "num profiles: " << num_profiles << std::endl;
 
 	Eigen::Matrix4f startPose;
@@ -344,6 +405,8 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 
 	array6ToEigenMat4(curPoseD, startPose);
 	array6ToEigenMat4(endPoseD, endPose);
+
+	//double sync_distance = ;
 
 	//std::cout << "calculated end pose\n" << endPose << "\n\n";
 
@@ -373,7 +436,7 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 
 	//std::cout << "motion vector in sensor frame:" << motionVector << std::endl;
 
-	float magnitude = motionVector.norm();//sqrt(motionVector.dot(motionVector));
+	float magnitude = motionVector.norm();
 
 	Eigen::Vector3f motionDelta = motionVector / (num_profiles - 1);
 
@@ -386,6 +449,10 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 
 	float time = 0.f;
 
+	time = sync_speed / acceleration;
+
+	std::cout << "start time:" << time << "\n";
+
 	const float start_cruise_time = speed/acceleration;
 
 	const float stop_cruise_time = start_cruise_time + (magnitude -start_cruise_time*start_cruise_time*acceleration)/speed;
@@ -397,7 +464,6 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 	const float acceleration_total_distance = 0.5f*acceleration*start_cruise_time*start_cruise_time;
 	
 	motionVector.normalize();
-
 
 	for (int i = 0; i < num_profiles; i++)
 	{
@@ -413,22 +479,19 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 		// the offset maybe be related to scan speed
 		Eigen::Vector3f displacement = motionVector*(distance + speed_correction_);
 
-		for (int j = 0; j < 800; j++)
+		for (int j = 10; j < 790; j++)
 		{
-			//if (j >= line_profiler_->m_vecProfileData[i].)
-				//continue;
-
 			PointT point;
 
 			point.z = line_profiler_->m_vecProfileData[i].m_pnProfileData[j] * (-1e-8f);
 
 			if (abs(point.z) < 0.140f)
 			{
-				point.z += 0.3f + /*i*motionDelta(2)*/ + displacement(2);
-				point.y = /*i*motionDelta(1)*/ displacement(1);
-				point.x = (float)(line_profiler_->m_profileInfo.lXStart + j*line_profiler_->m_profileInfo.lXPitch)*(1e-8f) + displacement(0)/*i*motionDelta(0)*/;
+				point.y = displacement(1);
+				point.x = (float)(line_profiler_->m_profileInfo.lXStart + j*line_profiler_->m_profileInfo.lXPitch)*(1e-8f) + displacement(0);
+				point.z += 0.3f + displacement(2);
 
-				point.r = (uint8_t)(255.f - 255.f*(point.z + 0.141f) / 0.282f);
+				point.r = ((int)(point.z*100000))%255;//(uint8_t)(255.f - 255.f*(point.z + 0.141f) / 0.282f);
 				point.g = point.r;
 				point.b = 255;
 
@@ -438,25 +501,6 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 	}
 
 	std::cout << "point cloud size: " << cloud->size() << std::endl;
-
-	//if (cloud->size() > 0)
-	//{
-	//	std::string filename = getCurrentDateTimeStr() + ".pcd";
-
-	//	pcl::io::savePCDFile(filename, *cloud, true);
-
-	//	result_file_.open("ScannerRobotArmCalibrationFile.txt", std::ios::app);
-
-	//	char buffer[100];
-
-	//	sprintf(buffer, "%f,%f,%f,%f,%f,%f", curPoseD[0], curPoseD[1], curPoseD[2], curPoseD[3], curPoseD[4], curPoseD[5]);
-
-	//	std::string startPoseStr(buffer);
-
-	//	result_file_ << filename << "," << startPoseStr << std::endl;
-
-	//	result_file_.close();
-	//}
 }
 
 void VisionArmCombo::scanLine(PointCloudT::Ptr & cloud)
@@ -616,64 +660,6 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm()
 	initRobotArmClient();
 	initKinectThread();
 	initLineProfiler();
-
-#if 0
-	ArmConfig config;
-	config.setJointPos(-83.72, -112.84, -128.85, -29.26, 89.59, -174.31);
-	config.toRad();
-
-	robot_arm_client_->moveHandJ(config.joint_pos_d, 0.1, 0.5, true);
-
-	double vec[3] = { -0.1, 0., 0. };
-
-	scanTranslateOnly(vec, kinect_cloud_, 0.2, 0.1);
-
-	viewer_->addPointCloud(kinect_cloud_);
-
-	display();
-
-	return;
-#endif
-
-
-	// laser scanner probe test
-#if 0
-	ArmConfig config;
-	//config.setJointPos(-66.73, -120.29, -123.06, -26.52, 92.01, -158.30); // left
-	//config.setJointPos(-97.64, -117.11, -113.50, -40.82, 85.06, -190.34); // right
-	config.setJointPos(-73.80, -104.93, -155.01, -12.23, 90.66, -74.58); // near
-	config.toRad();
-	robot_arm_client_->moveHandJ(config.joint_pos_d, 0.2, 0.5, true);
-
-	std::cout << "hit Enter to scan\n";
-	std::getchar();
-
-	PointCloudT::Ptr scan_cloud(new PointCloudT);
-
-	Eigen::Matrix4f cur_pose;
-	getCurHandPose(cur_pose);
-
-	double tran[3];
-	tran[0] = 0.;
-	tran[1] = -0.3;
-	tran[2] = 0.;
-	scanTranslateOnly(tran, scan_cloud, scan_acceleration_, scan_speed_);
-
-	vox_.setInputCloud(scan_cloud);
-	vox_.setLeafSize(0.001, 0.001, 0.001);
-	
-	PointCloudT::Ptr scan_cloud_down(new PointCloudT);
-
-	vox_.filter(*scan_cloud_down);
-
-	PointCloudT::Ptr scan_cloud_down_base(new PointCloudT);
-
-	pcl::transformPointCloud(*scan_cloud_down, *scan_cloud_down_base, cur_pose*handToScanner_);
-
-	probeScannedSceneTest(scan_cloud_down_base);
-
-	return;
-#endif
 
 	int scan_count = 0;
 
@@ -1121,9 +1107,9 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm()
 */
 void VisionArmCombo::testLineScannerProbeCalibrationMatrix()
 {
-	initRobotArmClient();
+	if(robot_arm_client_ == NULL) initRobotArmClient();
 
-	initLineProfiler();
+	if(line_profiler_ == NULL) initLineProfiler();
 
 	PointCloudT::Ptr cloud(new PointCloudT);
 
@@ -3323,7 +3309,7 @@ void VisionArmCombo::markerDetection()
 	cv::Vec3d tran;
 
 	ArmConfig config;
-	config.setJointPos(-81.19, -87.82, -134.09, -45.84, 89.79, -173.62);
+	config.setJointPos(-86.5, -99.37, -155.46, -12.91, 90., -178.94);
 	config.toRad();
 
 	robot_arm_client_->moveHandJ(config.joint_pos_d, 0.1, 0.1, true);
@@ -3389,15 +3375,18 @@ void VisionArmCombo::markerDetection()
 
 	Eigen::Matrix4d base_to_marker = base_to_hand*hand_to_rgb_*cur_rgb_to_marker_;
 
-	for (int y = -2; y <= 2; y++)
+	std::cout << "base to marker:\n" << base_to_marker << "\n";
+
+	for (int y = 2; y >= -2; y--)
 	{
 		for (int x = -3; x <= 3; x++)
 		{
 			std::getchar();
 
-			marker_to_gripper.col(3).head(3) << x* marker_length_, y* marker_length_, 0.03;
+			Eigen::Matrix4d marker_to_gripper_translate = Eigen::Matrix4d::Identity();
+			marker_to_gripper_translate.col(3).head(3) << x* marker_length_, y* marker_length_, -0.03;
 
-			Eigen::Matrix4d probe_pose_eigen = base_to_marker*marker_to_gripper*probe_to_hand_;
+			Eigen::Matrix4d probe_pose_eigen = base_to_marker*marker_to_gripper*marker_to_gripper_translate*probe_to_hand_;
 
 			std::cout << "probe pose:\n" << probe_pose_eigen << "\n";
 
@@ -3406,9 +3395,7 @@ void VisionArmCombo::markerDetection()
 
 			eigenMat4dToArray6(probe_pose_eigen, pose);
 
-			robot_arm_client_->moveHandL(pose, 0.05, 0.05);
-
-			std::getchar();
+			robot_arm_client_->moveHandL(pose, 0.1, 0.1);
 		}
 	}
 
@@ -3419,6 +3406,126 @@ void VisionArmCombo::cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::
 	for (int y = 0; y < 4; y++)
 		for (int x = 0; x < 4; x++)
 			eigen_transform(y, x) = cv_transform.at<double>(y, x);
+}
+
+void VisionArmCombo::scanAndProbeTest()
+{
+	if (robot_arm_client_ == NULL) initRobotArmClient();
+	if (line_profiler_ == NULL) initLineProfiler();
+
+	double pose[6];
+	double tran[3];
+	//pose[0] = 0.073-0.3; pose[1] = -0.435; pose[2] = 0.30; pose[3] = M_PI, pose[4] = -0., pose[5] = -0.;
+
+	pose[0] = -0.219; pose[1] = -0.419; pose[2] = 0.187; pose[3] = M_PI, pose[4] = -0., pose[5] = -0.;	//
+	
+	tran[0] = 0.15;
+	tran[1] = 0.;
+	tran[2] = 0.;
+
+	robot_arm_client_->moveHandL(pose, 0.5, 0.1);
+
+	std::cout << "Ready\n";
+	std::getchar();
+
+	PointCloudT::Ptr scan_cloud(new PointCloudT);
+
+	Eigen::Matrix4f cur_pose;
+	getCurHandPose(cur_pose);
+
+	scanTranslateOnly(tran, scan_cloud, scan_acceleration_, scan_speed_);
+
+	vox_.setInputCloud(scan_cloud);
+	vox_.setLeafSize(0.0005, 0.0005, 0.0005);
+
+	PointCloudT::Ptr scan_cloud_down(new PointCloudT);
+
+	vox_.filter(*scan_cloud_down);
+
+	PointCloudT::Ptr scan_cloud_down_base(new PointCloudT);
+
+	pcl::transformPointCloud(*scan_cloud_down, *scan_cloud_down_base, cur_pose*handToScanner_);
+
+	/*std::cout << "Ready\n";
+	std::getchar();
+
+	tran[0] = -0.3;
+	PointCloudT::Ptr scan_cloud1(new PointCloudT);
+
+	Eigen::Matrix4f cur_pose1;
+	getCurHandPose(cur_pose1);
+
+	scanTranslateOnly(tran, scan_cloud1, scan_acceleration_, scan_speed_);
+
+	vox_.setInputCloud(scan_cloud1);
+	vox_.setLeafSize(0.0005, 0.0005, 0.0005);
+
+	PointCloudT::Ptr scan_cloud_down1(new PointCloudT);
+
+	vox_.filter(*scan_cloud_down1);
+
+	PointCloudT::Ptr scan_cloud_down_base1(new PointCloudT);
+
+	pcl::transformPointCloud(*scan_cloud_down1, *scan_cloud_down_base1, cur_pose1*handToScanner_);
+
+	for (int i = 0; i < scan_cloud_down_base1->points.size(); i++)
+	{
+		scan_cloud_down_base1->points[i].b = 0;
+	}
+
+	viewer_->addPointCloud(scan_cloud_down_base, "0");
+	viewer_->addPointCloud(scan_cloud_down_base1, "1");
+	viewer_->spin();*/
+
+	//test planes
+	/*PointCloudT::Ptr metal(new PointCloudT);
+	PointCloudT::Ptr table (new PointCloudT);
+	pass_.setInputCloud(scan_cloud_down_base);
+	pass_.setFilterFieldName("z");
+	pass_.setFilterLimits(-0.1598f, -0.1582f);
+	pass_.setFilterLimitsNegative(false);
+	pass_.filter(*metal);
+
+	pass_.setFilterLimits(-0.25f, -0.194f);
+	pass_.filter(*table);
+
+	for (auto &p : metal->points)
+	{
+		p.b = 0;
+	}
+
+	pcl::PCA<PointT> pca(*metal);
+
+	Eigen::Matrix3d eigen_vectors = pca.getEigenVectors().cast<double>();
+
+	std::cout << "metal:\n" << eigen_vectors<<"\n";
+
+	pca.setInputCloud(table);
+
+	Eigen::Matrix3d table_eigen_vectors = pca.getEigenVectors().cast<double>();
+
+	std::cout << "table:\n" << table_eigen_vectors << "\n";
+
+	if(eigen_vectors.col(2)(2) *table_eigen_vectors.col(2)(2) < 0.)
+		std::cout<<"angle: "<<acos(eigen_vectors.col(2).dot(-table_eigen_vectors.col(2)))/M_PI*180.<<"\n";
+	else
+		std::cout << "angle: " << acos(eigen_vectors.col(2).dot(table_eigen_vectors.col(2))) / M_PI*180. << "\n";
+
+	viewer_->addPointCloud(table, "0");
+	viewer_->addPointCloud(metal, "1");
+	viewer_->spin(); */
+
+	//extract table edge
+	float step_size = 0.001f;
+
+
+
+	//fitPotRing(scan_cloud_down_base);
+
+	//find3DMarker(scan_cloud_down_base);
+
+	probeScannedSceneTest(scan_cloud_down_base);
+
 }
 
 int VisionArmCombo::sendRoboteqVar(int id, int value)
@@ -3445,4 +3552,246 @@ int VisionArmCombo::sendRoboteqVar(int id, int value)
 //	std::cout << "result: " << result << "\n";
 
 	return 0;
+}
+
+void VisionArmCombo::fitPotRing(PointCloudT::Ptr pot_cloud)
+{
+	PointCloudT::Ptr pot_ring_cloud(new PointCloudT);
+
+	float radius = 0.04345f;
+
+	for (float span = -0.001f; span <=0.001f; span += 0.001f)
+	{
+		for (float deg = 0; deg < 360.f; deg += 0.5f)
+		{
+			PointT p;
+			float theta = deg / 180.*M_PI;
+			p.x = (radius+span)*cos(theta);
+			p.y = (radius+span)*sin(theta);
+			p.z = 0.f;
+			p.r = 255;
+			p.g = 0;
+			p.b = 0;
+			pot_ring_cloud->push_back(p);
+		}
+	}
+
+	PointCloudT::Ptr cropped_pot(new PointCloudT);
+	pass_.setInputCloud(pot_cloud);
+	pass_.setFilterFieldName("z");
+	pass_.setFilterLimits(-0.02f, 0.02f);
+	pass_.setFilterLimitsNegative(false);
+	pass_.filter(*cropped_pot);
+
+	Eigen::Matrix4f base_to_pot = Eigen::Matrix4f::Identity();
+	base_to_pot.col(3).head(3) << -0.02, -0.49, 0.02;
+	pcl::transformPointCloud(*pot_ring_cloud, *pot_ring_cloud, base_to_pot);
+
+	pcl::IterativeClosestPoint<PointT, PointT> icp;
+	icp.setInputSource(pot_ring_cloud);
+	icp.setInputTarget(cropped_pot);
+	PointCloudT::Ptr Final(new PointCloudT);
+	icp.align(*Final);
+
+	std::cout << icp.getFinalTransformation() << std::endl;
+
+	viewer_->addPointCloud(Final, "final", 0);
+	//viewer_->addPointCloud(pot_ring_cloud, "pot_ring_cloud", 0);
+	viewer_->addPointCloud(cropped_pot, "cropped_pot", 0);
+	viewer_->spin();
+}
+
+void VisionArmCombo::find3DMarker(PointCloudT::Ptr marker_cloud)
+{
+	PointCloudT::Ptr marker_template(new PointCloudT);
+
+	// rectangle
+	float marker_width = 0.038f;//0.1183f;////0.1701f;//0.188f;//// 
+	float marker_len = 0.053f;//0.19825f;////0.1148f;//0.1503f;////
+	float strip_width = 0.0005f;
+
+	
+	for (float x = 0; x <= marker_width; x += 0.0001f)
+	{
+		PointT p;
+		p.x = x;
+		p.y = 0;
+		p.z = 0;
+		p.r = 255;
+		p.g = p.b = 0;
+		marker_template->push_back(p);
+		p.y = marker_len;
+		marker_template->push_back(p);
+	}
+
+	for (float y = 0; y <= marker_len; y += 0.0001f)
+	{
+		PointT p;
+		p.x = 0;
+		p.y = y;
+		p.z = 0;
+		p.r = 255;
+		p.g = p.b = 0;
+		marker_template->push_back(p);
+		p.x = marker_width;
+		marker_template->push_back(p);
+	}
+
+	//for (float y = 0.f; y <= marker_len; y += 0.0005f)
+	//{
+	//	for (float x = 0.f; x <= marker_width; x += 0.0005f)
+	//	{
+	//		if (x > strip_width && x < marker_width - strip_width && y > strip_width && y < marker_len - strip_width) continue;
+	//		//if (x == 0.f || y == 0.f || x >= marker_width || y >= marker_len)
+	//		{
+	//			PointT p;
+	//			p.x = x;
+	//			p.y = y;
+	//			p.z = 0;
+	//			p.r = 255;
+	//			p.g = p.b = 0;
+	//			marker_template->push_back(p);
+	//		}
+	//	}
+	//}
+
+	//right angle	width 3.1mm
+	/*float long_side = 0.03940f;
+	float short_side = 0.02573f;
+
+	for (float x = 0; x <= 0.003f; x += 0.001f)
+	{
+		for (float y = 0; y <= long_side; y += 0.001f)
+		{
+			PointT p;
+			p.x = x;
+			p.y = y;
+			p.z = 0;
+			p.r = 255;
+			p.g = p.b = 0;
+			marker_template->push_back(p);
+		}
+	}
+
+	for (float y = 0; y <= 0.003f; y += 0.001f)
+	{
+		for (float x = 0; x <= short_side; x+=0.001f)
+		{
+			PointT p;
+			p.x = x;
+			p.y = y;
+			p.z = 0;
+			p.r = 255;
+			p.g = p.b = 0;
+			marker_template->push_back(p);
+		}
+	}*/
+
+	//LENGTH 53.39MM; width 38.38 roof
+	/*for (float y = 0; y <= 0.05339f; y += 0.0005f)
+	{
+		for (float x = 0; x <= 0.03838f; x += 0.0005f)
+		{
+			PointT p;
+			p.x = x;
+			p.y = y;
+			p.z = 0;
+			p.r = 255;
+			p.g = p.b = 0;
+			marker_template->push_back(p);
+		}
+	}
+
+	for (float y = 0; y <= 0.05339f; y += 0.0005f)
+	{
+		for (float z = 0; z <= 0.03838f; z += 0.0005f)
+		{
+			PointT p;
+			p.x = 0;
+			p.y = y;
+			p.z = z;
+			p.r = 255;
+			p.g = p.b = 0;
+			marker_template->push_back(p);
+		}
+	}
+	
+	Eigen::Matrix4f rot_y_135 = Eigen::Matrix4f::Identity();
+	rot_y_135.topLeftCorner<3,3>() = (Eigen::AngleAxisf(M_PI*0.75, Eigen::Vector3f::UnitY())).matrix();
+
+	pcl::transformPointCloud(*marker_template, *marker_template, rot_y_135);*/
+
+	viewer_->addPointCloud(marker_template, "3d_marker_origin");
+
+	PointCloudT::Ptr cropped_cloud(new PointCloudT);
+	pass_.setInputCloud(marker_cloud);
+	pass_.setFilterFieldName("z");
+	pass_.setFilterLimits(-0.18f, -0.0f);
+	pass_.setFilterLimitsNegative(false);
+	pass_.filter(*cropped_cloud);
+
+	Eigen::Matrix4f base_to_marker_guess = Eigen::Matrix4f::Identity();
+	base_to_marker_guess.col(3).head(3)<< -0.08, -0.55, -0.15;
+
+	pcl::transformPointCloud(*marker_template, *marker_template, base_to_marker_guess);
+
+	pcl::IterativeClosestPoint<PointT, PointT> icp;
+	icp.setInputSource(marker_template);
+	icp.setInputTarget(cropped_cloud);
+	icp.setTransformationEpsilon(1e-12);
+	icp.setMaxCorrespondenceDistance(0.05);
+	icp.setMaximumIterations(300);
+	icp.setEuclideanFitnessEpsilon(1e-8);
+	PointCloudT::Ptr marker_final(new PointCloudT);
+	icp.align(*marker_final);
+
+	std::cout << icp.getFinalTransformation() << std::endl;
+
+	viewer_->addPointCloud(marker_final, "marker_final", 0);
+
+	viewer_->addPointCloud(marker_template, "3d_marker");
+	viewer_->addPointCloud(cropped_cloud, "cropped_cloud");
+	viewer_->spin();
+
+	Eigen::Matrix3d  rotate_x_pi;
+
+	rotate_x_pi = Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX());
+
+	Eigen::Matrix4d marker_to_gripper_rot = Eigen::Matrix4d::Identity();
+
+	marker_to_gripper_rot.topLeftCorner<3, 3>() = rotate_x_pi.matrix();
+
+	// icp transform is not frame transform, is source cloud to target cloud transform in base
+	Eigen::Matrix4d base_to_marker = icp.getFinalTransformation().cast<double>()*base_to_marker_guess.cast<double>();
+
+	std::cout << "base to marker:\n" << base_to_marker << "\n";
+
+
+	for (int y = 2; y >= -2; y--)
+	//for (int y = 0; y <= 0; y++)
+	{
+		for (int x = -3; x <= 3; x++)
+		//for (int x = 0; x <= 0; x++)
+		{
+			std::getchar();
+
+			Eigen::Matrix4d marker_to_gripper_translate = Eigen::Matrix4d::Identity();
+			marker_to_gripper_translate(0, 3) = (double)x*marker_length_+marker_length_*0.5;
+			marker_to_gripper_translate(1, 3) = (double)y*marker_length_-marker_length_*0.5;
+			marker_to_gripper_translate(2, 3) = 0.03;
+
+			Eigen::Matrix4d probe_pose_eigen = base_to_marker*marker_to_gripper_rot*marker_to_gripper_translate*probe_to_hand_;
+
+			std::cout << "probe pose:\n" << probe_pose_eigen << "\n";
+
+			// move arm
+			double pose[6];
+
+			eigenMat4dToArray6(probe_pose_eigen, pose);
+
+			//pose[0] += 0.006;
+			robot_arm_client_->moveHandL(pose, 0.1, 0.1);
+
+		}
+	}
 }

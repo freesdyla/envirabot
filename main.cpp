@@ -1,5 +1,3 @@
-#define _CRT_SECURE_NO_WARNINGS
-
 #include "VisionArmCombo.h"
 #include <iostream>
 #include <ctime>
@@ -7,8 +5,14 @@
 int main(int argc, char**argv)
 {
 	VisionArmCombo vac;
+	
+	//vac.calibrateToolCenterPoint(8); std::getchar(); return 0;
 
-	int i = 1;
+	//vac.testLineScannerProbeCalibrationMatrix(); std::getchar(); return 0;
+
+	vac.scanAndProbeTest();	std::getchar(); return 0;
+
+	/*int i = 1;
 	while(true)
 	{
 		std::getchar();
@@ -18,9 +22,9 @@ int main(int argc, char**argv)
 		{
 			i = 1;
 		}
-	}
+	}*/
 
-	//vac.markerDetection();
+	vac.markerDetection();
 
 	//vac.calibrateKinectRGBCamera();
 

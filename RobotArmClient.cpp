@@ -19,7 +19,7 @@ RobotArmClient::RobotArmClient()
 		printf("WSAStartup failed with error: %d\n", iResult);
 
 	ZeroMemory(&hints, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
+	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 
@@ -105,7 +105,13 @@ void RobotArmClient::startRecvTCP()
 
 			getActualJointPosFromURPackage();
 
-			distanceToDst = EuclideanDistance(cur_cartesian_info_array, dst_cartesian_info_array);
+			getActualTCPSpeedFromURPackage();
+
+			//tcp_speed_ = sqrt(cur_tcp_speed_array[0]* cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
+
+			distanceToDst_ = EuclideanDistance(cur_cartesian_info_array, dst_cartesian_info_array);
+
+			displacement_ = EuclideanDistance(cur_cartesian_info_array, start_xyz_);
 
 			distanceToDstConfig_ = EuclideanDistance(cur_joint_pos_array, dst_joint_pos_array);
 
@@ -181,19 +187,29 @@ void RobotArmClient::getActualJointPosFromURPackage()
 	}
 }
 
+void RobotArmClient::getActualTCPSpeedFromURPackage()
+{
+	char* start_ptr = recvbuf + 492;
+
+	for (int i = 0; i < 6; i++)
+	{
+		reverse8CharsToDouble(start_ptr + 7 + i * 8, cur_tcp_speed_array + i);
+	}
+}
+
 int RobotArmClient::moveHandL(double* dst_cartesian_info, float acceleration, float speed)
 {
 	char msg[128];
+
+	//updateMutex.lock();
+	distanceToDst_.store(1000.);
+	//updateMutex.unlock();
 
 	sprintf(msg, "movel(p[%f,%f,%f,%f,%f,%f],a=%f,v=%f)\n", 
 		dst_cartesian_info[0], dst_cartesian_info[1], dst_cartesian_info[2], 
 		dst_cartesian_info[3], dst_cartesian_info[4], dst_cartesian_info[5], acceleration, speed);
 
 	//std::cout << "len" << strlen(msg)<<std::endl;
-	updateMutex.lock();
-	distanceToDst = 1000.f;
-	updateMutex.unlock();
-	
 	return send(ConnectSocket, msg, strlen(msg), 0);
 }
 
@@ -201,15 +217,16 @@ int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float accel
 {
 	char msg[128];
 
+	updateMutex.lock();
+	distanceToDstConfig_ = 1000.;
+	updateMutex.unlock();
+
 	sprintf(msg, "movej([%f,%f,%f,%f,%f,%f],a=%f,v=%f)\n",
 		dst_joint_config[0], dst_joint_config[1], dst_joint_config[2],
 		dst_joint_config[3], dst_joint_config[4], dst_joint_config[5], acceleration, speed);
 
 	//std::cout << "len" << strlen(msg)<<std::endl;
-	updateMutex.lock();
-	distanceToDstConfig_ = 1000.f;
-	updateMutex.unlock();
-
+	
 	int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 	if (num_byte == SOCKET_ERROR) return SOCKET_ERROR;
@@ -224,6 +241,15 @@ void RobotArmClient::getCartesianInfo(double* array6)
 	updateMutex.lock();
 
 	std::memcpy(array6, cur_cartesian_info_array, 6 * 8);
+
+	updateMutex.unlock();
+}
+
+void RobotArmClient::getTCPSpeed(double* array6)
+{
+	updateMutex.lock();
+
+	std::memcpy(array6, cur_tcp_speed_array, 6 * 8);
 
 	updateMutex.unlock();
 }
@@ -265,10 +291,9 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 
 	while (true)
 	{
-		if (distanceToDst < 0.0001)
-		break;
+		if (distanceToDst_.load() < 0.001)	break;
 
-		Sleep(4);
+		Sleep(1);
 		//std::cout << distanceToDst << std::endl;
 	}
 
@@ -295,7 +320,7 @@ void RobotArmClient::setDstCartesianInfo(double* array6)
 {
 	updateMutex.lock();
 	std::memcpy(dst_cartesian_info_array, array6, 48);
-	distanceToDst = 1000.f;
+	distanceToDst_.store(1000.);
 	updateMutex.unlock();
 }
 
@@ -304,19 +329,41 @@ void RobotArmClient::setDstConfigInfo(double* array6)
 {
 	updateMutex.lock();
 	std::memcpy(dst_joint_pos_array, array6, 48);
-	distanceToDst = 1000.f;
+	distanceToDstConfig_ = 1000.;
 	updateMutex.unlock();
 }
 
 void RobotArmClient::getDistanceToDst(double& distance)
 {
-	updateMutex.lock();
-	distance = distanceToDst;
-	updateMutex.unlock();
+	//updateMutex.lock();
+	distance = distanceToDst_.load();
+	//updateMutex.unlock();
 }
 
 void RobotArmClient::stopRecvTCP(void)
 {
 	TCP_ALIVE = false;
-	Sleep(1000);
+	URMsgHandler.back().join();
+}
+
+void RobotArmClient::setStartPoseXYZ()
+{
+	double pose[6];
+	getCartesianInfo(pose);
+	std::memcpy(start_xyz_, pose, 3*sizeof(double));
+	displacement_.store(0);
+}
+
+void RobotArmClient::waitTillTCPMove()
+{
+	//int counter = 0;
+	while (true)
+	{
+		//counter++;
+		//if (tcp_speed_.load() >= 0.005f) break;
+		if (displacement_.load() >= 0.0001)	break;
+		Sleep(1);
+	}
+
+	//return counter;
 }

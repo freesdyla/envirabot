@@ -28,6 +28,7 @@
 #include <pcl/features/normal_3d.h>
 #include <pcl/features/moment_of_inertia_estimation.h>
 #include <pcl/search/search.h>
+#include <pcl/registration/icp.h>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
@@ -158,15 +159,15 @@ struct VisionArmCombo
 	
 	const float scan_speed_ = 0.1f;
 
-	const float move_arm_speed_ = 0.2f;
+	const float move_arm_speed_ = 0.05f;
 
-	const float move_arm_acceleration_ = 0.5f;
+	const float move_arm_acceleration_ = 0.1f;
 
 	const float move_joint_speed_ = 0.4f;
 
 	const float move_joint_acceleration_ = 0.5f;
 
-	const float speed_correction_ = -0.0085f;
+	const float speed_correction_ = 0;// -0.0085f;
 
 	const int view_time_ = 0;
 
@@ -209,7 +210,7 @@ struct VisionArmCombo
 
 	void initKinectThread();
 
-	int calibrateToolCenterPoint(Eigen::Vector3d & vec3d, int numPoseNeeded=4);
+	void calibrateToolCenterPoint(int numPoseNeeded=4);
 
 	void scanTranslateOnly(double * vec3d, PointCloudT::Ptr cloud, float acceleration, float speed);
 
@@ -284,9 +285,12 @@ struct VisionArmCombo
 
 	void cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::Matrix4d & eigen_transform);
 
+	void scanAndProbeTest();
+
 	// RoAd functions
 	int sendRoboteqVar(int id, int value);
-
+	void fitPotRing(PointCloudT::Ptr pot_cloud);
+	void find3DMarker(PointCloudT::Ptr marker_cloud);
 
 };
 

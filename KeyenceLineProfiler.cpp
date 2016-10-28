@@ -8,6 +8,10 @@ clock_t KeyenceLineProfiler::tic;
 
 void KeyenceLineProfiler::init()
 {
+	req.bySendPos = 2;	// send next available profile after start
+
+	dwThreadId = DEVICE_ID;
+
 	int nRc = LJV7IF_RC_OK;
 	// Initialize the Dll
 	nRc = LJV7IF_Initialize();
@@ -65,55 +69,55 @@ void KeyenceLineProfiler::finalize()
 
 void KeyenceLineProfiler::start(DWORD dwProfileCnt)
 {
-	m_vecProfileData.clear();
+	//m_vecProfileData.clear();
 
-	int nRc = LJV7IF_RC_OK;
+	//nRc = LJV7IF_RC_OK;
 
 	// start high-speed data communication
-	nRc = LJV7IF_StopHighSpeedDataCommunication(DEVICE_ID);
+	//nRc = LJV7IF_StopHighSpeedDataCommunication(DEVICE_ID);
 
-	if (nRc != LJV7IF_RC_OK)
-		std::cout << "stop before start fail" << std::endl;
+	/*if (nRc != LJV7IF_RC_OK)
+		std::cout << "stop before start fail" << std::endl;*/
 
-	nRc = LJV7IF_HighSpeedDataCommunicationFinalize(DEVICE_ID);
+	//nRc = LJV7IF_HighSpeedDataCommunicationFinalize(DEVICE_ID);
 
-	if (nRc != LJV7IF_RC_OK)
-		std::cout << "finalize before start fail" << std::endl;
+	/*if (nRc != LJV7IF_RC_OK)
+		std::cout << "finalize before start fail" << std::endl;*/
 
 	// Open the communication path
 	//DWORD dwProfileCnt = 1000;
-	DWORD dwThreadId = DEVICE_ID;
 
-	nRc = LJV7IF_HighSpeedDataUsbCommunicationInitalize(DEVICE_ID, ReceiveHighSpeedData, dwProfileCnt, dwThreadId);
+	//nRc = LJV7IF_HighSpeedDataUsbCommunicationInitalize(DEVICE_ID, ReceiveHighSpeedData, dwProfileCnt, dwThreadId);
 
-	if (nRc != LJV7IF_RC_OK)
+	LJV7IF_HighSpeedDataUsbCommunicationInitalize(DEVICE_ID, ReceiveHighSpeedData, dwProfileCnt, dwThreadId);
+
+	/*if (nRc != LJV7IF_RC_OK)
 	{
 		std::cout << "high speed usb start start fail" << std::endl;
 		return;
-	}
+	}*/
 
 	// High-speed data communication start preparations
-	LJV7IF_HIGH_SPEED_PRE_START_REQ req;
-	req.bySendPos = 2;	// send next available profile after start
+	//nRc = LJV7IF_PreStartHighSpeedDataCommunication(DEVICE_ID, &req, &m_profileInfo);
+	LJV7IF_PreStartHighSpeedDataCommunication(DEVICE_ID, &req, &m_profileInfo);
 
-	nRc = LJV7IF_PreStartHighSpeedDataCommunication(DEVICE_ID, &req, &m_profileInfo);
-
-	if (nRc != LJV7IF_RC_OK)
+	/*if (nRc != LJV7IF_RC_OK)
 	{
 		std::cout << "pre start high speed fail" << std::endl;
 		return;
-	}
+	}*/
 
 	// Start high-speed data communication.
-	nRc = LJV7IF_StartHighSpeedDataCommunication(DEVICE_ID);
+	//nRc = LJV7IF_StartHighSpeedDataCommunication(DEVICE_ID);
+	LJV7IF_StartHighSpeedDataCommunication(DEVICE_ID);
 
 	//tic = clock();
 
-	if (nRc != LJV7IF_RC_OK)
-	{
+	//if (nRc != LJV7IF_RC_OK)
+	/*{
 		std::cout << "start high speed fail" << std::endl;
 		return;
-	}
+	}*/
 }
 
 /*
