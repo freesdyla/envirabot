@@ -24,9 +24,9 @@ PathPlanner::PathPlanner() :
 
 PathPlanner::~PathPlanner()
 {
-	delete[] random_nodes_buffer_;
-	delete[] reference_points_buffer_;
-	delete[] start_end_ref_points_;
+	if(random_nodes_buffer_ != NULL) delete[] random_nodes_buffer_;
+	if(reference_points_buffer_ != NULL) delete[] reference_points_buffer_;
+	if(start_end_ref_points_ != NULL) delete[] start_end_ref_points_;
 }
 
 /*

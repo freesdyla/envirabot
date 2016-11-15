@@ -8,6 +8,8 @@ int main(int argc, char**argv)
 	
 	//vac.calibrateToolCenterPoint(8); std::getchar(); return 0;
 
+	//vac.calibrateGripperTip(8);
+
 	//vac.testLineScannerProbeCalibrationMatrix(); std::getchar(); return 0;
 
 	vac.scanAndProbeTest();	std::getchar(); return 0;
@@ -24,7 +26,7 @@ int main(int argc, char**argv)
 		}
 	}*/
 
-	vac.markerDetection();
+	//vac.markerDetection();
 
 	//vac.calibrateKinectRGBCamera();
 

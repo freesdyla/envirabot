@@ -107,7 +107,7 @@ void RobotArmClient::startRecvTCP()
 
 			getActualTCPSpeedFromURPackage();
 
-			//tcp_speed_ = sqrt(cur_tcp_speed_array[0]* cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
+			tcp_speed_ = sqrt(cur_tcp_speed_array[0]* cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
 
 			distanceToDst_ = EuclideanDistance(cur_cartesian_info_array, dst_cartesian_info_array);
 
@@ -360,10 +360,35 @@ void RobotArmClient::waitTillTCPMove()
 	while (true)
 	{
 		//counter++;
-		//if (tcp_speed_.load() >= 0.005f) break;
-		if (displacement_.load() >= 0.0001)	break;
+		if (tcp_speed_.load() >= 0.01f) break;
+		//if (displacement_.load() >= 0.0001)	break;
 		Sleep(1);
 	}
 
 	//return counter;
+}
+
+void RobotArmClient::rotateJointRelative(int id, double deg, float acceleration, float speed)
+{
+	if (id < 0 || id > 5)
+	{
+		std::cout << "invalid joint id\n";
+		return;
+	}
+
+	double joints[6];
+	getCurJointPose(joints);
+	joints[id] += deg*M_PI/180.;
+	moveHandJ(joints, speed, acceleration, true);
+}
+
+void RobotArmClient::moveHandRelativeTranslate(double x, double y, double z, float acceleration, float speed)
+{
+	double pose[6];
+	getCartesianInfo(pose);
+	pose[0] += x; 
+	pose[1] += y; 
+	pose[2] += z;
+	moveHandL(pose, acceleration, speed);
+	waitTillHandReachDstPose(pose);
 }

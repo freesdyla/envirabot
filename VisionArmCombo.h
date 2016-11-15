@@ -45,6 +45,8 @@
 #include "Constants.h"	
 #include "ErrorCodes.h"	
 #include "RoboteqDevice.h"
+//robotiq 
+#include "GripperModbusRTU.h"
 
 
 struct VisionArmCombo
@@ -186,9 +188,11 @@ struct VisionArmCombo
 
 	float marker_length_;
 
-	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_;
+	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_, gripper_to_hand_;
 
 	RoboteqDevice motor_controller_;
+
+	GripperModbusRTU gripper_;
 
 	VisionArmCombo();
 
@@ -211,6 +215,8 @@ struct VisionArmCombo
 	void initKinectThread();
 
 	void calibrateToolCenterPoint(int numPoseNeeded=4);
+
+	void calibrateGripperTip(int numPoseNeeded = 4);
 
 	void scanTranslateOnly(double * vec3d, PointCloudT::Ptr cloud, float acceleration, float speed);
 
@@ -291,7 +297,6 @@ struct VisionArmCombo
 	int sendRoboteqVar(int id, int value);
 	void fitPotRing(PointCloudT::Ptr pot_cloud);
 	void find3DMarker(PointCloudT::Ptr marker_cloud);
-
 };
 
 

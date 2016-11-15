@@ -182,12 +182,12 @@ struct PathPlanner
 
 	int num_nodes_;
 
-	float* random_nodes_buffer_;
+	float* random_nodes_buffer_ = NULL;
 
 	// reference points on the robot arm
-	float* reference_points_buffer_;
+	float* reference_points_buffer_ = NULL;
 
-	float* start_end_ref_points_;
+	float* start_end_ref_points_ = NULL;
 
 	flann::Index<flann::L2<float>>* referen_point_index_;
 

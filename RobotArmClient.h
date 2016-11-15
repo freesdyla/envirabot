@@ -3,6 +3,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define _CRT_SECURE_NO_WARNINGS
+#define _USE_MATH_DEFINES // for C++
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -16,6 +17,7 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <cmath>
 
 
 // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
@@ -78,8 +80,6 @@ struct RobotArmClient
 
 	void getCurJointPose(double* array6);
 
-	
-
 	void reverse8CharsToDouble(char* end, double* d);
 	
 	void getCartesionInfoFromURPackage(char* x_start_ptr);
@@ -111,6 +111,10 @@ struct RobotArmClient
 	void setStartPoseXYZ();
 
 	void waitTillTCPMove();
+
+	void rotateJointRelative(int id, double deg, float acceleration, float speed);
+
+	void moveHandRelativeTranslate(double x, double y, double z, float acceleration, float speed);
 	
 };
 
