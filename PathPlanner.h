@@ -237,7 +237,7 @@ struct PathPlanner
 								-160.f/180.f*M_PI, -10.f/180.f*M_PI,	// elbow
 								-170./180.*M_PI, 10./180.* M_PI,	// wrist 1
 								10.f/180.f*M_PI, 170.f/180.f*M_PI,	// wrist 2
-								-210.f/180.f*M_PI, -170.f/180.f*M_PI // wrist 3
+								-210.f/180.f*M_PI, -150.f/180.f*M_PI // wrist 3
 								};
 
 	int prmce_round_counter_;
@@ -248,7 +248,10 @@ struct PathPlanner
 
 	bool path_planner_ready_;
 
-	const int start_check_obb_idx_ = 5;	
+	const int start_check_obb_idx_ = 8;	
+	const int end_check_obb_idx_ = 11;
+
+	float tcp_y_limit_ = -0.3f;
 
 	PathPlanner();
 
@@ -257,6 +260,7 @@ struct PathPlanner
 	Eigen::Matrix4f constructDHMatrix(int target_joint_id, float target_joint_pos);
 
 	void forwardKinematicsUR10(float* joint_array6);
+	void forwardKinematicsUR10ROS(float* joint_array6);
 
 	bool collisionCheck(float* joint_array6, float radius);
 
@@ -277,7 +281,7 @@ struct PathPlanner
 
 	void getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<Eigen::Matrix3f> & rot_mats, std::vector<OBB> & arm_obbs);
 
-	bool selfCollision(float* joint_pos);
+	bool selfCollision(float* joint_pos, bool pre_processing_stage);
 
 	// resolution in meter, return number of voxels processed
 	int voxelizeLine(RefPoint & p1, RefPoint & p2, std::vector<RefPoint> & saved_points_grid_frame, std::vector<prmceedge_descriptor> & edge_vec, 
@@ -285,7 +289,7 @@ struct PathPlanner
 
 	int voxelizeOBB(OBB & obb, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume);
 
-	int voxelizeArmConfig(std::vector<OBB> & arm_obbs, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume);
+	int voxelizeArmConfig(std::vector<OBB> & arm_obbs, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume, bool shorten_probe);
 
 	void sweptVolume(float* joint_pos1, float* joint_pos2, std::vector<prmceedge_descriptor> & edge_vec);
 

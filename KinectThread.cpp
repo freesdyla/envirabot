@@ -11,6 +11,7 @@ KinectThread::KinectThread() :
 	HRESULT hr;
 
 	hr = GetDefaultKinectSensor(&m_pKinectSensor);
+
 	if (FAILED(hr))
 	{
 		std::cout << "can not get default sensor\n";
@@ -24,6 +25,8 @@ KinectThread::KinectThread() :
 
 		// Initialize the Kinect and get the color reader
 		IColorFrameSource* pColorFrameSource = NULL;
+
+		IInfraredFrameSource* pInfraredFrameSource = NULL;
 
 		hr = m_pKinectSensor->Open();
 
@@ -52,8 +55,19 @@ KinectThread::KinectThread() :
 			hr = pColorFrameSource->OpenReader(&m_pColorFrameReader);
 		}
 
+		if (SUCCEEDED(hr))
+		{
+			hr = m_pKinectSensor->get_InfraredFrameSource(&pInfraredFrameSource);
+		}
+
+		if (SUCCEEDED(hr))
+		{
+			hr = pInfraredFrameSource->OpenReader(&m_pInfraredFrameReader);
+		}
+
 		SafeRelease(pDepthFrameSource);
 		SafeRelease(pColorFrameSource);
+		SafeRelease(pInfraredFrameSource);
 	}
 
 	if (!m_pKinectSensor || FAILED(hr))
@@ -67,9 +81,11 @@ KinectThread::KinectThread() :
 
 	m_tic = clock();
 
-	depthFrameBuffer = new UINT16[cDepthWidth * cDepthHeight];
+	depthFrameBuffer = new UINT16[cDepthSize];
 
-	filteredDepthFrameBuffer = new UINT16[cDepthWidth * cDepthHeight];
+	filteredDepthFrameBuffer = new UINT16[cDepthSize];
+
+	infraredFrameBuffer = new UINT16[cDepthSize];
 
 	colorFrameBuffer = new BYTE[cColorWidth * cColorHeight * 4];
 
@@ -92,6 +108,7 @@ KinectThread::~KinectThread()
 
 	delete[] depthFrameBuffer;
 	delete[] filteredDepthFrameBuffer;
+	delete[] infraredFrameBuffer;
 	delete[] colorFrameBuffer;
 
 	m_cloud->clear();
@@ -113,51 +130,66 @@ void KinectThread::updateFrame()
 
 	if (SUCCEEDED(hr))
 	{
-		UINT nBufferSize = cDepthWidth * cDepthHeight;
+		hr = pDepthFrame->CopyFrameDataToArray(cDepthSize, depthFrameBuffer);
 
-		if (SUCCEEDED(hr))
+		// filter flying pixels
+		if (FILTER_DEPTH)
 		{
-			hr = pDepthFrame->CopyFrameDataToArray(nBufferSize, depthFrameBuffer);
-
-			// filter flying pixels
-			if (FILTER_DEPTH)
+			const int win_rad = 2;
+			for (int y = 1; y < cDepthHeight - 1; y++)
 			{
-				for (int y = 1; y < cDepthHeight - 1; y++)
+				for (int x = 1; x < cDepthWidth - 1; x++)
 				{
-					for (int x = 1; x < cDepthWidth - 1; x++)
+					int maxJump = 0;
+
+					int centerIdx = y*cDepthWidth + x;
+
+					int centerD = depthFrameBuffer[centerIdx];
+
+					for (int h = -win_rad; h <= win_rad; h++)
 					{
-						int maxJump = 0;
-
-						int centerIdx = y*cDepthWidth + x;
-
-						int centerD = depthFrameBuffer[centerIdx];
-
-						for (int h = -1; h <= 1; h+=2)
+						for (int w = -win_rad; w <= win_rad; w++)
 						{
-							for (int w = -1; w <= 1; w+=2)
-							{
-								int neighborD = depthFrameBuffer[centerIdx + h*cDepthWidth + w];
+							if (h == 0 && w == 0) continue;
 
-								neighborD = abs(centerD - neighborD);
+							int neighborD = depthFrameBuffer[centerIdx + h*cDepthWidth + w];
 
-								maxJump = neighborD > maxJump ? neighborD : maxJump;
-							}
+							neighborD = abs(centerD - neighborD);
+
+							maxJump = neighborD > maxJump ? neighborD : maxJump;
 						}
-
-						filteredDepthFrameBuffer[centerIdx] = maxJump > 20 ? 0 : centerD;
 					}
-				}		
-			}
+
+					filteredDepthFrameBuffer[centerIdx] = maxJump > 40 ? 0 : centerD;
+				}
+			}		
 		}
 	}
 	
 	SafeRelease(pDepthFrame);
 
-	// get color data
-	if (!m_pColorFrameReader)
+	if (stream_infrared_)
 	{
-		return;
+		if (!m_pInfraredFrameReader)
+		{
+			std::cout << "Infrared frame reader fail\n";
+			return;
+		}
+
+		IInfraredFrame* pInfraredFrame = NULL;
+
+		hr = m_pInfraredFrameReader->AcquireLatestFrame(&pInfraredFrame);
+
+		if (SUCCEEDED(hr))
+		{
+			hr = pInfraredFrame->CopyFrameDataToArray(cDepthSize, infraredFrameBuffer);
+		}
+
+		SafeRelease(pInfraredFrame);
 	}
+	
+	// get color data
+	if (!m_pColorFrameReader) return;
 
 	IColorFrame* pColorFrame = NULL;
 
@@ -221,7 +253,6 @@ void KinectThread::updateFrame()
 
 		m_updateMutex.unlock();
 
-
 		/*clock_t toc = clock();
 		printf("Elapsed: %f ms\n", (double)(toc - m_tic) / CLOCKS_PER_SEC * 1000.);
 		m_tic = clock();*/
@@ -270,5 +301,25 @@ cv::Mat KinectThread::getCurRGB()
 
 	//cv::imshow("rgb", output);
 	//cv::waitKey(0);
+	return output;
+}
+
+cv::Mat KinectThread::getCurIR()
+{
+	cv::Mat ir;
+	ir.create(cDepthHeight, cDepthWidth, CV_16UC1);
+
+	m_updateMutex.lock();
+
+	std::memcpy(ir.ptr(0), infraredFrameBuffer, cDepthSize*sizeof(UINT16));
+
+	m_updateMutex.unlock();
+
+	cv::Mat output;
+	// kinect outputs horizontal flipped rgb
+	cv::flip(ir, output, 1);
+
+	//cv::imshow("ir", output);
+	//cv::waitKey(10);
 	return output;
 }

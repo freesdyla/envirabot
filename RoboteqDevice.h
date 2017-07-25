@@ -1,7 +1,15 @@
-#ifndef __RoboteqDevice_H_
-#define __RoboteqDevice_H_
+#ifndef RoboteqDevice_H_
+#define RoboteqDevice_H_
 
 using namespace std;
+
+#define STOP_ON_MAIN 0
+#define ON_MAIN 1	//moving on the main straight tape
+#define FORWARD_ON_BRANCH 2		//moving from main straight to branch
+#define REVERSE_ON_BRANCH 3	//moving from branch back to main straight tape
+#define STOP_AT_DOOR 4
+#define STOP_IN_CHAMBER 5
+#define CRAB_IN_CHAMBER 6
 
 string ReplaceString(string source, string find, string replacement);
 void sleepms(int milliseconds);

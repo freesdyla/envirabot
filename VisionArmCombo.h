@@ -1,6 +1,10 @@
 #ifndef VISION_ARM_COMBO_H_
 #define VISION_ARM_COMBO_H_
 #define _CRT_SECURE_NO_WARNINGS
+
+#define ENVIRATRON
+//#define ROAD
+
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/common/pca.h>
@@ -45,8 +49,11 @@
 #include "Constants.h"	
 #include "ErrorCodes.h"	
 #include "RoboteqDevice.h"
+
+#ifdef ROAD
 //robotiq 
 #include "GripperModbusRTU.h"
+#endif
 
 
 struct VisionArmCombo
@@ -62,6 +69,17 @@ struct VisionArmCombo
 	{
 		double joint_pos_d[6];
 		float joint_pos_f[6];
+
+		ArmConfig()
+		{
+
+		}
+
+		ArmConfig(const ArmConfig & config)
+		{
+			std::memcpy(joint_pos_d, config.joint_pos_d, sizeof(double) * 6);
+			std::memcpy(joint_pos_f, config.joint_pos_f, sizeof(float) * 6);
+		}
 		
 		void setJointPos(double j1, double j2, double j3, double j4, double j5, double j6)
 		{
@@ -147,6 +165,8 @@ struct VisionArmCombo
 
 	float voxel_grid_size_;
 
+	float voxel_grid_size_laser_ = 0.001;
+
 	pcl::PassThrough<PointT> pass_;
 
 	pcl::ExtractIndices<PointT> extract_indices_;
@@ -157,21 +177,23 @@ struct VisionArmCombo
 
 	Eigen::Affine3f pre_viewer_pose_;
 
-	const float scan_acceleration_ = 0.5f;
+	float scan_acceleration_ = 0.25f;
 	
-	const float scan_speed_ = 0.1f;
+	float scan_speed_ = 0.05f;
 
-	const float move_arm_speed_ = 0.05f;
+	float move_arm_speed_ = 0.05f;
 
-	const float move_arm_acceleration_ = 0.1f;
+	float move_arm_acceleration_ = 0.1f;
 
-	const float move_joint_speed_ = 0.4f;
+	float move_joint_speed_ = 0.4f;
 
-	const float move_joint_acceleration_ = 0.5f;
+	float move_joint_acceleration_ = 0.4f;
 
 	const float speed_correction_ = 0;// -0.0085f;
 
-	const int view_time_ = 0;
+	float laser_scan_period_ = 1.0/500.0;
+
+	int view_time_ = 1000;
 
 	int counter_;
 
@@ -182,17 +204,90 @@ struct VisionArmCombo
 
 	cv::Mat kinect_rgb_hand_to_eye_cv_, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_;
 
+	cv::Mat kinect_infrared_hand_to_eye_cv_, kinect_infrared_camera_matrix_cv_, kinect_infrared_dist_coeffs_cv_;
+
 	cv::Ptr<cv::aruco::Dictionary> marker_dictionary_;
 
 	cv::Ptr<cv::aruco::DetectorParameters> detector_params_;
 
 	float marker_length_;
 
-	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_, gripper_to_hand_;
+	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_, gripper_to_hand_, hand_to_depth_;
 
 	RoboteqDevice motor_controller_;
 
+	int region_grow_min_cluster_size_ = 1000;
+	int region_grow_max_cluster_size_ = 10000;
+	float region_grow_residual_threshold_ = 0.005f;
+	float region_grow_smoothness_threshold_ = 3.0 / 180.*M_PI;
+	float region_grow_curvature_threshold_ = 1.0;
+	int region_grow_num_neighbors_ = 30;
+
+	// point cloud vector for three stations. 0-left, 1-center, 2-right
+	std::vector<PointCloudT::Ptr> growthChamberPointCloudVec_;
+	std::vector<bool> pot_process_status_;
+
+	float scan_pot_x_abs_limit_ = 0.5f;
+
+	std::vector<Eigen::Vector4f*> plant_cluster_min_vec_;
+	std::vector<Eigen::Vector4f*> plant_cluster_max_vec_;
+
+	std::vector<int> kmeans_label_sorted_;
+
+	float rover_dist_ = 0.5f;
+
+	Eigen::Matrix4f icp_final_transformation_;
+
+	// probe plate center test
+	cv::Vec3f plate_center_;
+	float plate_radius_;
+
+	float seed_resolution_ = 0.04f;
+	float color_importance_ = 0.f;
+	float spatial_importance_ = 1.f;
+	float normal_importance_ = 1.f;
+
+	float sor_mean_k_ = 50;
+	float sor_std_ = 1.0;
+
+	std::vector<std::vector<pcl::PointXYZRGBNormal>> leaf_probing_pn_vector_;
+
+
+	ArmConfig home_config_;
+
+
+	static bool probing_rank_comparator(pcl::PointXYZRGBNormal & a, pcl::PointXYZRGBNormal & b)
+	{
+			return a.z > b.z;
+	}
+
+	struct LeafIDnX
+	{
+		int id;
+		float x;
+	};
+
+	static bool leaf_x_comparator(LeafIDnX & a, LeafIDnX & b)
+	{
+		return a.x > b.x;
+	}
+
+	std::vector<LeafIDnX> leaf_cluster_order_;
+
+	std::vector<PointCloudT::Ptr> plant_laser_pc_vec_;
+
+	float shelf_z_ = -0.6;
+
+	cv::Vec3f plant_center_;
+
+	Eigen::Vector3f min_point_AABB_, max_point_AABB_;
+
+	int max_samples_per_leaf_ = 1;
+
+
+#ifdef ROAD
 	GripperModbusRTU gripper_;
+#endif
 
 	VisionArmCombo();
 
@@ -234,7 +329,7 @@ struct VisionArmCombo
 
 	void pp_callback(const pcl::visualization::PointPickingEvent& event, void*);
 
-	void mapWorkspaceUsingKinectArm();
+	void mapWorkspaceUsingKinectArm(int rover_position, int num_plants);
 
 	void addArmModelToViewer(std::vector<PathPlanner::RefPoint> & ref_points);
 
@@ -252,17 +347,20 @@ struct VisionArmCombo
 
 	void double2float(double* array6_d, float* array6_f);
 
-	bool moveToConfigGetKinectPointCloud(ArmConfig & config, bool get_cloud, bool try_direct_path);
+	bool moveToConfigGetKinectPointCloud(ArmConfig & config, bool get_cloud, bool try_direct_path, bool add_cloud_to_occupancy_grid);
 
 	double L2Norm(double* array6_1, double* array6_2);
 
-	void processGrowthChamberEnviroment(PointCloudT::Ptr cloud, float shelf_z_value, int num_plants);
+	void processGrowthChamberEnviroment(PointCloudT::Ptr cloud, float shelf_z_value, int num_plants, int rover_position);
 
+#if 1
 	void addSupervoxelConnectionsToViewer(PointT &supervoxel_center,
 											PointCloudT &adjacent_supervoxel_centers, std::string name,
 											boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer);
 
-	void extractProbeSurfacePatchFromPointCloud(PointCloudT::Ptr cloud, std::vector<pcl::Supervoxel<PointT>::Ptr> & potential_probe_supervoxels);
+	void extractProbeSurfacePatchFromPointCloud(PointCloudT::Ptr cloud, std::vector<pcl::Supervoxel<PointT>::Ptr> & potential_probe_supervoxels,
+												std::vector<pcl::PointXYZRGBNormal>& probing_point_normal_vec);
+#endif
 
 	bool computeCollisionFreeProbeOrScanPose(PointT & point, pcl::Normal & normal, bool probe, std::vector<ArmConfig> & solution_config_vec, 
 												Eigen::Matrix4d & scan_start_or_probe_hand_pose, Eigen::Vector3d & hand_translation);
@@ -279,7 +377,7 @@ struct VisionArmCombo
 
 	void extractLeafProbingPoints(PointCloudT::Ptr cloud_in, std::vector<pcl::PointXYZRGBNormal> & probe_pn_vec);
 
-	void probeLeaf(PointT & probe_point, pcl::Normal & normal);
+	bool probeLeaf(PointT & probe_point, pcl::Normal & normal);
 
 	void display();
 
@@ -287,16 +385,37 @@ struct VisionArmCombo
 
 	void KinectRGBHandEyeCalibration();
 
+	void calibrateKinectIRCamera();
+
+	void KinectIRHandEyeCalibration();
+
 	void markerDetection();
 
 	void cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::Matrix4d & eigen_transform);
 
 	void scanAndProbeTest();
 
+	void setAndSaveParameters();
+
+	bool scanGrowthChamberWithKinect(int location_id, ArmConfig & config, bool add_to_occupancy_grid);
+
+	bool scanPlantCluster(cv::Vec3f &object_center, float max_z, float radius);
+
+	void testRun();
+
+	void probePlateCenterTest();
+
+	void TCPCalibrationErrorAnalysis(int numPoseNeeded = 4);
+
+	void acquireRGBStereoPair();
+
 	// RoAd functions
 	int sendRoboteqVar(int id, int value);
 	void fitPotRing(PointCloudT::Ptr pot_cloud);
+#ifdef ROAD
 	void find3DMarker(PointCloudT::Ptr marker_cloud);
+#endif
+	void scanPotMultiAngle();
 };
 
 

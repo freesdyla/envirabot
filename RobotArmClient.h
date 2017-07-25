@@ -115,6 +115,8 @@ struct RobotArmClient
 	void rotateJointRelative(int id, double deg, float acceleration, float speed);
 
 	void moveHandRelativeTranslate(double x, double y, double z, float acceleration, float speed);
+
+	double configL2Norm(double* config1, double* config2);
 	
 };
 

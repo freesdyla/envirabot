@@ -1,0 +1,37 @@
+%YAML 1.0
+---
+shelf_z_: -0.6
+voxel_grid_size_laser_: 0.001
+region_grow_residual_threshold_: 0.01
+region_grow_smoothness_threshold_: 7.0
+region_grow_curvature_threshold_: 20.0
+region_grow_num_neighbors_: 8
+region_grow_min_cluster_size_:1000
+region_grow_max_cluster_size_:10000
+plate_center_x_: -0.1
+plate_center_y_: -0.7
+plate_center_z_: 0.1
+plate_radius_: 0.15 
+laser_scan_frequency_: 2000.0
+scan_speed_: 0.1
+scan_acceleration_: 0.5
+move_arm_speed_: 0.1 
+move_arm_acceleration_: 0.1
+move_joint_speed_: 0.4
+move_joint_acceleration_: 0.4
+view_time_: 0
+seed_resolution_: 0.02
+spatial_importance_: 0.5
+normal_importance_: 1.0
+sor_mean_k_: 15
+sor_std_: 1.0
+plant_center_x_: -0.1
+plant_center_y_: -0.7
+plant_center_z_: -0.4
+min_point_AABB_x_: -0.5
+min_point_AABB_y_: -1.2
+min_point_AABB_z_: -0.49
+max_point_AABB_x_: 0.5
+max_point_AABB_y_: -0.3
+max_point_AABB_z_: 0.0
+max_samples_per_leaf_: 1

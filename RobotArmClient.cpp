@@ -113,7 +113,7 @@ void RobotArmClient::startRecvTCP()
 
 			displacement_ = EuclideanDistance(cur_cartesian_info_array, start_xyz_);
 
-			distanceToDstConfig_ = EuclideanDistance(cur_joint_pos_array, dst_joint_pos_array);
+			distanceToDstConfig_ = configL2Norm(cur_joint_pos_array, dst_joint_pos_array);
 
 			updateMutex.unlock();
 
@@ -218,7 +218,7 @@ int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float accel
 	char msg[128];
 
 	updateMutex.lock();
-	distanceToDstConfig_ = 1000.;
+	distanceToDstConfig_ = 1000000.;
 	updateMutex.unlock();
 
 	sprintf(msg, "movej([%f,%f,%f,%f,%f,%f],a=%f,v=%f)\n",
@@ -271,6 +271,7 @@ void RobotArmClient::printCartesianInfo(double* array6)
 	std::cout << '\n';
 }
 
+// only compute distance of the first 3 elements
 double RobotArmClient::EuclideanDistance(double* pose6_1, double* pose6_2)
 {
 	double sum_squares = 0.;
@@ -306,11 +307,10 @@ int RobotArmClient::waitTillHandReachDstConfig(double* dst_joint_config)
 
 	while (true)
 	{
-		if (distanceToDstConfig_ < 0.0005)
-			break;
+		if (distanceToDstConfig_ < 5e-4) break;
 
 		Sleep(4);
-		//std::cout << distanceToDst << std::endl;
+		//std::cout << distanceToDstConfig_ << std::endl;
 	}
 
 	return 0;
@@ -391,4 +391,18 @@ void RobotArmClient::moveHandRelativeTranslate(double x, double y, double z, flo
 	pose[2] += z;
 	moveHandL(pose, acceleration, speed);
 	waitTillHandReachDstPose(pose);
+}
+
+double RobotArmClient::configL2Norm(double* config6_1, double* config6_2)
+{
+	double sum_squares = 0.;
+
+	for (int i = 0; i < 6; i++)
+	{
+		double diff = config6_1[i] - config6_2[i];
+
+		sum_squares += diff*diff;
+	}
+
+	return sqrt(sum_squares);
 }

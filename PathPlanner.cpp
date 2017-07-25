@@ -161,6 +161,69 @@ void PathPlanner::forwardKinematicsUR10(float* joint_array6)
 	for (int i = 1; i < 6; i++) fk_mat_ = fk_mat_*DH_mat_vec_[i];
 }
 
+void PathPlanner::forwardKinematicsUR10ROS(float* joint_array6)
+{
+	const double d1 = 0.1273;
+	const double a2 = -0.612;
+	const double a3 = -0.5723;
+	const double d4 = 0.163941;
+	const double d5 = 0.1157;
+	const double d6 = 0.0922;
+
+	double transform[16];
+	double j[6];
+
+	for (int i = 0; i < 6; i++ )
+	{
+		j[i] = (double)joint_array6[i];
+	}
+
+	double* q = j;
+	double *T = transform;
+
+	double s1 = sin(*q), c1 = cos(*q); q++;
+	double q234 = *q, s2 = sin(*q), c2 = cos(*q); q++;
+	double s3 = sin(*q), c3 = cos(*q); q234 += *q; q++;
+	q234 += *q; q++;
+	double s5 = sin(*q), c5 = cos(*q); q++;
+	double s6 = sin(*q), c6 = cos(*q);
+	double s234 = sin(q234), c234 = cos(q234);
+	*T = ((c1*c234 - s1*s234)*s5) / 2.0 - c5*s1 + ((c1*c234 + s1*s234)*s5) / 2.0; T++;
+	*T = (c6*(s1*s5 + ((c1*c234 - s1*s234)*c5) / 2.0 + ((c1*c234 + s1*s234)*c5) / 2.0) -
+		(s6*((s1*c234 + c1*s234) - (s1*c234 - c1*s234))) / 2.0); T++;
+	*T = (-(c6*((s1*c234 + c1*s234) - (s1*c234 - c1*s234))) / 2.0 -
+		s6*(s1*s5 + ((c1*c234 - s1*s234)*c5) / 2.0 + ((c1*c234 + s1*s234)*c5) / 2.0)); T++;
+	*T = ((d5*(s1*c234 - c1*s234)) / 2.0 - (d5*(s1*c234 + c1*s234)) / 2.0 -
+		d4*s1 + (d6*(c1*c234 - s1*s234)*s5) / 2.0 + (d6*(c1*c234 + s1*s234)*s5) / 2.0 -
+		a2*c1*c2 - d6*c5*s1 - a3*c1*c2*c3 + a3*c1*s2*s3); T++;
+	*T = c1*c5 + ((s1*c234 + c1*s234)*s5) / 2.0 + ((s1*c234 - c1*s234)*s5) / 2.0; T++;
+	*T = (c6*(((s1*c234 + c1*s234)*c5) / 2.0 - c1*s5 + ((s1*c234 - c1*s234)*c5) / 2.0) +
+		s6*((c1*c234 - s1*s234) / 2.0 - (c1*c234 + s1*s234) / 2.0)); T++;
+	*T = (c6*((c1*c234 - s1*s234) / 2.0 - (c1*c234 + s1*s234) / 2.0) -
+		s6*(((s1*c234 + c1*s234)*c5) / 2.0 - c1*s5 + ((s1*c234 - c1*s234)*c5) / 2.0)); T++;
+	*T = ((d5*(c1*c234 - s1*s234)) / 2.0 - (d5*(c1*c234 + s1*s234)) / 2.0 + d4*c1 +
+		(d6*(s1*c234 + c1*s234)*s5) / 2.0 + (d6*(s1*c234 - c1*s234)*s5) / 2.0 + d6*c1*c5 -
+		a2*c2*s1 - a3*c2*c3*s1 + a3*s1*s2*s3); T++;
+	*T = ((c234*c5 - s234*s5) / 2.0 - (c234*c5 + s234*s5) / 2.0); T++;
+	*T = ((s234*c6 - c234*s6) / 2.0 - (s234*c6 + c234*s6) / 2.0 - s234*c5*c6); T++;
+	*T = (s234*c5*s6 - (c234*c6 + s234*s6) / 2.0 - (c234*c6 - s234*s6) / 2.0); T++;
+	*T = (d1 + (d6*(c234*c5 - s234*s5)) / 2.0 + a3*(s2*c3 + c2*s3) + a2*s2 -
+		(d6*(c234*c5 + s234*s5)) / 2.0 - d5*c234); T++;
+	*T = 0.0; T++; *T = 0.0; T++; *T = 0.0; T++; *T = 1.0;
+
+	for (int y = 0; y < 4; y++)
+	{
+		for (int x = 0; x < 4; x++)
+		{
+			std::cout << transform[y * 4 + x]<<" ";
+		}
+		std::cout << "\n";
+	}
+
+
+
+}
+
 /*
 	center_config/neighbor_config: start pointer to an array (6 joint pos values)
 	step_size: in rad in Cspace
@@ -297,13 +360,13 @@ void PathPlanner::computeReferencePointsOnArm(float* joint_pos, std::vector<RefP
 	rot_mats.push_back(accum_dh_mat.block<3,3>(0,0));
 
 	// frame 1, the other side, z positive
-	vec(0) = 0.f; vec(1) = 0.f; vec(2) = 0.18f, vec(3) = 1.f; vec = accum_dh_mat * vec;
+	vec(0) = 0.f; vec(1) = 0.f; vec(2) = 0.2f, vec(3) = 1.f; vec = accum_dh_mat * vec;
 	for (int i = 0; i < 3; i++) ref_p.coordinates[i] = vec(i); 
 	reference_points.push_back(ref_p);
 
 	// frame 2, the other side, z positive
 	dh_mat = constructDHMatrix(1, joint_pos[1]); accum_dh_mat = accum_dh_mat * dh_mat;
-	vec(0) = 0.f; vec(1) = 0.f; vec(2) = 0.18f, vec(3) = 1.f; vec = accum_dh_mat * vec;
+	vec(0) = 0.f; vec(1) = 0.f; vec(2) = 0.2f, vec(3) = 1.f; vec = accum_dh_mat * vec;
 	for (int i = 0; i < 3; i++) ref_p.coordinates[i] = vec(i);  
 	reference_points.push_back(ref_p);
 	rot_mats.push_back(accum_dh_mat.block<3, 3>(0, 0));
@@ -472,79 +535,95 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 
 	RefPoint tmp_rp, tmp_rp1;
 
-	// add rover base
+	// 0. add rover base
 	OBB obb;
 	obb.C << 0.f, 0.2f, -0.48f;
 	obb.A = Eigen::Matrix3f::Identity();
-	obb.a << 0.37f, 0.38f, 0.47f;
+	obb.a << 0.37f, 0.40f, 0.47f;
 	arm_obbs.push_back(obb);
 
-	// add chamber window top wall, robot arm base center to front edge 16.5cm, robot-to-window 20cm, wall thickness 5cm
+	// 1. add chamber window top wall, robot arm base center to front edge 16.5cm, robot-to-window 20cm, wall thickness 5cm
 	// floor-to-base height 0.964m, 
-	obb.C << 0.f, -0.39f, 1.161f;
-	obb.a << 1.3f, 0.025f, 0.155f;
+	obb.C << 0.f, -0.25f, 1.161f;
+	obb.a << 1.3f, 0.04f, 0.155f;
 	arm_obbs.push_back(obb);
 
-	// add chamber inside wall
-	obb.C << 0.f, -1.19f, 0.17f;
-	obb.a << 1.3f, 0.025f, 1.4f;
+	// 2. add chamber window bottom wall
+	obb.C << 0.f, -0.25f, -0.34f - 0.3f;
+	obb.a << 1.3f, 0.04f, 0.3f;
 	arm_obbs.push_back(obb);
 
-	// add chamber table
+	// 3. add chamber window left wall
+	obb.C << 0.99f+0.145f, -0.25f, 0.45f;
+	obb.a << 0.02f+0.145f, 0.04f, 0.8f;
+	arm_obbs.push_back(obb);
+
+	// 4. add chamber window right wall
+	obb.C << -0.99f-0.145f, -0.25f, 0.45f;
+	obb.a << 0.02f+0.145f, 0.04f, 0.8f;
+	arm_obbs.push_back(obb);
+
+	// 5. add chamber inside wall
+	obb.C << 0.f, -1.1f, 0.17f;
+	obb.a << 1.3f, 0.04f, 1.4f;
+	arm_obbs.push_back(obb);
+
+	// 6. add chamber table
 	obb.C << 0.f, -0.7f, -0.732f;
-	obb.a << 1.3f, 0.5f, 0.01f;
+	obb.a << 1.3f, 0.35f, 0.01f;
 	arm_obbs.push_back(obb);
 
-	// frame 1 arm, UR10 DH figure, y axis
+	// 7. add frame 1 arm, UR10 DH figure, y axis
 	ref_points[1].coordinates[2] = 0.21f;
 	constructOBB(ref_points[0], ref_points[1], rot_mats[0], 0.11f, 1, obb);
 	arm_obbs.push_back(obb);
 
-	// 1st long arm, frame 2
-	for (int i = 0; i < 3; i++) ref_points[2].coordinates[i] += rot_mats[1](i, 0)*0.08f;
+	// 8. 1st long arm, frame 2
+	for (int i = 0; i < 3; i++) ref_points[2].coordinates[i] += rot_mats[1](i, 0)*0.06f;
 	for (int i = 0; i < 3; i++) ref_points[3].coordinates[i] -= rot_mats[1](i, 0)*0.06f;
-	constructOBB(ref_points[2], ref_points[3], rot_mats[1], 0.069f, 0, obb);
+	constructOBB(ref_points[2], ref_points[3], rot_mats[1], 0.089f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 2nd long arm, frame 3
+	// 9. 2nd long arm, frame 3
 	for (int i = 0; i < 3; i++) ref_points[4].coordinates[i] += rot_mats[2](i, 0)*0.06f;
 	for (int i = 0; i < 3; i++) ref_points[5].coordinates[i] -= rot_mats[2](i, 0)*0.046f;
 	constructOBB(ref_points[4], ref_points[5], rot_mats[2], 0.045f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// frame 4
+	// 10. frame 4
 	for (int i = 0; i < 3; i++) ref_points[6].coordinates[i] -= rot_mats[3](i, 2)*0.06f;
 	
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[3](i, 2)*0.051f;
 	constructOBB(ref_points[6], tmp_rp, rot_mats[3], 0.052f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// frame 5
+	// 11. frame 5
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[4](i, 2)*0.045f;
 	constructOBB(tmp_rp, ref_points[8], rot_mats[4], 0.045f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// sensor block (kinect)
+	// 12. sensor block (kinect)
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.14f + rot_mats[5](i, 2)*0.041f + rot_mats[5](i, 1)*0.1f;
 	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.14f + rot_mats[5](i, 2)*0.041f + rot_mats[5](i, 1)*0.1f;
 	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.04f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// laser scanner
+	// 13. laser scanner
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.09f + rot_mats[5](i, 2)*0.05f + rot_mats[5](i, 1)*0.01f;
 	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.09f + rot_mats[5](i, 2)*0.05f + rot_mats[5](i, 1)*0.01f;
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.045f, 0, obb);
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.045f, 0, obb);	
 	arm_obbs.push_back(obb);
 
-	// probe stick	(0.035425, -0.0445422, 0.184104)
-	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.035425f + rot_mats[5](i, 1)*(-0.0445422f) + rot_mats[5](i, 2)*0.005f;
-	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.035425f + rot_mats[5](i, 1)*(-0.0445422f) + rot_mats[5](i, 2)*0.184104f;
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.005f, 2, obb);
+	// 14. probe stick	(0.035425, -0.0445422, 0.184104)      0.0348893, -0.0440583, 0.18337 //10/24/2016	Enviratron
+	//for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.0348893f + rot_mats[5](i, 1)*(-0.0440583f) + rot_mats[5](i, 2)*0.01f;
+	//for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.0348893f + rot_mats[5](i, 1)*(-0.0440583f) + rot_mats[5](i, 2)*0.18337f;
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*(8.7495016360196548e-2f) + rot_mats[5](i, 1)*(2.6544144468849895e-2f) + rot_mats[5](i, 2)*0.01f;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*(8.7495016360196548e-2f) + rot_mats[5](i, 1)*(2.6544144468849895e-2f) + rot_mats[5](i, 2)*(0.25f);
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.008f, 2, obb);
 	arm_obbs.push_back(obb);
-
 }
 
-bool PathPlanner::selfCollision(float* joint_pos)
+bool PathPlanner::selfCollision(float* joint_pos, bool pre_processing_stage = false)
 {
 	std::vector<RefPoint> reference_points;
 	std::vector<Eigen::Matrix3f> rot_mats;
@@ -552,13 +631,33 @@ bool PathPlanner::selfCollision(float* joint_pos)
 
 	computeReferencePointsOnArm(joint_pos, reference_points, rot_mats);
 
-	if (reference_points.back().coordinates[1] > 0.3f) return true;
+	//prevent hand hit the back wall
+	if (pre_processing_stage)
+	{
+		if (reference_points.back().coordinates[1] > tcp_y_limit_)
+		{
+			//std::cout << "hand in the back too far\n";
+			return true;
+		}
+	}
+	else
+	{
+		if (reference_points.back().coordinates[1] > 0.6f)
+		{
+			//std::cout << "hand in the back too far\n";
+			return true;
+		}
+	}
 
 	getArmOBBModel(reference_points, rot_mats, arm_obbs);
 
+	//const int arm_obbs_size = arm_obbs.size();
+		
 	for (int i = start_check_obb_idx_; i < arm_obbs.size(); i++)
 	{
-		for (int j = 0; j < i; j++)
+		const int end_idx = std::min(i, end_check_obb_idx_);
+
+		for (int j = 0; j < end_idx; j++)
 		{
 			if (collisionOBB(arm_obbs[i], arm_obbs[j]))
 			{
@@ -567,6 +666,20 @@ bool PathPlanner::selfCollision(float* joint_pos)
 			}
 		}
 	}
+
+	// check probe, can collide with laser scanner
+/*	i = arm_obbs_size - 1;
+
+	for (int j = 0; j < i-1; j++)
+	{
+		if (collisionOBB(arm_obbs[i], arm_obbs[j]))
+		{
+			//std::cout << i <<" collide with " << j << "\n";
+			return true;
+		}
+	}
+	*/
+
 	return false;
 }
 
@@ -641,15 +754,15 @@ int PathPlanner::voxelizeLine(RefPoint & p1, RefPoint & p2, std::vector<RefPoint
 						addEdgeDescriptor2Cell(edge_vec, cell_idx);
 						num_voxelized++;
 					}
+				}
 
-					if (save_points)
-					{
-						RefPoint rp;
-						rp.coordinates[0] = x1 + x*signx;
-						rp.coordinates[1] = y1 + y;
-						rp.coordinates[2] = z1 + z;
-						saved_points_grid_frame.push_back(rp);
-					}
+				if (save_points)
+				{
+					RefPoint rp;
+					rp.coordinates[0] = x1 + x*signx;
+					rp.coordinates[1] = y1 + y;
+					rp.coordinates[2] = z1 + z;
+					saved_points_grid_frame.push_back(rp);
 				}
 				
 				if (set_swept_volume && grid_[cell_idx].sweptVolumneCounter != prmce_swept_volume_counter_)
@@ -692,15 +805,15 @@ int PathPlanner::voxelizeLine(RefPoint & p1, RefPoint & p2, std::vector<RefPoint
 						addEdgeDescriptor2Cell(edge_vec, cell_idx);
 						num_voxelized++;
 					}
+				}
 
-					if (save_points)
-					{
-						RefPoint rp;
-						rp.coordinates[0] = x1 + x;
-						rp.coordinates[1] = y1 + y*signy;
-						rp.coordinates[2] = z1 + z;
-						saved_points_grid_frame.push_back(rp);
-					}
+				if (save_points)
+				{
+					RefPoint rp;
+					rp.coordinates[0] = x1 + x;
+					rp.coordinates[1] = y1 + y*signy;
+					rp.coordinates[2] = z1 + z;
+					saved_points_grid_frame.push_back(rp);
 				}
 
 				if (set_swept_volume && grid_[cell_idx].sweptVolumneCounter != prmce_swept_volume_counter_)
@@ -745,15 +858,15 @@ int PathPlanner::voxelizeLine(RefPoint & p1, RefPoint & p2, std::vector<RefPoint
 						addEdgeDescriptor2Cell(edge_vec, cell_idx);
 						num_voxelized++;
 					}
+				}
 
-					if (save_points)
-					{
-						RefPoint rp;
-						rp.coordinates[0] = x1 + x;
-						rp.coordinates[1] = y1 + y;
-						rp.coordinates[2] = z1 + z*signz;
-						saved_points_grid_frame.push_back(rp);
-					}
+				if (save_points)
+				{
+					RefPoint rp;
+					rp.coordinates[0] = x1 + x;
+					rp.coordinates[1] = y1 + y;
+					rp.coordinates[2] = z1 + z*signz;
+					saved_points_grid_frame.push_back(rp);
 				}
 
 				if (set_swept_volume && grid_[cell_idx].sweptVolumneCounter != prmce_swept_volume_counter_)
@@ -811,14 +924,31 @@ int PathPlanner::voxelizeOBB(OBB & obb, std::vector<prmceedge_descriptor> & edge
 	std::cout << "p3p4 size " << p3p4_grid_frame.size() << "\n";
 
 	if (p1p2_grid_frame.size() != p3p4_grid_frame.size())
-		std::cout << "p1p2 != p3p4 \n";
-		*/
+		std::cout << "p1p2 != p3p4 \n";*/
+
+	if (p1p2_grid_frame.size() == 0 || p3p4_grid_frame.size() == 0)
+	{
+		std::cout << "p1p2 size " << p1p2_grid_frame.size() << "\n";
+		std::cout << "p3p4 size " << p3p4_grid_frame.size() << "\n";
+		std::cout << "p1: " << p1.coordinates[0] << " " << p1.coordinates[1] << " " << p1.coordinates[2] << "\n";
+		std::cout << "p2: " << p2.coordinates[0] << " " << p2.coordinates[1] << " " << p2.coordinates[2] << "\n";
+
+		std::cout << "p3: " << p3.coordinates[0] << " " << p3.coordinates[1] << " " << p3.coordinates[2] << "\n";
+		std::cout << "p4: " << p4.coordinates[0] << " " << p4.coordinates[1] << " " << p4.coordinates[2] << "\n";
+	}
+		
 	//return;
 
 	int line_size = p1p2_grid_frame.size() < p3p4_grid_frame.size() ? p1p2_grid_frame.size() : p3p4_grid_frame.size();
 
 	// voxelize rectangle face
-	for (int i = 0; i < line_size; i++)	voxelizeLine(p1p2_grid_frame[i], p3p4_grid_frame[i], rectangle_grid_frame, edge_vec, false, true, false, false);
+	for (int i = 0; i < line_size; i++)
+	{
+		//int idx1 = i < p1p2_grid_frame.size() ? i : p1p2_grid_frame.size() - 1;
+		//int idx2 = i < p3p4_grid_frame.size() ? i : p3p4_grid_frame.size() - 1;
+		voxelizeLine(p1p2_grid_frame[i], p3p4_grid_frame[i], rectangle_grid_frame, edge_vec, false, true, false, false);
+	}
+
 
 	//return;
 	int count = 0;
@@ -842,10 +972,20 @@ int PathPlanner::voxelizeOBB(OBB & obb, std::vector<prmceedge_descriptor> & edge
 	return num_voxelized;
 }
 
-int PathPlanner::voxelizeArmConfig(std::vector<OBB> & arm_obbs, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume=false)
+int PathPlanner::voxelizeArmConfig(std::vector<OBB> & arm_obbs, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume=false, bool shorten_probe=false)
 {
 	int num_voxelized = 0;
-	for (int i = start_check_obb_idx_; i < arm_obbs.size(); i++) num_voxelized += voxelizeOBB(arm_obbs[i], edge_vec, set_swept_volume);
+
+	//for single config collision detection, probe tip touch leaf
+	if (shorten_probe)
+	{
+		arm_obbs[arm_obbs.size() - 1].a(2) -= 0.04f;
+	}
+
+	for (int i = start_check_obb_idx_; i < arm_obbs.size(); i++)
+	{
+		num_voxelized += voxelizeOBB(arm_obbs[i], edge_vec, set_swept_volume);
+	}
 	return num_voxelized; 
 }
 
@@ -907,9 +1047,9 @@ void PathPlanner::PRMCEPreprocessing()
 	random_nodes_buffer_ = new float[num_nodes_ * 6];
 
 	// num_nodes*six joints*three coordinates(x,y,z)
-	reference_points_buffer_ = new float[num_nodes_*num_ref_points_ * 3];
+	reference_points_buffer_ = new float[num_nodes_*num_ref_points_*3];
 
-	start_end_ref_points_ = new float[2 * 3 * num_ref_points_];
+	start_end_ref_points_ = new float[2*3*num_ref_points_];
 
 	initGrid(400, 400, 300, 4, -200, -200, -100);
 	clock_t toc = clock();
@@ -941,11 +1081,13 @@ void PathPlanner::PRMCEPreprocessing()
 		// random set of joint pos
 		for (int j = 0; j < 6; j++) joint_array6[j] = distri_vec_[j](rand_gen_);
 
-		if (!selfCollision(joint_array6))
+		if (!selfCollision(joint_array6, true))
 		{
 			memcpy(random_nodes_buffer_ + i * 6, joint_array6, 6 * sizeof(float));
-			//if (i % 50 == 0) std::cout << "random node " << i << "\n";
+			//if (i % 100 == 0) std::cout << "random node " << i << "\n";
 			i++;
+
+			if (i > (num_nodes_*0.8)) tcp_y_limit_ = 0.6f;
 		}
 		else fail_count++;
 	}
@@ -1177,7 +1319,7 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 		std::cout << "end config self collision \n";
 		return false;
 	}
-
+	
 	// check path from start to goal directly
 	if (try_direct_path && !collisionCheckTwoConfigs(start_joint_pos, end_joint_pos))
 	{
@@ -1185,9 +1327,12 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 		prmce_swept_volume_counter_++;
 		return true;
 	}
+	clock_t toc = clock();
+	printf("Check direct path time: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 
+	tic = clock();
 	prmce_swept_volume_counter_++;
-
+	
 	std::vector<RefPoint> reference_points_start, reference_points_end;
 
 	std::vector<Eigen::Matrix3f> rot_mats_start, rot_mats_end;
@@ -1256,7 +1401,7 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 		return false;
 	}
 
-	clock_t toc = clock();
+	toc = clock();
 	printf("connect start and goal to roadmap Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 
 	std::cout << "start index " << start << " -- goal index " << goal << "\n";
@@ -1276,9 +1421,7 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	std::vector<prmcevertex_descriptor> p(boost::num_vertices(prmcegraph_));
 
 	std::vector<float> d(boost::num_vertices(prmcegraph_));
-
-	
-
+		
 	/*boost::dijkstra_shortest_paths(prmgraph_, start,
 	boost::predecessor_map(boost::make_iterator_property_map(p.begin(), boost::get(boost::vertex_index, prmgraph_))).
 	distance_map(boost::make_iterator_property_map(d.begin(), boost::get(boost::vertex_index, prmgraph_))));
@@ -1339,6 +1482,9 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	}
 	catch (found_goal fg)
 	{
+		toc = clock();
+		printf("grahp search Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+
 		shortest_path_index_vec_.clear();
 
 		for (prmcevertex_descriptor v = goal;; v = p[v])
@@ -1354,14 +1500,11 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 		
 		for (++spi; spi != shortest_path_index_vec_.end(); ++spi) std::cout << " -> " << *spi;
 
-		std::cout << std::endl << "Total travel distance: " << d[goal] << std::endl;
+		std::cout << std::endl << "Total travel distance (m): " << sqrt(d[goal]) << std::endl;
 
 		found_path = d[goal] < 500.f ? true : false;
 	}
-
-	toc = clock();
-	printf("grahp search Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
-
+		
 	if (smooth)
 	{
 		smoothPath();
@@ -1484,9 +1627,28 @@ void PathPlanner::resetOccupancyGrid()
 
 void PathPlanner::smoothPath()
 {
-	if (shortest_path_index_vec_.size() < 3) return;
+	if (shortest_path_index_vec_.size() <= 1) return;
 
 	clock_t tic = clock();
+
+	if (shortest_path_index_vec_.size() == 2)
+	{
+		if (!collisionCheckTwoConfigs(random_nodes_buffer_ + shortest_path_index_vec_[0] * num_joints_,
+			random_nodes_buffer_ + shortest_path_index_vec_[1] * num_joints_))
+		{
+			shortest_path_index_vec_.pop_back();
+		}
+
+		clock_t toc = clock();
+		printf("smooth path Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+
+		std::cout << "smooth path: ";
+		for (auto e : shortest_path_index_vec_) std::cout << e << "->";
+		std::cout << "\n";
+
+		return;
+	}
+
 	int cur_vertex = 0;
 	int new_vertex = 2;
 	
@@ -1541,7 +1703,7 @@ bool PathPlanner::collisionCheckForSingleConfig(float* config)
 
 	getArmOBBModel(reference_points, rot_mats, arm_obbs);
 
-	int num_voxelized = voxelizeArmConfig(arm_obbs, edge_vec, true);
+	int num_voxelized = voxelizeArmConfig(arm_obbs, edge_vec, true, true);
 
 	prmce_swept_volume_counter_++;
 

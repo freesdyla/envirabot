@@ -36,13 +36,18 @@ struct KinectThread
 	static const int cDepthWidth = 512;
 	static const int cDepthHeight = 424;
 
+	static const int cDepthSize = cDepthWidth*cDepthHeight;
+
 	static const int cColorWidth = 1920;
 	static const int cColorHeight = 1080;
+
+	bool stream_infrared_ = false;
 
 
 	// data buffer for saving
 	UINT16 *depthFrameBuffer;
 	UINT16 *filteredDepthFrameBuffer;
+	UINT16 *infraredFrameBuffer;
 	BYTE* colorFrameBuffer;
 
 	bool nextFrameAvailable;
@@ -57,6 +62,9 @@ struct KinectThread
 
 	// Color reader
 	IColorFrameReader*      m_pColorFrameReader;
+
+	// Infrared reader
+	IInfraredFrameReader*  m_pInfraredFrameReader;
 
 	PointCloudT::Ptr m_cloud;
 
@@ -85,6 +93,8 @@ struct KinectThread
 	void getCurPointCloud(PointCloudT::Ptr cloud);
 
 	cv::Mat getCurRGB();
+
+	cv::Mat getCurIR();
 }; 
 
 #endif // !KINECT_THREAD_H_
