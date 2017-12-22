@@ -113,7 +113,7 @@ void RobotArmClient::startRecvTCP()
 
 			displacement_ = EuclideanDistance(cur_cartesian_info_array, start_xyz_);
 
-			distanceToDstConfig_ = configL2Norm(cur_joint_pos_array, dst_joint_pos_array);
+			distanceToDstConfig_ = configLInfNorm(cur_joint_pos_array, dst_joint_pos_array);
 
 			updateMutex.unlock();
 
@@ -197,7 +197,7 @@ void RobotArmClient::getActualTCPSpeedFromURPackage()
 	}
 }
 
-int RobotArmClient::moveHandL(double* dst_cartesian_info, float acceleration, float speed)
+int RobotArmClient::moveHandL(double* dst_cartesian_info, float acceleration, float speed, bool wait2dst)
 {
 	char msg[128];
 
@@ -210,7 +210,13 @@ int RobotArmClient::moveHandL(double* dst_cartesian_info, float acceleration, fl
 		dst_cartesian_info[3], dst_cartesian_info[4], dst_cartesian_info[5], acceleration, speed);
 
 	//std::cout << "len" << strlen(msg)<<std::endl;
-	return send(ConnectSocket, msg, strlen(msg), 0);
+	int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+	if (num_byte == SOCKET_ERROR) return SOCKET_ERROR;
+
+	if (wait2dst) waitTillHandReachDstPose(dst_cartesian_info);
+
+	return num_byte;
 }
 
 int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float acceleration, bool wait2dst)
@@ -292,7 +298,7 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 
 	while (true)
 	{
-		if (distanceToDst_.load() < 0.001)	break;
+		if (distanceToDst_.load() < 0.0005)	break;
 
 		Sleep(1);
 		//std::cout << distanceToDst << std::endl;
@@ -393,8 +399,23 @@ void RobotArmClient::moveHandRelativeTranslate(double x, double y, double z, flo
 	waitTillHandReachDstPose(pose);
 }
 
-double RobotArmClient::configL2Norm(double* config6_1, double* config6_2)
+double RobotArmClient::configLInfNorm(double* config6_1, double* config6_2)
 {
+	//L infinite norm
+	double abs_max = abs(config6_1[0] - config6_2[0]);
+	double tmp;
+
+	for (int i = 1; i < 6; i++) {
+
+		tmp = abs(config6_1[i] - config6_2[i]);
+
+		if (tmp > abs_max) 
+			abs_max = tmp;
+	}
+
+	return abs_max;
+#if 0
+	//L2 norm
 	double sum_squares = 0.;
 
 	for (int i = 0; i < 6; i++)
@@ -405,4 +426,5 @@ double RobotArmClient::configL2Norm(double* config6_1, double* config6_2)
 	}
 
 	return sqrt(sum_squares);
+#endif
 }

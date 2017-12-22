@@ -88,7 +88,7 @@ struct RobotArmClient
 
 	void getActualTCPSpeedFromURPackage();
 
-	int moveHandL(double* dst_cartesian_info, float acceleration, float speed);
+	int moveHandL(double* dst_cartesian_info, float acceleration, float speed, bool wait2dst = true);
 
 	int moveHandJ(double* dst_joint_config, float speed, float acceleration, bool wait2dst);
 
@@ -116,7 +116,7 @@ struct RobotArmClient
 
 	void moveHandRelativeTranslate(double x, double y, double z, float acceleration, float speed);
 
-	double configL2Norm(double* config1, double* config2);
+	double configLInfNorm(double* config1, double* config2);
 	
 };
 

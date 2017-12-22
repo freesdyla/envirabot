@@ -1,12 +1,25 @@
 #include "VisionArmCombo.h"
+#include "HyperspectralCamera.h"
 #include <iostream>
 #include <ctime>
 #include <Windows.h>
 
+
 int main(int argc, char**argv)
 {
-
 	VisionArmCombo vac;
+
+
+#if 0
+	double array6[6] = {0.015, -0.538, 0.02, M_PI, 0., 0.};
+
+	vac.robot_arm_client_->moveHandL(array6, 0.1, 0.1);
+
+	double array3[3] = {-0.3, 0., 0.};
+	vac.scanTranslateOnlyHyperspectral(array3, 0.1, 0.1);
+
+	std::getchar();
+#endif
 
 	vac.testRun();	std::getchar(); return 0;
 

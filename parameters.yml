@@ -17,9 +17,9 @@ scan_speed_: 0.1
 scan_acceleration_: 0.5
 move_arm_speed_: 0.1 
 move_arm_acceleration_: 0.1
-move_joint_speed_: 0.4
-move_joint_acceleration_: 0.4
-view_time_: 0
+move_joint_speed_: 0.3
+move_joint_acceleration_: 0.3
+view_time_: 100000
 seed_resolution_: 0.02
 spatial_importance_: 0.5
 normal_importance_: 1.0
@@ -35,3 +35,6 @@ max_point_AABB_x_: 0.5
 max_point_AABB_y_: -0.3
 max_point_AABB_z_: 0.0
 max_samples_per_leaf_: 1
+only_do_probing_ : 1
+num_plants_: 4
+hyperspectral_imaging_dist_: 0.18

@@ -36,6 +36,9 @@
 #include <boost/serialization/version.hpp>
 #include <fstream>
 
+#define IMAGING 0
+#define PROBING 1
+
 struct PathPlanner
 {
 	typedef pcl::PointXYZRGB PointT;
@@ -189,7 +192,9 @@ struct PathPlanner
 
 	float* start_end_ref_points_ = NULL;
 
-	flann::Index<flann::L2<float>>* referen_point_index_;
+	flann::Index<flann::L2<float>>* referen_point_index_; // first half for probing
+
+	flann::Index<flann::L2<float>>* referen_point_imaging_index_;	// second half for imaging
 
 	std::mt19937 rand_gen_;
 
@@ -234,11 +239,13 @@ struct PathPlanner
 	// UR10 joint range
 	double joint_range_[12] = { -200./180.*M_PI, 20./180.*M_PI,	// base
 								-180./180.*M_PI, 0./180.*M_PI,	// shoulder
-								-160.f/180.f*M_PI, -10.f/180.f*M_PI,	// elbow
+								-160./180.f*M_PI, -10./180.f*M_PI,	// elbow
 								-170./180.*M_PI, 10./180.* M_PI,	// wrist 1
 								10.f/180.f*M_PI, 170.f/180.f*M_PI,	// wrist 2
-								-210.f/180.f*M_PI, -150.f/180.f*M_PI // wrist 3
+								-240./180.f*M_PI, -100./180.f*M_PI // wrist 3
 								};
+
+	double probing_joint_range_wrist_2_[2] = {-130./180.*M_PI, -50./180.*M_PI};	// when probing, wrist 2 needs to be rotated by -180 first
 
 	int prmce_round_counter_;
 
@@ -248,10 +255,26 @@ struct PathPlanner
 
 	bool path_planner_ready_;
 
-	const int start_check_obb_idx_ = 8;	
-	const int end_check_obb_idx_ = 11;
+	const int start_check_obb_idx_ = 6;	
+	const int end_check_obb_idx_ = 9;
 
-	float tcp_y_limit_ = -0.3f;
+	float tcp_y_limit_ = -0.2f;
+
+	double ik_sols_[8 * 6];
+
+	// UR10 dh parameters
+	const double d1 = 0.1273;
+	const double a2 = -0.612;
+	const double a3 = -0.5723;
+	const double d4 = 0.163941;
+	const double d5 = 0.1157;
+	const double d6 = 0.0922;
+
+	const double ZERO_THRESH = 1e-10;
+	int SIGN(double x) { return (x > 0) - (x < 0); }
+	const double PI = M_PI;
+
+	double probe_position[3] = { 0.01524, 0.082804, -0.44}; // in robot hand pose
 
 	PathPlanner();
 
@@ -261,10 +284,6 @@ struct PathPlanner
 
 	void forwardKinematicsUR10(float* joint_array6);
 	void forwardKinematicsUR10ROS(float* joint_array6);
-
-	bool collisionCheck(float* joint_array6, float radius);
-
-	bool checkCollisionBetweenTwoConfig(float* center_config, float* neighbor_config, float dist, float step_size);
 
 	int initGrid(int width, int depth, int height, int cell_size, int offset_x, int offset_y, int offset_z);
 
@@ -281,7 +300,7 @@ struct PathPlanner
 
 	void getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<Eigen::Matrix3f> & rot_mats, std::vector<OBB> & arm_obbs);
 
-	bool selfCollision(float* joint_pos, bool pre_processing_stage);
+	bool selfCollision(float* joint_pos, bool pre_processing_stage=false);
 
 	// resolution in meter, return number of voxels processed
 	int voxelizeLine(RefPoint & p1, RefPoint & p2, std::vector<RefPoint> & saved_points_grid_frame, std::vector<prmceedge_descriptor> & edge_vec, 
@@ -295,13 +314,17 @@ struct PathPlanner
 
 	bool selfCollisionBetweenTwoConfigs(float* config1, float* config2);
 
+	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec, int imaging_or_probing = IMAGING);
+	
+	void double2float(double* array6_d, float* array6_f);
+
 	void PRMCEPreprocessing();
 
 	void addPointCloudToOccupancyGrid(PointCloudT::Ptr cloud);
 
 	void viewOccupancyGrid(boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer);
 
-	bool planPath(float* start_joint_pos, float* end_joint_pos, bool smooth, bool try_direct_path);
+	bool planPath(float* start_joint_pos, float* end_joint_pos, bool smooth = false, bool try_direct_path = true, bool imaging_or_probing = IMAGING);
 
 	bool collisionCheckTwoConfigs(float* config1, float* config2);
 

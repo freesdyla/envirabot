@@ -50,6 +50,8 @@
 #include "ErrorCodes.h"	
 #include "RoboteqDevice.h"
 
+#include "HyperspectralCamera.h"
+
 #ifdef ROAD
 //robotiq 
 #include "GripperModbusRTU.h"
@@ -108,19 +110,19 @@ struct VisionArmCombo
 	const double d5 = 0.1157;
 	const double d6 = 0.0922;
 
-	const double ZERO_THRESH = 0.00000001;
+	const double ZERO_THRESH = 1e-10;
 	int SIGN(double x) { return (x > 0) - (x < 0); }
 	const double PI = M_PI;
 
 	// UR10 joint range
-	double joint_range_for_probe_[12] = { -200. / 180.*M_PI, 20. / 180.*M_PI,	// base
+/*	double joint_range_for_probe_[12] = { -200. / 180.*M_PI, 20. / 180.*M_PI,	// base
 										  -180. / 180.*M_PI, 0. / 180.*M_PI,	// shoulder
 										  -160.f / 180.f*M_PI, -10.f / 180.f*M_PI,	// elbow
 										  -160. / 180.*M_PI, 60. / 180.* M_PI,	// wrist 1
 										  0.f / 180.f*M_PI, 180.f / 180.f*M_PI,	// wrist 2
-										  -240.f/180.f*M_PI, -60.f/180.f*M_PI // wrist 3
+										  -260.f/180.f*M_PI, -100.f/180.f*M_PI // wrist 3
 										};
-
+										*/
 	const int num_joints_ = 6;
 
 	RobotArmClient* robot_arm_client_ = NULL;
@@ -128,6 +130,8 @@ struct VisionArmCombo
 	KeyenceLineProfiler* line_profiler_ = NULL;
 
 	KinectThread* kinect_thread_ = NULL;
+
+	HyperspectralCamera* hypercam_ = NULL;
 	
 	std::ofstream result_file_;
 
@@ -154,6 +158,8 @@ struct VisionArmCombo
 	Eigen::Matrix4d probe_to_hand_;
 	Eigen::Matrix4d scan_start_to_hand_;
 	Eigen::Matrix4d scan_end_to_hand_;
+	Eigen::Matrix4f hand_to_hyperspectral_;
+	Eigen::Matrix4f hand_to_thermal_;
 
 	PointCloudT::Ptr kinect_cloud_;
 
@@ -255,6 +261,9 @@ struct VisionArmCombo
 
 	ArmConfig home_config_;
 
+	int num_plants_ = 1;
+
+	float hyperspectral_imaging_dist_ = 0.21f;
 
 	static bool probing_rank_comparator(pcl::PointXYZRGBNormal & a, pcl::PointXYZRGBNormal & b)
 	{
@@ -279,10 +288,11 @@ struct VisionArmCombo
 	float shelf_z_ = -0.6;
 
 	cv::Vec3f plant_center_;
-
 	Eigen::Vector3f min_point_AABB_, max_point_AABB_;
 
 	int max_samples_per_leaf_ = 1;
+
+	int only_do_probing_ = 0;
 
 
 #ifdef ROAD
@@ -309,11 +319,15 @@ struct VisionArmCombo
 
 	void initKinectThread();
 
+	void initHyperspectralCam();
+
 	void calibrateToolCenterPoint(int numPoseNeeded=4);
 
 	void calibrateGripperTip(int numPoseNeeded = 4);
 
 	void scanTranslateOnly(double * vec3d, PointCloudT::Ptr cloud, float acceleration, float speed);
+
+	void scanTranslateOnlyHyperspectral(double * vec3d, float acceleration, float speed);
 
 	void scanLine(PointCloudT::Ptr & cloud);
 
@@ -339,7 +353,7 @@ struct VisionArmCombo
 
 	void viewPlannedPath(float* start_pose, float* goal_pose);
 
-	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec);
+	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec, int imaging_or_probing = IMAGING);
 
 	void forward(const double* q, double* T);
 
@@ -347,7 +361,8 @@ struct VisionArmCombo
 
 	void double2float(double* array6_d, float* array6_f);
 
-	bool moveToConfigGetKinectPointCloud(ArmConfig & config, bool get_cloud, bool try_direct_path, bool add_cloud_to_occupancy_grid);
+	bool moveToConfigGetKinectPointCloud(ArmConfig & config, bool get_cloud = true, bool try_direct_path = true, 
+											bool add_cloud_to_occupancy_grid = true, int imaging_or_probing = IMAGING);
 
 	double L2Norm(double* array6_1, double* array6_2);
 
@@ -375,7 +390,11 @@ struct VisionArmCombo
 
 	void setScanRadius(float radius);
 
-	void extractLeafProbingPoints(PointCloudT::Ptr cloud_in, std::vector<pcl::PointXYZRGBNormal> & probe_pn_vec);
+	void extractLeafProbingPoints(PointCloudT::Ptr cloud_in, std::vector<pcl::PointXYZRGBNormal> & probe_pn_vec, 
+									std::vector<pcl::PointIndices> & leaf_cluster_indices_vec,
+									std::vector<std::vector<Eigen::Matrix4d*>> & hyperscan_hand_pose_sequence_vec,
+									std::vector<std::vector<ArmConfig>> & hyperscan_arm_config_sequence_vec,
+									std::vector<int> & hyperscan_leaf_id_vec);
 
 	bool probeLeaf(PointT & probe_point, pcl::Normal & normal);
 
@@ -398,7 +417,7 @@ struct VisionArmCombo
 	void setAndSaveParameters();
 
 	bool scanGrowthChamberWithKinect(int location_id, ArmConfig & config, bool add_to_occupancy_grid);
-
+	
 	bool scanPlantCluster(cv::Vec3f &object_center, float max_z, float radius);
 
 	void testRun();
@@ -408,6 +427,11 @@ struct VisionArmCombo
 	void TCPCalibrationErrorAnalysis(int numPoseNeeded = 4);
 
 	void acquireRGBStereoPair();
+
+	void scanLeafWithHyperspectral(std::vector<Eigen::Matrix4d*> & valid_scan_hand_pose_sequence, 
+									std::vector<ArmConfig> & valid_arm_config_sequence);
+
+	bool switchBetweenImagingAndProbing(int target_mode);
 
 	// RoAd functions
 	int sendRoboteqVar(int id, int value);
