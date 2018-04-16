@@ -1988,7 +1988,7 @@ void PathPlanner::smoothPath()
 }
 
 // does not have a shorten_probe flag because "moveToConfigGetKinectPointCloud" could be used for both imaging and probing
-bool PathPlanner::collisionCheckForSingleConfig(float* config)
+bool PathPlanner::collisionCheckForSingleConfig(float* config, bool shorten_probe)
 {
 	if (selfCollision(config))
 	{
@@ -2008,7 +2008,7 @@ bool PathPlanner::collisionCheckForSingleConfig(float* config)
 
 	getArmOBBModel(reference_points, rot_mats, arm_obbs);
 
-	int num_voxelized = voxelizeArmConfig(arm_obbs, edge_vec, true);
+	int num_voxelized = voxelizeArmConfig(arm_obbs, edge_vec, true, shorten_probe);
 
 	prmce_swept_volume_counter_++;
 

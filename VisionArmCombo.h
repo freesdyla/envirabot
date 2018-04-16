@@ -42,6 +42,7 @@
 #include <vector>
 #include <ctime>
 #include "RobotArmClient.h" // need to be 1st due to winsock
+#include <ddeml.h>
 #include "KeyenceLineProfiler.h"
 #include "KinectThread.h"
 #include "PathPlanner.h"
@@ -51,11 +52,42 @@
 #include "RoboteqDevice.h"
 
 #include "HyperspectralCamera.h"
+#include "FlirThermoCamClient.h"
+#include "Raman.h"
+//#include "MiniPam.h"
+
+
+#include <Windows.h>
+#include "ShellAPI.h"
+#include <direct.h>
+
+#include "boost/asio.hpp"
+
+
 
 #ifdef ROAD
 //robotiq 
 #include "GripperModbusRTU.h"
 #endif
+
+//probes
+#define RAMAN_532 0
+#define RAMAN_1064 1
+#define PAM 2
+
+// compute collision-free pose for different sensor types
+#define PROBE 0
+#define SCANNER 1
+#define THERMAL 2
+
+
+//chamber interaction
+#define OPEN_DOOR 0
+#define CLOSE_DOOR 1
+#define OPEN_CURTAIN 2
+#define CLOSE_CURTAIN 3
+#define STOP_VENTILATION 4
+#define START_VENTILATION 5
 
 
 struct VisionArmCombo
@@ -132,6 +164,10 @@ struct VisionArmCombo
 	KinectThread* kinect_thread_ = NULL;
 
 	HyperspectralCamera* hypercam_ = NULL;
+
+	FlirThermoCamClient* thermocam_ = NULL;
+
+	Raman* raman_ = NULL;
 	
 	std::ofstream result_file_;
 
@@ -154,7 +190,7 @@ struct VisionArmCombo
 
 	Eigen::Matrix4f guessHandToScanner_;
 	Eigen::Matrix4f handToScanner_;
-	Eigen::Vector3f tool_center_point_;
+	Eigen::Vector3f tool_center_point_, tool_center_point_pam_, tool_center_point_raman_532_, tool_center_point_raman_1064_;
 	Eigen::Matrix4d probe_to_hand_;
 	Eigen::Matrix4d scan_start_to_hand_;
 	Eigen::Matrix4d scan_end_to_hand_;
@@ -172,6 +208,8 @@ struct VisionArmCombo
 	float voxel_grid_size_;
 
 	float voxel_grid_size_laser_ = 0.001;
+
+	float normal_estimation_radius_ = 0.005;
 
 	pcl::PassThrough<PointT> pass_;
 
@@ -212,13 +250,17 @@ struct VisionArmCombo
 
 	cv::Mat kinect_infrared_hand_to_eye_cv_, kinect_infrared_camera_matrix_cv_, kinect_infrared_dist_coeffs_cv_;
 
+	cv::Mat flir_thermal_hand_to_eye_cv_, flir_thermal_camera_matrix_cv_, flir_thermal_dist_coeffs_cv_;
+
 	cv::Ptr<cv::aruco::Dictionary> marker_dictionary_;
 
 	cv::Ptr<cv::aruco::DetectorParameters> detector_params_;
 
 	float marker_length_;
 
-	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_, gripper_to_hand_, hand_to_depth_;
+	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_, gripper_to_hand_, hand_to_depth_, hand_to_thermal_d_;
+		
+	Eigen::Matrix4d probe_to_hand_pam_, probe_to_hand_raman_532_, probe_to_hand_raman_1064_;
 
 	RoboteqDevice motor_controller_;
 
@@ -228,6 +270,13 @@ struct VisionArmCombo
 	float region_grow_smoothness_threshold_ = 3.0 / 180.*M_PI;
 	float region_grow_curvature_threshold_ = 1.0;
 	int region_grow_num_neighbors_ = 30;
+
+	int max_samples_per_leaf_ = 4;
+	float probing_patch_rmse_ = 0.001;
+	float hyperscan_slice_thickness_ = 0.01;
+	int enable_probing_ = 1;
+	int enable_path_planning_ = 1;
+
 
 	// point cloud vector for three stations. 0-left, 1-center, 2-right
 	std::vector<PointCloudT::Ptr> growthChamberPointCloudVec_;
@@ -290,9 +339,15 @@ struct VisionArmCombo
 	cv::Vec3f plant_center_;
 	Eigen::Vector3f min_point_AABB_, max_point_AABB_;
 
-	int max_samples_per_leaf_ = 1;
-
 	int only_do_probing_ = 0;
+
+	int cur_chamber_id_ = 1;
+
+	int cur_pot_coordinate_x_ = 0;
+
+	int cur_pot_coordinate_y_ = 0;
+
+	std::wstring data_saving_folder_;
 
 
 #ifdef ROAD
@@ -321,7 +376,33 @@ struct VisionArmCombo
 
 	void initHyperspectralCam();
 
-	void calibrateToolCenterPoint(int numPoseNeeded=4);
+	void initThermoCam();
+
+	void initRaman();
+
+	float DDERequest(DWORD idInst, HCONV hConv, wchar_t* szItem);
+
+	int MiniPamActPlusYield( float & Fo, float & Fm, float & FvFm, float & qP, float & qL,
+		float & qN, float & NPQ, float & YNPQ, float & YNO, float & F, float & FmPrime, float & PAR,
+		float & YII, float & ETR, float & FoPrime);
+
+	int MiniPamBasicData(float & PAR, float & YII);
+
+#if 0
+	DDEDATA CALLBACK DdeCallback(
+		UINT uType,     // Transaction type.
+		UINT uFmt,      // Clipboard data format.
+		HCONV hconv,    // Handle to the conversation.
+		HSZ hsz1,       // Handle to a string.
+		HSZ hsz2,       // Handle to a string.
+		HDDEDATA hdata, // Handle to a global memory object.
+		DWORD dwData1,  // Transaction-specific data.
+		DWORD dwData2)  // Transaction-specific data.
+	{
+		return 0;
+	};
+#endif
+	void calibrateToolCenterPoint(int numPoseNeeded=4, int probe_id = RAMAN_532);
 
 	void calibrateGripperTip(int numPoseNeeded = 4);
 
@@ -349,7 +430,7 @@ struct VisionArmCombo
 
 	void addOBBArmModelToViewer(std::vector<PathPlanner::OBB> & arm_obbs);
 
-	void showOccupancyGrid();
+	void showOccupancyGrid(bool spin=true);
 
 	void viewPlannedPath(float* start_pose, float* goal_pose);
 
@@ -377,7 +458,7 @@ struct VisionArmCombo
 												std::vector<pcl::PointXYZRGBNormal>& probing_point_normal_vec);
 #endif
 
-	bool computeCollisionFreeProbeOrScanPose(PointT & point, pcl::Normal & normal, bool probe, std::vector<ArmConfig> & solution_config_vec, 
+	bool computeCollisionFreeProbeOrScanPose(PointT & point, pcl::Normal & normal, int sensor_type, std::vector<ArmConfig> & solution_config_vec, 
 												Eigen::Matrix4d & scan_start_or_probe_hand_pose, Eigen::Vector3d & hand_translation);
 
 	void getCurHandPose(Eigen::Matrix4f & pose);
@@ -390,13 +471,13 @@ struct VisionArmCombo
 
 	void setScanRadius(float radius);
 
-	void extractLeafProbingPoints(PointCloudT::Ptr cloud_in, std::vector<pcl::PointXYZRGBNormal> & probe_pn_vec, 
+	void extractLeafProbingPointsAndHyperspectralScanPoses(PointCloudT::Ptr cloud_in, std::vector<pcl::PointXYZRGBNormal> & probe_pn_vec,
 									std::vector<pcl::PointIndices> & leaf_cluster_indices_vec,
 									std::vector<std::vector<Eigen::Matrix4d*>> & hyperscan_hand_pose_sequence_vec,
 									std::vector<std::vector<ArmConfig>> & hyperscan_arm_config_sequence_vec,
-									std::vector<int> & hyperscan_leaf_id_vec);
+									std::vector<int> & hyperscan_leaf_id_vec, int plant_id);
 
-	bool probeLeaf(PointT & probe_point, pcl::Normal & normal);
+	bool probeLeaf(PointT & probe_point, pcl::Normal & normal, int probe_id=PAM, int plant_id = -1, int point_index=-1);
 
 	void display();
 
@@ -408,9 +489,15 @@ struct VisionArmCombo
 
 	void KinectIRHandEyeCalibration();
 
+	void calibrateThermalCamera();
+
+	void ThermalHandEyeCalibration();
+
 	void markerDetection();
 
 	void cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::Matrix4d & eigen_transform);
+
+	void EigenTransformToCVTransform(Eigen::Matrix4d & eigen_transform, cv::Mat & cv_transform);
 
 	void scanAndProbeTest();
 
@@ -418,7 +505,7 @@ struct VisionArmCombo
 
 	bool scanGrowthChamberWithKinect(int location_id, ArmConfig & config, bool add_to_occupancy_grid);
 	
-	bool scanPlantCluster(cv::Vec3f &object_center, float max_z, float radius);
+	int scanPlantCluster(cv::Vec3f &object_center, float max_z, float radius, int plant_id=0);
 
 	void testRun();
 
@@ -429,16 +516,15 @@ struct VisionArmCombo
 	void acquireRGBStereoPair();
 
 	void scanLeafWithHyperspectral(std::vector<Eigen::Matrix4d*> & valid_scan_hand_pose_sequence, 
-									std::vector<ArmConfig> & valid_arm_config_sequence);
+									std::vector<ArmConfig> & valid_arm_config_sequence, int plant_id = -1);
 
 	bool switchBetweenImagingAndProbing(int target_mode);
 
-	// RoAd functions
+	//communications with chamber
+	void controlChamberDoor(int chamber_id, int action);
+
 	int sendRoboteqVar(int id, int value);
-	void fitPotRing(PointCloudT::Ptr pot_cloud);
-#ifdef ROAD
-	void find3DMarker(PointCloudT::Ptr marker_cloud);
-#endif
+
 	void scanPotMultiAngle();
 };
 

@@ -117,7 +117,12 @@ struct RobotArmClient
 	void moveHandRelativeTranslate(double x, double y, double z, float acceleration, float speed);
 
 	double configLInfNorm(double* config1, double* config2);
-	
+
+	void lineLightControl(bool turn_on);
+
+	void probeCylinderControl(bool extend);
+
+	void whiteBoardServoControl(bool extend);
 };
 
 #endif

@@ -337,7 +337,7 @@ struct PathPlanner
 
 	void smoothPath();
 
-	bool collisionCheckForSingleConfig(float* config);
+	bool collisionCheckForSingleConfig(float* config, bool shorten_probe = false);
 };
 
 #endif

@@ -21,19 +21,19 @@ int main(int argc, char**argv)
 	std::getchar();
 #endif
 
-	vac.testRun();	std::getchar(); return 0;
+	//vac.testRun();	std::getchar(); return 0;
 
 	//vac.acquireRGBStereoPair(); std::getchar(); return 0;
 	
 	//vac.setAndSaveParameters(); std::getchar();	return 0;
 	
-	//vac.calibrateToolCenterPoint(8); std::getchar(); //return 0;
+	//vac.calibrateToolCenterPoint(4, PAM); std::getchar(); //return 0;
 
 	//vac.TCPCalibrationErrorAnalysis(8); std::getchar(); return 0;
 
-	//vac.acquireLinesOnPlanes();	std::getchar(); //return 0;
+//	vac.acquireLinesOnPlanes();	//return 0;
 	
-	//vac.readCloudAndPoseFromFile(); vac.lineScannerHandEyeCalibration(6); std::getchar();  return 0;
+//	vac.readCloudAndPoseFromFile(); vac.lineScannerHandEyeCalibration(6); std::getchar();  return 0;
 
 	//vac.calibrateGripperTip(8);
 
@@ -49,7 +49,7 @@ int main(int argc, char**argv)
 	//vac.markerDetection();
 
 	//vac.calibrateKinectRGBCamera(); vac.KinectRGBHandEyeCalibration();
-	//vac.calibrateKinectIRCamera(); vac.KinectIRHandEyeCalibration();
+	vac.calibrateKinectIRCamera(); vac.KinectIRHandEyeCalibration();
 
 	
 

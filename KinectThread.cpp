@@ -280,6 +280,9 @@ void KinectThread::getCurPointCloud(PointCloudT::Ptr cloud)
 	m_updateMutex.unlock();
 }
 
+// Make sure that the image x axis and image y axis are aligned with robot arm tool frame.
+// Otherwise, the hand eye calibration algorithm won't work well. 
+// Flip the image accordingly.
 cv::Mat KinectThread::getCurRGB()
 {
 	cv::Mat bgra;
@@ -296,14 +299,20 @@ cv::Mat KinectThread::getCurRGB()
 	cv::cvtColor(bgra, bgr, CV_BGRA2BGR);
 
 	cv::Mat output;
-	// kinect outputs horizontal flipped rgb
-	cv::flip(bgr, output, 1);
+	
+	//kinect outputs horizontal flipped rgb
 
-	//cv::imshow("rgb", output);
-	//cv::waitKey(0);
+	cv::flip(bgr, output, 0);
+
+	//cv::imshow("rgb", output); cv::waitKey(5);
+	
 	return output;
 }
 
+
+// Make sure that the image x axis and image y axis are aligned with robot arm tool frame.
+// Otherwise, the hand eye calibration algorithm won't work well. 
+// Flip the image accordingly.
 cv::Mat KinectThread::getCurIR()
 {
 	cv::Mat ir;
@@ -316,10 +325,11 @@ cv::Mat KinectThread::getCurIR()
 	m_updateMutex.unlock();
 
 	cv::Mat output;
-	// kinect outputs horizontal flipped rgb
-	cv::flip(ir, output, 1);
+	// kinect outputs horizontal flipped IR
+	
+	cv::flip(ir, output, 0);
 
-	//cv::imshow("ir", output);
-	//cv::waitKey(10);
+	//cv::imshow("ir", output); cv::waitKey(5);
+	
 	return output;
 }

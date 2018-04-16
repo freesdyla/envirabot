@@ -82,6 +82,8 @@ void RobotArmClient::startRecvTCP()
 	// Receive until the peer closes the connection
 	int i = 0;
 
+	lineLightControl(false);
+
 	while (TCP_ALIVE) 
 	{
 		//clock_t tic = clock();
@@ -427,4 +429,101 @@ double RobotArmClient::configLInfNorm(double* config6_1, double* config6_2)
 
 	return sqrt(sum_squares);
 #endif
+}
+
+void RobotArmClient::lineLightControl(bool turn_on) {
+
+	if (turn_on) {
+
+		char msg[128];
+
+		sprintf(msg, "set_analog_outputdomain(1, 1)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(100);
+
+		char msg1[128];
+
+		sprintf(msg1, "set_standard_analog_out(1, 0.5)\n");
+
+		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+	}
+	else {
+
+		char msg[128];
+
+		sprintf(msg, "set_analog_outputdomain(1, 1)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(100);
+
+		char msg1[128];
+
+		sprintf(msg1, "set_standard_analog_out(1, 0.0)\n");
+
+		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+	}
+}
+
+void RobotArmClient::probeCylinderControl(bool extend) {
+
+	char msg[128];
+
+	if (extend) {
+
+		sprintf(msg, "set_digital_out(0,True)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		//wait for finish
+		Sleep(4000);
+	}
+	else {
+
+		sprintf(msg, "set_digital_out(0,False)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		//wait for finish
+		Sleep(4000);
+	}
+}
+
+//analog 1
+void RobotArmClient::whiteBoardServoControl(bool extend) {
+
+	if (extend) {
+
+		char msg[128];
+
+		sprintf(msg, "set_analog_outputdomain(1, 1)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(100);
+
+		char msg1[128];
+
+		sprintf(msg1, "set_standard_analog_out(1, 0.5)\n");
+
+		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+	}
+	else {
+
+		char msg[128];
+
+		sprintf(msg, "set_analog_outputdomain(1, 1)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(100);
+
+		char msg1[128];
+
+		sprintf(msg1, "set_standard_analog_out(1, 0.0)\n");
+
+		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+	}
 }
