@@ -274,7 +274,7 @@ struct PathPlanner
 	int SIGN(double x) { return (x > 0) - (x < 0); }
 	const double PI = M_PI;
 
-	double probe_position[3] = { 0.01524, 0.082804, -0.44}; // in robot hand pose
+	double probe_position[3] = { 0.0215, 0.1275, -0.3}; // in robot hand pose
 
 	PathPlanner();
 

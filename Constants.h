@@ -57,7 +57,7 @@
 #define _DOUT  9
 #define _DSET  10
 #define _DRES  11
-
+#define _R 12
 
 #define _HOME  13
 #define _ESTOP  14

@@ -12,9 +12,9 @@ int HyperspectralCamera::spatial_binning_ = 0;
 
 int HyperspectralCamera::spectral_binning_ = 0;
 
-int HyperspectralCamera::spatial_size_ = 1024 << spatial_binning_;
+int HyperspectralCamera::spatial_size_ = 1024 >> spatial_binning_;
 
-int HyperspectralCamera::spectral_size_ = 448 << spectral_binning_;
+int HyperspectralCamera::spectral_size_ = 448 >> spectral_binning_;
 
 int HyperspectralCamera::img_size_ = spatial_size_*spectral_size_;
 
@@ -53,7 +53,7 @@ void HyperspectralCamera::init() {
 
 	bool bIsLoaded = false;
 	SI_CHK(SI_GetBool(g_hDevice_, L"Camera.CalibrationPack.IsLoaded", &bIsLoaded));	cout << "is calib loaded: " << bIsLoaded << "\n";
-	dFrameRate_ = 10.0;
+	dFrameRate_ = 30.0;
 
 	SI_SetEnumIndex(g_hDevice_, L"Camera.Binning.Spatial", spatial_binning_); 
 
@@ -141,6 +141,8 @@ int HyperspectralCamera::onDataCallback(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_6
 
 	frame_count_ += _nFrameNumber;
 
+	if (_nFrameNumber != 1) std::cout << "frame != 1\n";
+
 //	std::vector<unsigned char> frame(_nFrameSize);
 
 //	std::memcpy(frame.data(), _pBuffer, _nFrameSize);
@@ -150,6 +152,12 @@ int HyperspectralCamera::onDataCallback(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_6
 	update_mutex_.lock();
 
 	std::memcpy(img_.ptr<unsigned char>(), _pBuffer, _nFrameSize);
+
+//	double min_val, max_val;
+
+//	cv::minMaxLoc(img_, &min_val, &max_val);
+
+//	img_.convertTo(img_8u_, CV_8U, 255. / (max_val - min_val), -255.*min_val / (max_val - min_val));
 
 	update_mutex_.unlock();
 
@@ -164,7 +172,7 @@ int HyperspectralCamera::onDataCallback(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_6
 
 	///(v - min)/(max-min)*255 = v*(255/(max-min)) - 255*min/(max-min)
 
-	min_val = 170.;
+	//min_val = 170.;
 
 	img_.convertTo(img_8u_, CV_8U, 255./(max_val-min_val), -255.*min_val/(max_val-min_val));
 

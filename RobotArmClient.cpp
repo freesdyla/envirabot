@@ -109,6 +109,10 @@ void RobotArmClient::startRecvTCP()
 
 			getActualTCPSpeedFromURPackage();
 
+			std::memcpy((char*)&safety_mode_, recvbuf + 812, 8);
+
+			if (safety_mode_ != 0xf03f) exit(EXIT_FAILURE);
+
 			tcp_speed_ = sqrt(cur_tcp_speed_array[0]* cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
 
 			distanceToDst_ = EuclideanDistance(cur_cartesian_info_array, dst_cartesian_info_array);
@@ -239,7 +243,15 @@ int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float accel
 
 	if (num_byte == SOCKET_ERROR) return SOCKET_ERROR;
 
-	if(wait2dst) waitTillHandReachDstConfig(dst_joint_config);
+	if (wait2dst) {
+
+		int result = waitTillHandReachDstConfig(dst_joint_config);
+
+		if (result == -1) {
+			exit(EXIT_FAILURE);
+			return -1;
+		}
+	}
 
 	return num_byte;
 }
@@ -269,6 +281,17 @@ void RobotArmClient::getCurJointPose(double* array6)
 	std::memcpy(array6, cur_joint_pos_array, 6 * 8);
 
 	updateMutex.unlock();
+}
+
+UINT64 RobotArmClient::getSafetyMode()
+{
+	updateMutex.lock();
+
+	UINT64 safety_mode = safety_mode_;
+
+	updateMutex.unlock();
+
+	return safety_mode;
 }
 
 void RobotArmClient::printCartesianInfo(double* array6)
@@ -317,7 +340,12 @@ int RobotArmClient::waitTillHandReachDstConfig(double* dst_joint_config)
 	{
 		if (distanceToDstConfig_ < 5e-4) break;
 
-		Sleep(4);
+		if (getSafetyMode() != 0xf03f) {
+			std::cout << "UR10 stopped\n";
+			return -1;
+		}
+
+		Sleep(3);
 		//std::cout << distanceToDstConfig_ << std::endl;
 	}
 
@@ -398,7 +426,6 @@ void RobotArmClient::moveHandRelativeTranslate(double x, double y, double z, flo
 	pose[1] += y; 
 	pose[2] += z;
 	moveHandL(pose, acceleration, speed);
-	waitTillHandReachDstPose(pose);
 }
 
 double RobotArmClient::configLInfNorm(double* config6_1, double* config6_2)

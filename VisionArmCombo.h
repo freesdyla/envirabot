@@ -2,9 +2,6 @@
 #define VISION_ARM_COMBO_H_
 #define _CRT_SECURE_NO_WARNINGS
 
-#define ENVIRATRON
-//#define ROAD
-
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/common/pca.h>
@@ -42,6 +39,8 @@
 #include <vector>
 #include <ctime>
 #include "RobotArmClient.h" // need to be 1st due to winsock
+#include "ServerManager.h"
+
 #include <ddeml.h>
 #include "KeyenceLineProfiler.h"
 #include "KinectThread.h"
@@ -54,7 +53,6 @@
 #include "HyperspectralCamera.h"
 #include "FlirThermoCamClient.h"
 #include "Raman.h"
-//#include "MiniPam.h"
 
 
 #include <Windows.h>
@@ -63,12 +61,6 @@
 
 #include "boost/asio.hpp"
 
-
-
-#ifdef ROAD
-//robotiq 
-#include "GripperModbusRTU.h"
-#endif
 
 //probes
 #define RAMAN_532 0
@@ -89,6 +81,19 @@
 #define STOP_VENTILATION 4
 #define START_VENTILATION 5
 
+//marker detection camera
+#define RGB 0
+#define IR 1
+
+#define SUCCESS 0
+#define STOP_AT_WRONG_DOOR -2
+#define DOOR_OPEN_FAIL -3
+#define DOOR_CLOSE_FAIL -4
+#define FAIL_TO_SEE_DOOR_WHEN_EXITING -5
+#define CURTAIN_OPEN_FAIL -6
+#define STOP_AT_DOOR_TIMEOUT -7
+
+#define EMPTY_POINT_CLOUD -1
 
 struct VisionArmCombo
 {
@@ -307,8 +312,8 @@ struct VisionArmCombo
 
 	std::vector<std::vector<pcl::PointXYZRGBNormal>> leaf_probing_pn_vector_;
 
-
-	ArmConfig home_config_;
+	ArmConfig home_config_, home_config_right_, check_door_inside_config_;
+	ArmConfig check_curtain_config_;
 
 	int num_plants_ = 1;
 
@@ -349,10 +354,7 @@ struct VisionArmCombo
 
 	std::wstring data_saving_folder_;
 
-
-#ifdef ROAD
-	GripperModbusRTU gripper_;
-#endif
+	ServerManager data_server_manager_;
 
 	VisionArmCombo();
 
@@ -388,20 +390,6 @@ struct VisionArmCombo
 
 	int MiniPamBasicData(float & PAR, float & YII);
 
-#if 0
-	DDEDATA CALLBACK DdeCallback(
-		UINT uType,     // Transaction type.
-		UINT uFmt,      // Clipboard data format.
-		HCONV hconv,    // Handle to the conversation.
-		HSZ hsz1,       // Handle to a string.
-		HSZ hsz2,       // Handle to a string.
-		HDDEDATA hdata, // Handle to a global memory object.
-		DWORD dwData1,  // Transaction-specific data.
-		DWORD dwData2)  // Transaction-specific data.
-	{
-		return 0;
-	};
-#endif
 	void calibrateToolCenterPoint(int numPoseNeeded=4, int probe_id = RAMAN_532);
 
 	void calibrateGripperTip(int numPoseNeeded = 4);
@@ -424,7 +412,7 @@ struct VisionArmCombo
 
 	void pp_callback(const pcl::visualization::PointPickingEvent& event, void*);
 
-	void mapWorkspaceUsingKinectArm(int rover_position, int num_plants);
+	int mapWorkspaceUsingKinectArm(int rover_position, int num_plants);
 
 	void addArmModelToViewer(std::vector<PathPlanner::RefPoint> & ref_points);
 
@@ -493,7 +481,7 @@ struct VisionArmCombo
 
 	void ThermalHandEyeCalibration();
 
-	void markerDetection();
+	int markerDetection(int rgb_or_ir, float & nearest_marker_dist, int & marker_id, float max_dist_thresh = 10000.f, bool search_zero = false);
 
 	void cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::Matrix4d & eigen_transform);
 
@@ -501,13 +489,11 @@ struct VisionArmCombo
 
 	void scanAndProbeTest();
 
-	void setAndSaveParameters();
-
 	bool scanGrowthChamberWithKinect(int location_id, ArmConfig & config, bool add_to_occupancy_grid);
 	
 	int scanPlantCluster(cv::Vec3f &object_center, float max_z, float radius, int plant_id=0);
 
-	void testRun();
+	int sendRoverToChamber(int chamber_id);
 
 	void probePlateCenterTest();
 
@@ -525,7 +511,8 @@ struct VisionArmCombo
 
 	int sendRoboteqVar(int id, int value);
 
-	void scanPotMultiAngle();
+	void acquireHyperspectralCalibrationData();
+
 };
 
 

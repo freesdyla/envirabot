@@ -1,15 +1,15 @@
 #include "VisionArmCombo.h"
 
-//#define ENABLE_PP	//path planner
+#define ENABLE_PP	//path planner
 
 VisionArmCombo::VisionArmCombo() :
 	voxel_grid_size_(0.002f),
 	counter_(0)
 {
+	//pp_.PRMCEPreprocessing(); pp_.savePathPlanner("pp"); std::getchar(); return;
 	
+	initRobotArmClient();
 	initVisionCombo();
-
-	//	pp_.PRMCEPreprocessing(); pp_.savePathPlanner("pp"); for (int i = 1; i<pp_.num_nodes_; i += 2) viewPlannedPath(pp_.random_nodes_buffer_ + (i - 1) * 6, pp_.random_nodes_buffer_ + i * 6); return;
 
 //	float Fo, Fm, FvFm, qP, qL, qN, NPQ, YNPQ, YNO, F, FmPrime, PAR, YII, ETR, FoPrime;
 
@@ -25,49 +25,27 @@ VisionArmCombo::VisionArmCombo() :
 	raman_->saveLastSpectrum("raman_ir.csv");
 	*/
 
-#if 0
+	#if 0
 	initHyperspectralCam();	// must disconnect flir ethernet before specim is connected
-#endif
+	#endif
 
 	#if 0
-	std::cout << "hyperspectral init done. Press key to continue.\n";
-	std::getchar();
+	//std::cout << "hyperspectral init done. Press key to continue.\n";
+	//std::getchar();
 	initThermoCam();
 	#endif
 
 	initKinectThread();
 
-	initLineProfiler();
-	initRobotArmClient();
+	//initLineProfiler();
+
+	//initRobotArmClient();
 #endif
 
-#if 0
-	cv::Mat color, temp, hyper_img;
-	//start imaging
-	hypercam_->frames_.clear();
-	hypercam_->frame_count_ = 0;
-	hypercam_->start();
-
-	while (hypercam_->frame_count_ == 0)
-		Sleep(2);
-
-	while (true) {
-
-		// collect the first frame
-		hyper_img = hypercam_->getLastestFrame();
-
-		cv::imshow("hyper", hyper_img);
-
-		thermocam_->snapShot(color, temp);
-		cv::imshow("thermal", color);
-		cv::waitKey(10);
-	}
-#endif
 
 #ifdef ENABLE_PP
 	if (!pp_.loadPathPlanner("pp"))	std::cout << "load path planner fail\n";
-	for (int i = 1; i<pp_.num_nodes_; i += 2) viewPlannedPath(pp_.random_nodes_buffer_ + (i - 1) * 6, pp_.random_nodes_buffer_ + i * 6); return;
-	//viewPlannedPath(pp_.random_nodes_buffer_, pp_.random_nodes_buffer_ + 6); viewer_->spin();
+	//for (int i = 1; i<pp_.num_nodes_; i += 2) viewPlannedPath(pp_.random_nodes_buffer_ + (i - 1) * 6, pp_.random_nodes_buffer_ + i * 6); return;
 #endif
 
 #if 0
@@ -107,12 +85,17 @@ VisionArmCombo::~VisionArmCombo()
 
 void VisionArmCombo::initVisionCombo()
 {
-#ifdef ROAD
-	//gripper_.activate();
-	//gripper_.open();
-#endif
-	home_config_.setJointPos(-90., 0., -120., -58., 90., -180.);
+	home_config_.setJointPos(-131., -5., -135., -40., 31., -180.);
 	home_config_.toRad();
+
+	home_config_right_.setJointPos(-131., -5., -135., -40., 18., -180.);
+	home_config_right_.toRad();
+
+	check_door_inside_config_.setJointPos(-180., -5., -135., -40., 0., -180.);
+	check_door_inside_config_.toRad();
+
+	check_curtain_config_.setJointPos(-90., -5., -135., -40., 90., -180.);
+	check_curtain_config_.toRad();
 
 	viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
 	viewer_->addCoordinateSystem(0.3);
@@ -358,13 +341,6 @@ void VisionArmCombo::initVisionCombo()
 		fs.release();
 	}
 
-	// kinect
-/*	cam2hand_kinect_ = Eigen::Matrix4f::Identity();
-	cam2hand_kinect_(0, 3) = 0.0540247f;
-	cam2hand_kinect_(1, 3) = 0.1026325f;
-	cam2hand_kinect_(2, 3) = 0.0825227f;
-	*/
-
 	cvTransformToEigenTransform(kinect_infrared_hand_to_eye_cv_, hand_to_depth_);
 
 	cam2hand_kinect_ = hand_to_depth_.cast<float>();
@@ -408,30 +384,10 @@ void VisionArmCombo::initVisionCombo()
 	}
 
 	ArmConfig imaging_config;
-	//imaging_config.setJointPos(-89.77, -15., -77.72, -89.16, 94.92, -182.31);
-	//imaging_config.toRad();
-	//imaging_config_vec.push_back(imaging_config);
 
 	imaging_config.setJointPos(-88.55, -91.57, -92.23, -80.27, 90.6, -180.68);
 	imaging_config.toRad();
 	imaging_config_vec.push_back(imaging_config);
-
-	// this is for probing plants on the bench in lab
-	/*imaging_config.setJointPos(-88.87, -77.01, -83.68, -103.93, 89.69, -175.55);
-	imaging_config.toRad();
-	imaging_config_vec.push_back(imaging_config);*/
-
-	/*imaging_config.setJointPos(-95.44, -84.73, -65.48, -120.08, 90.85, -183.29);
-	imaging_config.toRad();
-	imaging_config_vec.push_back(imaging_config);*/
-
-	//imaging_config.setJointPos(-95.29, -94.71, -33.16, -136.00, 90.84, -183.12);
-	//imaging_config.toRad();
-	//imaging_config_vec.push_back(imaging_config);
-
-	//imaging_config.setJointPos(-59.32, -95.62, -31.90, -137.05, 87.10, -147.33);
-	//imaging_config.toRad();
-	//imaging_config_vec.push_back(imaging_config);
 
 	sor_.setMeanK(sor_mean_k_);
 	sor_.setStddevMulThresh(sor_std_);
@@ -440,6 +396,11 @@ void VisionArmCombo::initVisionCombo()
 
 	if (status != RQ_SUCCESS)
 		std::cout << "Error connecting to motor controller: " << status << "\n";
+	
+	Sleep(10);
+	motor_controller_.SetCommand(_R, 2);	//restart script
+	Sleep(100);
+	
 }
 
 void VisionArmCombo::pp_callback(const pcl::visualization::PointPickingEvent& event, void*)
@@ -1671,7 +1632,7 @@ std::string VisionArmCombo::getCurrentDateTimeStr()
 	register point cloud from kinect in robot base frame
 */
 
-void VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plants)
+int VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plants)
 {
 
 	//pcl::io::loadPCDFile("laser_scan.pcd", *kinect_cloud_);
@@ -1686,31 +1647,53 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plan
 
 #ifdef ENABLE_PP
 	pp_.resetOccupancyGrid();
-#endif
 
-	kinect_cloud_->clear();
+	#if 1
+	PointCloudT::Ptr window_side_panel(new PointCloudT);
 
-#if 0
-	PointCloudT::Ptr window_left_panel(new PointCloudT);
+	if (rover_position == 2) {
 
-	for (float x = 0.44f; x < 0.85f; x += 0.01f)
-	{
-		for (float y = -0.3f; y < -0.21f; y += 0.01f)
+		for (float x = 0.44f; x < 0.85f; x += 0.01f)
 		{
-			for (float z = -0.44f; z < 1.14f; z += 0.01f)
+			for (float y = -0.3f; y < -0.21f; y += 0.01f)
 			{
-				PointT p;
-				p.x = x; p.y = y; p.z = z;
-				p.r = p.g = p.b = 255;
-				window_left_panel->push_back(p);
+				for (float z = -0.44f; z < 1.14f; z += 0.01f)
+				{
+					PointT p;
+					p.x = x; p.y = y; p.z = z;
+					p.r = p.g = p.b = 255;
+					window_side_panel->push_back(p);
+				}
+			}
+		}
+	}
+	else if (rover_position == 0) {
+
+		for (float x = -0.85f; x < -0.44f; x += 0.01f)
+		{
+			for (float y = -0.3f; y < -0.21f; y += 0.01f)
+			{
+				for (float z = -0.44f; z < 1.14f; z += 0.01f)
+				{
+					PointT p;
+					p.x = x; p.y = y; p.z = z;
+					p.r = p.g = p.b = 255;
+					window_side_panel->push_back(p);
+				}
 			}
 		}
 	}
 
-	pp_.addPointCloudToOccupancyGrid(window_left_panel);
-	showOccupancyGrid();
-	display();
+	if (rover_position != 1)
+	{
+		pp_.addPointCloudToOccupancyGrid(window_side_panel);
+		showOccupancyGrid();
+		display();
+	}
+	#endif
 #endif
+
+	kinect_cloud_->clear();
 
 	int scan_count = 0;
 
@@ -1724,7 +1707,7 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plan
 	std::cout << "showing occupancy grid\n";
 	showOccupancyGrid();
 
-#if 0
+#if 1
 	if (rover_position == 1)	//center
 	{
 		// left
@@ -1741,7 +1724,7 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plan
 	}
 #endif
 
-#if 0 
+#if 1
 	std::cout << "acquire Kinect data...\n";
 	for (int i = 0; i < imaging_config_vec.size(); i++)
 	{
@@ -1750,7 +1733,7 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plan
 #endif
 
 	// no data
-	if (kinect_cloud_->points.size() < 100) return;
+	if (kinect_cloud_->points.size() < 100) return EMPTY_POINT_CLOUD;
 
 	*growthChamberPointCloudVec_[rover_position] += *kinect_cloud_;
 
@@ -1760,7 +1743,7 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plan
 		PointCloudT::Ptr initial_transformed_pc(new PointCloudT);
 
 		Eigen::Matrix4f initial_transform = Eigen::Matrix4f::Identity();
-		initial_transform(0, 3) = rover_position == 0 ? -rover_dist_ : rover_dist_;
+		initial_transform(0, 3) = rover_position == 0 ? rover_dist_ : -rover_dist_;
 
 		pcl::transformPointCloud(*growthChamberPointCloudVec_[1], *initial_transformed_pc, initial_transform);
 
@@ -1807,28 +1790,25 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plan
 		showOccupancyGrid();
 		
 	}
-	//return;
+	
 
-	//if (rover_position == 1)
-	{
-		//const float shelf_z = -0.52f;
+	if (rover_position == 1)
 		processGrowthChamberEnviroment(kinect_cloud_, shelf_z_, num_plants, rover_position);
-	}
-#if 0
+#if 1
 	else 
 	{
-		//right position, pot x value > 0
+		//right position, pot x value < 0
 		for (int i = 0; i < object_centers_.rows; i++)
 		{
-			if (rover_position == 0 /*&& pot_process_status_[i] == false*/ && object_centers_.at<cv::Vec3f>(i, 0)[0] > scan_pot_x_abs_limit_)
+			if (rover_position == 0 && pot_process_status_[i] == false && object_centers_.at<cv::Vec3f>(i, 0)[0] > scan_pot_x_abs_limit_)
 			{
 				//transform pot center location to current view
-				Eigen::Vector4f old_center(object_centers_.at<cv::Vec3f>(i, 0)[0] - rover_dist_,
+				Eigen::Vector4f old_center(object_centers_.at<cv::Vec3f>(i, 0)[0] + rover_dist_,
 										object_centers_.at<cv::Vec3f>(i, 0)[1],
 										object_centers_.at<cv::Vec3f>(i, 0)[2],
 										1.0f);
 
-				Eigen::Vector4f new_center =  icp_final_transformation*old_center;
+				Eigen::Vector4f new_center =  icp_final_transformation_*old_center;
 
 				cv::Vec3f new_object_center;
 
@@ -1851,7 +1831,7 @@ void VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plan
 
 			//	if (!scanPlantCluster(new_object_center, i)) std::cout << "scan objecy " << i << " fail\n";
 
-				//pot_process_status_[i] = true;
+				pot_process_status_[i] = true;
 			}
 		}
 	}
@@ -2896,41 +2876,6 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 		int boundary_object_idx;
 		for (int i = 0; i < object_centers_.rows; i++)
 		{
-			if (object_centers_.at<cv::Vec3f>(i, 0)[0] > scan_pot_x_abs_limit_)
-			{
-				boundary_object_idx = i;
-				num_pot_left++;
-			}
-			else break;
-		}
-
-		int cluster_idx;
-		for (int i = 0; i < kmeans_label_sorted_.size(); i++)
-		{
-			if (kmeans_label_sorted_[i] == boundary_object_idx)
-			{
-				cluster_idx = i;
-				break;
-			}
-		}
-
-		std::cout << "num pots left: " << num_pot_left << "\n";
-
-		Eigen::Vector4f point((*plant_cluster_min_vec_[cluster_idx])(0)- rover_dist_, 0, 0, 1);
-
-		std::cout << "initial boundary point " << point.transpose() << "\n";
-	
-		point = icp_final_transformation_*point;
-
-		std::cout << "final boundary point " << point.transpose() << "\n";
-
-		pass_.setFilterLimits(point(0), 0.4f);
-	}
-	else if (rover_position == 2)
-	{
-		int boundary_object_idx;
-		for (int i = object_centers_.rows-1; i >= 0; i--)
-		{
 			if (object_centers_.at<cv::Vec3f>(i, 0)[0] < -scan_pot_x_abs_limit_)
 			{
 				boundary_object_idx = i;
@@ -2951,7 +2896,42 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 
 		std::cout << "num pots left: " << num_pot_left << "\n";
 
-		Eigen::Vector4f point((*plant_cluster_max_vec_[cluster_idx])(0) + rover_dist_, 0, 0, 1);
+		Eigen::Vector4f point((*plant_cluster_min_vec_[cluster_idx])(0) + rover_dist_, 0, 0, 1);
+
+		std::cout << "initial boundary point " << point.transpose() << "\n";
+	
+		point = icp_final_transformation_*point;
+
+		std::cout << "final boundary point " << point.transpose() << "\n";
+
+		pass_.setFilterLimits(point(0), 0.4f);
+	}
+	else if (rover_position == 2)
+	{
+		int boundary_object_idx;
+		for (int i = object_centers_.rows-1; i >= 0; i--)
+		{
+			if (object_centers_.at<cv::Vec3f>(i, 0)[0] > scan_pot_x_abs_limit_)
+			{
+				boundary_object_idx = i;
+				num_pot_left++;
+			}
+			else break;
+		}
+
+		int cluster_idx;
+		for (int i = 0; i < kmeans_label_sorted_.size(); i++)
+		{
+			if (kmeans_label_sorted_[i] == boundary_object_idx)
+			{
+				cluster_idx = i;
+				break;
+			}
+		}
+
+		std::cout << "num pots left: " << num_pot_left << "\n";
+
+		Eigen::Vector4f point((*plant_cluster_max_vec_[cluster_idx])(0) - rover_dist_, 0, 0, 1);
 
 		std::cout << "initial boundary point " << point.transpose() << "\n";
 
@@ -4992,7 +4972,7 @@ void VisionArmCombo::calibrateThermalCamera() {
 			int key = cv::waitKey(1);
 
 			//hit space
-			if (key == 32)	break;
+			if (key == 32 && found)	break;
 		}
 
 		std::cout << "Image " << i << " done\n";
@@ -5091,7 +5071,7 @@ void VisionArmCombo::calibrateThermalCamera() {
 
 void VisionArmCombo::calibrateKinectIRCamera()
 {
-	if (robot_arm_client_ == NULL) initRobotArmClient();
+	//if (robot_arm_client_ == NULL) initRobotArmClient();
 	if (kinect_thread_ == NULL)	initKinectThread();
 
 	kinect_thread_->stream_infrared_ = true;
@@ -5619,124 +5599,111 @@ void VisionArmCombo::ThermalHandEyeCalibration() {
 
 }
 
-void VisionArmCombo::markerDetection()
+int VisionArmCombo::markerDetection(int rgb_or_ir, float & nearest_marker_dist, int & marker_id, float max_dist_thresh, bool search_zero)
 {
-	cv::Mat markerImage;
-	//make pot grid with marker 
-	int marker_img_size = 1200;	//multiple of 5+2
-	int grid_width = 7;
-	int grid_height = 5;
+	if (rgb_or_ir != RGB && rgb_or_ir != IR) {
 
-	//cv::aruco::drawMarker(marker_dictionary_, 0, marker_img_size, markerImage, 1);
-
-	cv::Mat center_square;
-	center_square.create(marker_img_size, marker_img_size, CV_8UC3);
-
-	std::memset(center_square.ptr(), 255, marker_img_size * marker_img_size * 3);
-
-	float square_size = marker_img_size/4.f*3.5f;
-	cv::rectangle(center_square, cv::Point2f((marker_img_size - square_size)*0.5f, (marker_img_size - square_size)*0.5f),
-					cv::Point2f(marker_img_size-(marker_img_size - square_size)*0.5f, marker_img_size - (marker_img_size - square_size)*0.5f), cv::Scalar(0,0,0),4);
-
-	cv::Mat block;
-	block.create(marker_img_size, marker_img_size, CV_8UC3);
-	std::memset(block.ptr(), 255, marker_img_size * marker_img_size * 3);
-	
-	cv::circle(block, cv::Point2f(marker_img_size*0.5f, marker_img_size*0.5f), 780/2/*marker_img_size / 3*/, cv::Scalar(0, 0, 0), 4);
-
-	cv::circle(block, cv::Point2f(marker_img_size*0.5f, marker_img_size*0.5f), 40, cv::Scalar(0, 0, 0), 40);
-
-	//cv::imshow("block", block);
-
-	//cv::waitKey(0);
-
-	cv::Mat block_grid;
-
-	block_grid.create(marker_img_size * grid_height, marker_img_size * grid_width, CV_8UC3);
-
-	for (int y = 0; y < grid_height; y++)
-	{
-		for (int x = 0; x < grid_width; x++)
-		{
-			block.copyTo(block_grid(cv::Rect(x*marker_img_size, y*marker_img_size, marker_img_size, marker_img_size)));
-		}
+		std::cout << "wrong camera type\n";
+		return -1;
 	}
 
-	//cv::Mat marker_img;
-	//cv::cvtColor(markerImage, marker_img, CV_GRAY2BGR);
-	//marker_img.copyTo(block_grid(cv::Rect((grid_width/2)*marker_img_size, (grid_height/2)*marker_img_size, marker_img_size, marker_img_size)));
-	center_square.copyTo(block_grid(cv::Rect((grid_width / 2)*marker_img_size, (grid_height / 2)*marker_img_size, marker_img_size, marker_img_size)));
+	cv::Mat img_rgb, img_gray, img_tmp;
 
-	cv::imwrite("block_grid.png", block_grid);
-
-	cv::Mat shrink;
-	cv::resize(block_grid, shrink, cv::Size(), 0.1, 0.1);
-
-	cv::imshow("block gird", shrink);
-	cv::waitKey(0);
-
-	return;
-	
-
-	/*	//generate marker images and save
-	for (int i = 0; i < 50; i++)
+	//while (true)//for debug
 	{
-		cv::aruco::drawMarker(marker_dictionary_, i, 700, markerImage, 1);
 
-		cv::imshow("marker", markerImage);
+		if (rgb_or_ir == RGB) {
+			img_tmp = kinect_thread_->getCurRGB();
+			cv::resize(img_tmp, img_rgb, cv::Size(), 0.5, 0.5);
+		}
+		else {
 
-		cv::imwrite("Markers\\marker_" + std::to_string(i) + ".png", markerImage);
+			img_tmp = kinect_thread_->getCurIR();
 
-		cv::waitKey(100);
-	}*/
+			cv::normalize(img_tmp, img_gray, 0, 255, cv::NORM_MINMAX, CV_8UC1);
 
-	if (robot_arm_client_ == NULL) initRobotArmClient();
+			cv::cvtColor(img_gray, img_rgb, CV_GRAY2BGR);
+		}
 
-	if (kinect_thread_ == NULL)	initKinectThread();
-
-	cv::Mat rgb;
-	cv::Vec3d rot;
-	cv::Vec3d tran;
-
-	ArmConfig config;
-	config.setJointPos(-86.5, -99.37, -155.46, -12.91, 90., -178.94);
-	config.toRad();
-
-	robot_arm_client_->moveHandJ(config.joint_pos_d, 0.1, 0.1, true);
-
-
-	while (true)
-	{
-		rgb = kinect_thread_->getCurRGB();
-
-		std::vector<int> markerIds; 
+		std::vector<int> markerIds;
 		std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
-		cv::aruco::detectMarkers(rgb, marker_dictionary_, markerCorners, markerIds, detector_params_, rejectedCandidates);
-		
+		cv::aruco::detectMarkers(img_rgb, marker_dictionary_, markerCorners, markerIds, detector_params_, rejectedCandidates);
+
 		std::vector<cv::Vec3d> rvecs, tvecs;
 
 		cv::aruco::estimatePoseSingleMarkers(markerCorners, marker_length_, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, rvecs, tvecs);
 
-		cv::aruco::drawDetectedMarkers(rgb, markerCorners, markerIds);
+		cv::aruco::drawDetectedMarkers(img_rgb, markerCorners, markerIds);
 
-		for (unsigned int i = 0; i < markerIds.size(); i++)
-		{
-			cv::aruco::drawAxis(rgb, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, rvecs[i], tvecs[i], marker_length_*0.5f);
-			std::cout <<"id "<< i<<" rot " << rvecs[i] << " tran " << tvecs[i]<<"\n";
-			rot = rvecs[i];
-			tran = tvecs[i];
+		// find the closest marker less than distance threshold
+		float min_dist = std::numeric_limits<float>().max();
+		int nearest_marker_idx = -1;
+
+		if (!search_zero) {
+			for (unsigned int i = 0; i < markerIds.size(); i++)
+			{
+				float dist = std::sqrt(tvecs[i].val[0] * tvecs[i].val[0] + tvecs[i].val[1] * tvecs[i].val[1] + tvecs[i].val[2] * tvecs[i].val[2]);
+
+				if (dist < min_dist && dist < max_dist_thresh) {
+
+					nearest_marker_idx = i;
+					min_dist = dist;
+				}
+
+			}
+		}
+		else
+		{	
+			for (unsigned int i = 0; i < markerIds.size(); i++)
+			{
+				if (markerIds[i] == 0) {
+
+					nearest_marker_idx = i;
+					min_dist = std::sqrt(tvecs[i].val[0] * tvecs[i].val[0] + tvecs[i].val[1] * tvecs[i].val[1] + tvecs[i].val[2] * tvecs[i].val[2]);
+					break;
+				}
+			}
+
 		}
 
-		cv::imshow("marker", rgb);
+		if (nearest_marker_idx >= 0) {
+
+			if (rgb_or_ir == RGB)
+				cv::aruco::drawAxis(img_rgb, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, rvecs[nearest_marker_idx], tvecs[nearest_marker_idx], marker_length_*0.5f);
+			else
+				cv::aruco::drawAxis(img_rgb, kinect_infrared_camera_matrix_cv_, kinect_infrared_dist_coeffs_cv_, rvecs[nearest_marker_idx], tvecs[nearest_marker_idx], marker_length_*0.5f);
+			//std::cout << "id " << i << " rot " << rvecs[i] << " tran " << tvecs[i] << "\n";
+			
+			nearest_marker_dist = min_dist;
+			marker_id = markerIds[nearest_marker_idx];
+
+			std::cout << "dist: " << min_dist << "\n";
+		}
+		else {
+			nearest_marker_dist = -1.f;
+			marker_id = -1;
+		}
+
+		cv::imshow("marker", img_rgb);
 
 		int key = cv::waitKey(10);
-
-		if (key == 113)	//q
-		{
-			break;
-		}
 	}
 
+	return 0;
+
+	/*	//generate marker images and save
+	for (int i = 0; i < 50; i++)
+	{
+	cv::aruco::drawMarker(marker_dictionary_, i, 700, markerImage, 1);
+
+	cv::imshow("marker", markerImage);
+
+	cv::imwrite("Markers\\marker_" + std::to_string(i) + ".png", markerImage);
+
+	cv::waitKey(100);
+	}*/
+
+#if 0	// how to use opencv marker pose 
 	cv::Mat rgb_to_marker_rot_cv;
 
 	cv::Rodrigues(rot, rgb_to_marker_rot_cv);
@@ -5761,34 +5728,10 @@ void VisionArmCombo::markerDetection()
 
 	marker_to_gripper.topLeftCorner<3, 3>() = rotate_x_pi.matrix();
 
-	
-
 	Eigen::Matrix4d base_to_marker = base_to_hand*hand_to_rgb_*cur_rgb_to_marker_;
 
 	std::cout << "base to marker:\n" << base_to_marker << "\n";
-
-	for (int y = 2; y >= -2; y--)
-	{
-		for (int x = -3; x <= 3; x++)
-		{
-			std::getchar();
-
-			Eigen::Matrix4d marker_to_gripper_translate = Eigen::Matrix4d::Identity();
-			marker_to_gripper_translate.col(3).head(3) << x* marker_length_, y* marker_length_, -0.03;
-
-			Eigen::Matrix4d probe_pose_eigen = base_to_marker*marker_to_gripper*marker_to_gripper_translate*probe_to_hand_;
-
-			std::cout << "probe pose:\n" << probe_pose_eigen << "\n";
-
-			// move arm
-			double pose[6];
-
-			eigenMat4dToArray6(probe_pose_eigen, pose);
-
-			robot_arm_client_->moveHandL(pose, 0.1, 0.1);
-		}
-	}
-
+#endif
 }
 
 void VisionArmCombo::cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::Matrix4d & eigen_transform)
@@ -5945,11 +5888,6 @@ void VisionArmCombo::scanAndProbeTest()
 	viewer_->spin(); */
 
 
-	//fitPotRing(scan_cloud_down_base);
-#ifdef ROAD
-	find3DMarker(scan_cloud_down_base);
-#endif
-
 	//robot_arm_client_->rotateJointRelative(4, -180., 0.7, 0.7);
 
 #if 0
@@ -6066,20 +6004,6 @@ int VisionArmCombo::sendRoboteqVar(int id, int value)
 	return 0;
 }
 
-void VisionArmCombo::setAndSaveParameters()
-{
-	cv::FileStorage fs("parameters.yml", cv::FileStorage::WRITE);
-
-	region_grow_residual_threshold_ = 0.005f;
-	region_grow_smoothness_threshold_ = 3.0 / 180.*M_PI;
-	region_grow_curvature_threshold_ = 1.0;
-
-	fs << "region_grow_residual_threshold_" << region_grow_residual_threshold_;
-	fs << "region_grow_smoothness_threshold_" << region_grow_smoothness_threshold_;
-	fs << "region_grow_curvature_threshold_" << region_grow_curvature_threshold_;
-
-	fs.release();
-}
 
 bool VisionArmCombo::scanGrowthChamberWithKinect(int location_id, ArmConfig & imaging_config, bool add_to_occupancy_grid=false)
 {
@@ -6098,7 +6022,7 @@ bool VisionArmCombo::scanGrowthChamberWithKinect(int location_id, ArmConfig & im
 
 	for (int i = 0; i <3; i++)
 	{
-		if (i==1 && moveToConfigGetKinectPointCloud(config, true, true, add_to_occupancy_grid))
+		if (/*i==1 &&*/ moveToConfigGetKinectPointCloud(config, true, true, add_to_occupancy_grid))
 		{
 			std::cout << "Scan idx " << i + 1<<"\n";
 		}
@@ -6341,40 +6265,215 @@ int VisionArmCombo::scanPlantCluster(cv::Vec3f &object_center, float max_z, floa
 	return 0;
 }
 
-void VisionArmCombo::testRun()
+// assumes rover is not inside any chamber
+int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 {
-#if 0
-	if (!moveToConfigGetKinectPointCloud(home_config_, false, true, false))
-	{
-		std::cout << "can not go to home config\n";
-		return;
-	}
-#endif
-
+	int timeout_cnt = 0;
+	int cur_location_in_chamber = -1;
 	int cur_rover_status = -1;
-	motor_controller_.GetValue(_VAR, 4, cur_rover_status);
+
+	float marker_dist = 1e10f;
+	int marker_id = -1;
 
 	if (only_do_probing_ != 1)
 	{
+#if 1
+		if (target_chamber_id < 0 || target_chamber_id > 8) {
+
+			std::cout << "invalid chamber id\n";
+			return -1;
+		}
+
+#if 1
+		robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_arm_speed_, move_arm_acceleration_, true);
+#endif
+
+#if 1
+		cur_rover_status = -1;
+		motor_controller_.GetValue(_VAR, 4, cur_rover_status);
+
+		if (target_chamber_id == 0) {
+
+			sendRoboteqVar(1, target_chamber_id); //go to target chamber id
+
+			while (true)
+			{
+				//read current stop
+				motor_controller_.GetValue(_VAR, 4, cur_rover_status);
+
+				if (cur_rover_status == STOP_ON_MAIN) break;
+
+				Sleep(1000);
+			}
+
+			return SUCCESS;
+		}
+
 		std::cout << "current rover status: " << cur_rover_status << "\n";
 
-		std::getchar();
-		sendRoboteqVar(1, 1);//go to door 1
+		//std::getchar();
+
+		sendRoboteqVar(1, target_chamber_id); //go to target chamber id
+
 		while (true)
 		{
 			//read current stop
 			motor_controller_.GetValue(_VAR, 4, cur_rover_status);
 
-			//std::cout << "cur_location_in_chamber " << cur_location_in_chamber << "\n";
+			//std::cout << "cur_rover_status: " << cur_rover_status << "\n";
 
 			if (cur_rover_status == STOP_AT_DOOR) break;
 
-			Sleep(500);
+			Sleep(1000);
 		}
 
 		std::cout << "stop at door\n"; //std::getchar();
-		Sleep(3000);
-		sendRoboteqVar(2, 1);//enter chamber
+
+
+		//check if arrive at the target chamber
+		if (target_chamber_id % 2 == 0)	//right side chamber
+		{
+			robot_arm_client_->moveHandJ(home_config_right_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+
+			timeout_cnt = 0;
+
+			while (1) {
+
+				Sleep(1000);
+
+				marker_id = -1;
+				markerDetection(RGB, marker_dist, marker_id, 3.f);
+
+				if (marker_id == target_chamber_id)	break;
+
+				if (++timeout_cnt > 20) {
+					std::cout << "Stop at door timeout\n";
+					return STOP_AT_DOOR_TIMEOUT;
+				}
+			}
+
+			if (marker_id != target_chamber_id) {
+
+				robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+
+				timeout_cnt = 0;
+
+				while (1) {
+
+					Sleep(1000);
+
+					marker_id = -1;
+					markerDetection(RGB, marker_dist, marker_id, 3.f);
+
+					if (marker_id == target_chamber_id)	break;
+
+					if (++timeout_cnt > 20) {
+						std::cout << "Stop at door timeout\n";
+						return STOP_AT_DOOR_TIMEOUT;
+					}
+				}
+
+				if (marker_id != target_chamber_id) {
+
+					std::cout << "stop at wrong door\n";
+					return STOP_AT_WRONG_DOOR;
+				}
+			}
+		}
+		else // left side chamber
+		{
+			robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+
+			timeout_cnt = 0;
+
+			while (1) {
+
+				Sleep(1000);
+
+				marker_id = -1;
+				markerDetection(RGB, marker_dist, marker_id, 3.f);
+
+				if (marker_id == target_chamber_id)	break;
+
+				if (++timeout_cnt > 20) {
+					std::cout << "Stop at door timeout\n";
+					return STOP_AT_DOOR_TIMEOUT;
+				}
+			}
+
+			if (marker_id != target_chamber_id) {
+
+				robot_arm_client_->moveHandJ(home_config_right_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+
+				timeout_cnt = 0;
+
+				while (1) {
+
+					Sleep(1000);
+
+					marker_id = -1;
+					markerDetection(RGB, marker_dist, marker_id, 3.f);
+
+					if (marker_id == target_chamber_id)	break;
+
+					if (++timeout_cnt > 20) {
+						std::cout << "Stop at door timeout\n";
+						return STOP_AT_DOOR_TIMEOUT;
+					}
+				}
+
+				if (marker_id != target_chamber_id) {
+
+					std::cout << "stop at wrong door\n";
+					return STOP_AT_WRONG_DOOR;
+				}
+			}
+		}
+
+		//return 0;
+
+		//open door
+		controlChamberDoor(target_chamber_id, OPEN_DOOR);
+
+		Sleep(5000);
+
+		//TODO validate door is open using marker
+		timeout_cnt = 0;
+
+		while (1) {
+
+			marker_dist = -1.f;
+			marker_id = -1;
+			markerDetection(RGB, marker_dist, marker_id);
+
+			if (marker_id % 2 != 0) {	//left side chambers
+
+				// door open
+				if (marker_dist > 1.1f && marker_dist < 2.5f)
+					break;
+			}
+			else {	// right side chambers
+
+				// door open
+				if (marker_dist > 0.f && marker_dist < 1.0f)
+					break;
+			}
+
+			if (++timeout_cnt > 10) {
+				std::cout << "Door failed to open.\n";
+				return DOOR_OPEN_FAIL;
+			}
+
+			Sleep(1000);
+		}
+
+		if (marker_id != target_chamber_id) {
+			std::cout << "See Chamber " << marker_id << " but target is " << target_chamber_id << "\n";
+			return STOP_AT_WRONG_DOOR;
+		}
+
+		sendRoboteqVar(2, 1); //enter chamber
+
 		while (true)
 		{
 			//read current stop
@@ -6384,38 +6483,95 @@ void VisionArmCombo::testRun()
 
 			if (cur_rover_status == STOP_IN_CHAMBER) break;
 
-			Sleep(500);
+			Sleep(1000);
 		}
+
 		std::cout << "stop in chamber\n"; //std::getchar();
-		Sleep(3000);
+
+		//close door
+		//controlChamberDoor(target_chamber_id, CLOSE_DOOR);
+
+		Sleep(4000);
+
+		sendRoboteqVar(3, 1); //go to chamber center
+
+		while (true)
+		{
+			//read current stop
+			motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
+
+			if (cur_location_in_chamber == 1) break;
+
+			Sleep(1000);
+		}
+
+		std::cout << "reach chamber center location\n";
+
+#endif
+
+		//check if door is close
+#if 0
+		robot_arm_client_->moveHandJ(check_door_inside_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+
+		timeout_cnt = 0;
+
+		while (1) {
+
+			float marker_dist;
+			int marker_id;
+			markerDetection(IR, marker_dist, marker_id);
+
+			if (marker_id == target_chamber_id + 8)	break;
+
+			if (++timeout_cnt > 20) {
+				std::cout << "Door failed to close!\n";
+
+				return DOOR_CLOSE_FAIL;
+			}
+
+			Sleep(1000);
+		}
+#endif
+
+		//open curtain
+		controlChamberDoor(target_chamber_id, OPEN_CURTAIN);
+
+		robot_arm_client_->moveHandJ(check_curtain_config_.joint_pos_d, move_arm_speed_, move_arm_acceleration_, true);
+
+		Sleep(15000);
+#endif
+
+#if 1
+		//validate curtain open
+		timeout_cnt = 0;
+
+		while (1) {
+
+			Sleep(1000);
+			
+			marker_id = -1;
+			markerDetection(IR, marker_dist, marker_id);
+
+			if (marker_id == 0)	break;
+
+			if (++timeout_cnt > 20) {
+				std::cout << "Curtain open timeout\n";
+				return CURTAIN_OPEN_FAIL;
+			}
+		}
+
+		Sleep(2000);
 	}
-	//if (cur_rover_status != STOP_IN_CHAMBER) return;
 
-	int cur_location_in_chamber = -1;
-	int target_stop = 1;
-	//std::cout << "Hit Enter and go to location "<< target_stop<<"\n"; 	std::getchar();
-	//sendRoboteqVar(3, target_stop);
-	//
-	//while (true)
-	//{
-	//	//read current stop
-	//	motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
+	#endif
 
-	//	//std::cout << "cur_location_in_chamber " << cur_location_in_chamber << "\n";
-
-	//	if (cur_location_in_chamber == target_stop) break;
-
-	//	Sleep(500);
-	//}
-
-	//Sleep(1000);	
-	//std::cout << "stop at " << cur_location_in_chamber << "\n";
-
+	// assuming inside chamber, at center location, collect data
+#if 1
 	std::string cur_time_str = getCurrentDateTimeStr();
 
 	std::wstring folder_name(cur_time_str.begin(), cur_time_str.end());
 
-	data_saving_folder_ = L"Enviratron Data\\Chamber " + std::to_wstring(cur_chamber_id_) + L"\\" + folder_name + L"\\";
+	data_saving_folder_ = L"Enviratron Data\\Chamber " + std::to_wstring(target_chamber_id) + L"\\" + folder_name + L"\\";
 
 	std::cout << CreateDirectory(data_saving_folder_.c_str(), NULL);
 
@@ -6429,145 +6585,131 @@ void VisionArmCombo::testRun()
 	plant_cluster_max_vec_.clear();
 	plant_cluster_max_vec_.resize(num_plants_);
 
-	
+
 	mapWorkspaceUsingKinectArm(1, num_plants_);
 
-#if 0
-	if (!moveToConfigGetKinectPointCloud(home_config_, false, true, false))
-	{
-		std::cout << "can not go to home config\n";
-		return;
-	}
-
-	sendRoboteqVar(1, 0);	//go home
-	sendRoboteqVar(2, 2); //exit chamber
+	// plan path to check_curtain_config
+	moveToConfigGetKinectPointCloud(check_curtain_config_, false, true, false);
 #endif
-
-	return;
-
-	// move arm back to a safe config before crab
-	ArmConfig safe_config;
-	safe_config.setJointPos(-90, -90, -90, -80, 90, -180);
-	safe_config.toRad();
-
-	if (!moveToConfigGetKinectPointCloud(safe_config, false, true, false))
+		
+	if (only_do_probing_ != 1)
 	{
-		return;
+		// close curtain
+		controlChamberDoor(target_chamber_id, CLOSE_CURTAIN);
+		
+		// go to chamber center location
+		sendRoboteqVar(3, 1); //go to chamber center
+
+		while (true)
+		{
+			Sleep(1000);
+
+			//read current stop
+			motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
+
+			if (cur_location_in_chamber == 1) break;	
+		}
+
+		std::cout << "reach chamber center location to check door open\n";
+
+		// wait for curtain close
+		Sleep(15000);
+
+		//check if door is OPEN
+		robot_arm_client_->moveHandJ(check_door_inside_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+
+		// open door
+		controlChamberDoor(target_chamber_id, OPEN_DOOR);
+		Sleep(10);
+		controlChamberDoor(target_chamber_id, OPEN_DOOR);
+
+		// wait for door open
+		Sleep(5000);
+
+		timeout_cnt = 0;
+
+		while (1) {
+
+			marker_id = -1;
+			markerDetection(RGB, marker_dist, marker_id, 10.f, true);
+			
+			if (marker_id == 0)	break;
+
+			if (++timeout_cnt > 20) {
+
+				std::cout << "Door failed to close for exit!\n";
+
+				return DOOR_OPEN_FAIL;
+			}
+
+			Sleep(1000);
+		}
+
+		//move to chamber right position
+		sendRoboteqVar(3, 0);
+
+		if (target_chamber_id % 2 == 0) {	// right side chambers
+			robot_arm_client_->moveHandJ(home_config_right_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+		}
+		else {	// left side chambers
+			robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+		}
+
+		while (true)
+		{
+			//read current stop
+			motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
+
+			if (cur_location_in_chamber == 0) break;
+
+			Sleep(1000);
+		}
+
+		// by default go to home
+		sendRoboteqVar(1, 0);
+
+		// exit chamber
+		sendRoboteqVar(2, 2);
+
+		//confirm door close
+		timeout_cnt = 0;
+
+		while (1) {
+
+			marker_id = -1;
+			markerDetection(RGB, marker_dist, marker_id);
+
+			if (marker_id == target_chamber_id)	break;
+
+			if (++timeout_cnt > 30) {
+
+				std::cout << "Failed to see door when exiting!\n";
+
+				return FAIL_TO_SEE_DOOR_WHEN_EXITING;
+			}
+
+			Sleep(1000);
+		}
+
+		controlChamberDoor(target_chamber_id, CLOSE_DOOR);
 	}
 
+	return 0;
 
-	target_stop = 2;
-	std::cout << "Hit Enter and go to location " << target_stop << "\n"; 	std::getchar();
-	sendRoboteqVar(3, target_stop);
 
-	while (true)
-	{
-		//read current stop
-		motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
-
-		if (cur_location_in_chamber == target_stop) break;
-
-		Sleep(500);
-	}
-
-	Sleep(1000);
-	std::cout << "stop at " << cur_location_in_chamber << "\n";
-
+#if 0
 	mapWorkspaceUsingKinectArm(2, num_plants_);
 
 	if (!moveToConfigGetKinectPointCloud(safe_config, false, true, false))
 	{
 		return;
 	}
-	target_stop = 0;
-	std::cout << "Hit Enter and go to location " << target_stop << "\n"; 	std::getchar();
-	sendRoboteqVar(3, target_stop);
-
-	while (true)
-	{
-		//read current stop
-		motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
-
-		if (cur_location_in_chamber == target_stop) break;
-
-		Sleep(500);
-	}
-
-	Sleep(1000);
-	std::cout << "stop at " << cur_location_in_chamber << "\n";
-
-	mapWorkspaceUsingKinectArm(0, num_plants_);
-
-	std::cout << "done\n";
-		
-
+#endif
 }
 
 void VisionArmCombo::probePlateCenterTest()
 {
 	scanPlantCluster(plate_center_, plate_center_[2], plate_radius_);
-}
-
-void VisionArmCombo::scanPotMultiAngle()
-{
-	std::getchar();
-	double angle = 30.;
-	Eigen::Matrix4d t = Eigen::Matrix4d::Identity();
-	t.block<3, 3>(0, 0) = Eigen::AngleAxisd(angle/180.*M_PI, Eigen::Vector3d::UnitY()).matrix()*Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX()).matrix();
-	t.col(3).head(3) << plate_center_[0], plate_center_[1], plate_center_[2];
-	double pose[6];
-	eigenMat4dToArray6(t, pose);
-	robot_arm_client_->moveHandL(pose, move_arm_acceleration_, move_arm_speed_);
-	//robot_arm_client_->waitTillHandReachDstPose(pose);
-
-	PointCloudT::Ptr scan_cloud(new PointCloudT);
-	PointCloudT::Ptr scan_cloud_in_base(new PointCloudT);
-	PointCloudT::Ptr scan_cloud_in_base1(new PointCloudT);
-
-	//wait 1 sec
-	//std::cout << "scan plant " << object_idx << "\n";
-	Sleep(1000);
-
-	// moveToConfig moves the arm to a pose slightly different from scan_start_hand_pose
-	Eigen::Matrix4f curPose; getCurHandPose(curPose);
-
-	//std::cout << curPose << "\n" << scan_start_hand_pose << "\n";
-
-	//scan_start_hand_pose = curPose.cast<double>();
-
-	double scan_distance = 0.2;
-
-	// Use laser scanner
-	double vec[3] = {-scan_distance, 0, 0};
-
-	line_profiler_->m_vecProfileData.clear();
-	scanTranslateOnly(vec, scan_cloud, scan_acceleration_, scan_speed_);
-
-	pcl::transformPointCloud(*scan_cloud, *scan_cloud_in_base, curPose*handToScanner_);
-
-	t.block<3, 3>(0, 0) = Eigen::AngleAxisd(-2 * angle / 180.*M_PI, Eigen::Vector3d::UnitY()).matrix()*t.block<3, 3>(0, 0);
-	t(0, 3) -= 3*scan_distance;
-
-	eigenMat4dToArray6(t, pose);
-	robot_arm_client_->moveHandL(pose, move_arm_acceleration_, move_arm_speed_);
-	//robot_arm_client_->waitTillHandReachDstPose(pose);
-
-	getCurHandPose(curPose);
-	vec[0] = scan_distance;
-	line_profiler_->m_vecProfileData.clear();
-	scanTranslateOnly(vec, scan_cloud, scan_acceleration_, scan_speed_);
-
-	pcl::transformPointCloud(*scan_cloud, *scan_cloud_in_base1, curPose*handToScanner_);
-
-	scan_cloud->points.clear();
-	*scan_cloud += *scan_cloud_in_base;
-	*scan_cloud += *scan_cloud_in_base1;
-
-	viewer_->addPointCloud(scan_cloud, "scan_cloud", 0);
-	viewer_->spin();
-	viewer_->removePointCloud("scan_cloud", 0);
-
-	std::cout << "done\n";
 }
 
 void VisionArmCombo::TCPCalibrationErrorAnalysis(int numPoseNeeded)
@@ -6963,7 +7105,6 @@ bool VisionArmCombo::switchBetweenImagingAndProbing(int target_mode) {
 
 void VisionArmCombo::controlChamberDoor(int chamber_id, int action)
 {
-	
 	boost::asio::io_service io_service;
 	boost::asio::ip::udp::socket socket(io_service);
 	boost::asio::ip::udp::endpoint remote_endpoint;
@@ -6988,4 +7129,166 @@ void VisionArmCombo::controlChamberDoor(int chamber_id, int action)
 	socket.send_to(boost::asio::buffer(command, command.size()), remote_endpoint, 0, err);
 
 	socket.close();
+}
+
+void VisionArmCombo::acquireHyperspectralCalibrationData()
+{
+	if (hypercam_ == NULL)
+	{
+		std::cout << "hyperspectral camera not initialized!";
+		return;
+	}
+
+	if(robot_arm_client_ == NULL)
+	{
+		std::cout << "robot arm not initialized!";
+		return;
+	}
+	
+	double step_size = 0.001;//mm
+
+	int num_success_scan = 0;
+
+	hypercam_->start();
+
+
+	//while (1) 
+	{
+
+		std::cout << "Move to END scan pose, then press any key.\n"; std::getchar();
+
+		std::vector<double> end_pose(robot_arm_client_->cur_cartesian_info_array, robot_arm_client_->cur_cartesian_info_array+6);
+		
+
+		std::cout << "Move START scan pose, then press any key.\n";	std::getchar();
+
+		std::vector<double> start_pose(robot_arm_client_->cur_cartesian_info_array, robot_arm_client_->cur_cartesian_info_array + 6);
+
+		std::vector<double> cur_pose(start_pose.data(), start_pose.data() +6);
+
+		//compute translation
+		Eigen::Vector3d translation(end_pose[0]-start_pose[0], end_pose[1] - start_pose[1], end_pose[2] - start_pose[2]);
+
+		//double vec3[3] = {translation(0), translation(1), translation(2)};
+		
+		//scanTranslateOnlyHyperspectral(vec3, 0.1, 0.02);
+
+		double distance = translation.norm();
+		
+		Eigen::Vector3d moving_dir = translation.normalized();
+
+		std::vector<cv::Mat> scanline_vec;
+
+		int step_count = 0;
+
+		cv::Mat waterfall;
+		waterfall.create(900, hypercam_->spatial_size_, CV_8U);
+
+		while (1) 
+		{
+			double progress = (double)step_count*step_size;
+
+			//check if reach end pose
+			if (progress >= distance) {
+
+				std::cout << "Reached end pose\n";
+
+				break;
+			}
+
+			//scan line
+			cv::Mat cur_image = hypercam_->getLastestFrame();
+
+			cv::Mat cur_image_64f;
+			cur_image.convertTo(cur_image_64f, CV_64F);
+			
+			cv::Mat cur_line;
+			cv::reduce(cur_image_64f, cur_line, 0, CV_REDUCE_AVG);
+
+			double min_val, max_val;
+
+			cv::minMaxLoc(cur_line, &min_val, &max_val);
+
+			///(v - min)/(max-min)*255 = v*(255/(max-min)) - 255*min/(max-min)
+
+			//min_val = 170.;
+
+			cv::Mat cur_line_8u;
+			cur_line.convertTo(cur_line_8u, CV_8U, 255. / (max_val - min_val), -255.*min_val / (max_val - min_val));
+
+			scanline_vec.push_back(cur_line_8u);
+
+			if (scanline_vec.size() > 900) {
+				std::cout << "exceed image\n";
+				break;
+			}
+			
+
+			//for (int y = 0; y < scanline_vec.size(); y++)
+				//scanline_vec[y].copyTo(waterfall.row(y));
+			scanline_vec[scanline_vec.size() - 1].copyTo(waterfall.row(scanline_vec.size() - 1));
+
+			cv::imshow("scanline grayscale", waterfall);
+
+			cv::waitKey(4);
+			
+
+			//move a little
+			cur_pose[0] = start_pose[0] + progress*moving_dir[0];
+			cur_pose[1] = start_pose[1] + progress*moving_dir[1];
+			cur_pose[2] = start_pose[2] + progress*moving_dir[2];
+
+			robot_arm_client_->moveHandL(cur_pose.data(), 0.005, 0.005);
+			
+			step_count++;
+
+			
+			
+		}
+
+		cv::Mat img;
+		img.create(scanline_vec.size(), hypercam_->spatial_size_, CV_8U);
+
+		for (int y = 0; y < scanline_vec.size(); y++)
+			scanline_vec[y].copyTo(img.row(y));
+
+		cv::Size boardSize, imageSize;
+		float squareSize, aspectRatio;
+
+		std::vector<std::vector<cv::Point2f>> imagePoints;
+
+		// IMPORTANT
+		cv::SimpleBlobDetector::Params params;
+		params.maxArea = 200 * 200;
+		params.minArea = 20 * 20;
+		cv::Ptr<cv::FeatureDetector> blobDetect = cv::SimpleBlobDetector::create(params);
+
+		imageSize.width = kinect_thread_->cColorWidth;
+		imageSize.height = kinect_thread_->cColorHeight;
+
+		boardSize.width = 4;
+		boardSize.height = 11;
+
+		squareSize = 0.02f;
+
+		std::vector<cv::Point2f> pointbuf;
+
+		// ASYMMETRIC CIRCLE GRID PATTERN
+		bool found = findCirclesGrid(img, boardSize, pointbuf, cv::CALIB_CB_ASYMMETRIC_GRID | cv::CALIB_CB_CLUSTERING, blobDetect);
+
+	
+
+		cv::Mat color;
+		cv::cvtColor(img, color, CV_GRAY2BGR);
+
+		if (found)
+		{
+			cv::drawChessboardCorners(color, boardSize, cv::Mat(pointbuf), found);
+			cv::circle(color, pointbuf[0], 30, cv::Scalar(0, 255, 0), 4);
+			cv::circle(color, pointbuf[1], 30, cv::Scalar(0, 0, 255), 4);
+		}
+
+		cv::waitKey(0);
+	}
+
 }

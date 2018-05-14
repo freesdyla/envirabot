@@ -68,6 +68,8 @@ struct RobotArmClient
 
 	bool TCP_ALIVE;
 
+	UINT64 safety_mode_;
+
 	RobotArmClient();
 
 	void startRecvTCP();
@@ -79,6 +81,8 @@ struct RobotArmClient
 	void getTCPSpeed(double* array6);
 
 	void getCurJointPose(double* array6);
+
+	UINT64 getSafetyMode();
 
 	void reverse8CharsToDouble(char* end, double* d);
 	

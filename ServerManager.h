@@ -1,0 +1,61 @@
+// need to add "ws2_32.lib" to additional dependencies 
+
+#ifndef SERVER_MANAGER_H_
+#define SERVER_MANAGER_H_
+#define _CRT_SECURE_NO_WARNINGS
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+
+#include <iostream>
+#include "libssh2_config.h"
+#include <libssh2.h>
+#include <libssh2_sftp.h>
+#include <winsock2.h>
+#include <boost/filesystem.hpp>
+#include <boost/algorithm/string.hpp>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <thread>
+#include <future>
+
+struct ServerManager 
+{
+
+	ServerManager();
+	~ServerManager();
+
+	int init();
+
+	int makeServerDirectory(std::string path);
+
+	int uploadDirectory(std::string folder_name, std::string chamber_name);
+
+	int createNewThreadToUploadDirectory(std::string folder_name, std::string chamber_name);
+
+	int deleteOutdatedData();
+
+
+	unsigned long hostaddr;
+	int sock, i, auth_pw = 1;
+	struct sockaddr_in sin;
+	const char *fingerprint;
+	LIBSSH2_SESSION *session;
+	const char *username = "rover";
+	const char *password = "R$DR0v$r";
+
+	char mem[65535];
+
+	std::string data_root_dir_ = "C:\\Users\\lietang123\\Documents\\RoAdFiles\\LineProfilerRobotArmTest\\LineProfilerRobotArmTest\\Enviratron Data\\Chamber_4";
+
+	WSADATA wsadata;
+	
+	int rc;
+
+	LIBSSH2_SFTP *sftp_session;
+};
+
+
+#endif 
+

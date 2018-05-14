@@ -81,6 +81,8 @@ KinectThread::KinectThread() :
 
 	m_tic = clock();
 
+	stream_infrared_ = true;
+
 	depthFrameBuffer = new UINT16[cDepthSize];
 
 	filteredDepthFrameBuffer = new UINT16[cDepthSize];
@@ -91,6 +93,7 @@ KinectThread::KinectThread() :
 
 	m_kinect_stream_handler.push_back(std::thread(&KinectThread::startStream, this));
 
+	Sleep(2000);
 }
 
 KinectThread::~KinectThread()

@@ -2,7 +2,7 @@
 
 PathPlanner::PathPlanner() :
 	octree_(0.01f),
-	num_nodes_(200),	//must be even
+	num_nodes_(100),	//must be even
 	ref_p_nn_(10),
 	prmcegraph_(num_nodes_),
 	num_joints_(6),
@@ -500,9 +500,9 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 	arm_obbs.push_back(obb);
 
 	// 10. sensor block
-	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.19f + rot_mats[5](i, 2)*0.101f + rot_mats[5](i, 1)*0.06f;
-	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.19f + rot_mats[5](i, 2)*0.101f + rot_mats[5](i, 1)*0.06f;
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.1f, 0, obb);
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.19f + rot_mats[5](i, 2)*0.13f + rot_mats[5](i, 1)*0.045f;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.19f + rot_mats[5](i, 2)*0.13f + rot_mats[5](i, 1)*0.045f;
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.13f, 0, obb);
 	arm_obbs.push_back(obb);
 
 	// 11. thermal camera (the part above the tool flange)
@@ -511,16 +511,10 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.045f, 2, obb);	
 	arm_obbs.push_back(obb);
 
-	// 12. probe stick	(0.035425, -0.0445422, 0.184104)      0.0348893, -0.0440583, 0.18337 //10/24/2016	Enviratron
-	//for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.0348893f + rot_mats[5](i, 1)*(-0.0440583f) + rot_mats[5](i, 2)*0.01f;
-	//for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.0348893f + rot_mats[5](i, 1)*(-0.0440583f) + rot_mats[5](i, 2)*0.18337f;
-	// for paper
-	//for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*(8.7495016360196548e-2f) + rot_mats[5](i, 1)*(2.6544144468849895e-2f) + rot_mats[5](i, 2)*0.01f;
-	//for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*(8.7495016360196548e-2f) + rot_mats[5](i, 1)*(2.6544144468849895e-2f) + rot_mats[5](i, 2)*(0.25f);
-	// actual probes
+	// 12. probe stick
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*probe_position[0] + rot_mats[5](i, 1)*probe_position[1] /*+ rot_mats[5](i, 2)*0.0f*/;
 	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*probe_position[0] + rot_mats[5](i, 1)*probe_position[1] + rot_mats[5](i, 2)*probe_position[2];
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.045f, 2, obb);
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.015f, 2, obb);
 	arm_obbs.push_back(obb);
 }
 
@@ -1232,7 +1226,7 @@ void PathPlanner::PRMCEPreprocessing()
 	std::uniform_real_distribution<float> d4((float)joint_range_[6], (float)joint_range_[7]);	// Wrist 1
 	std::uniform_real_distribution<float> d5((float)joint_range_[8], (float)joint_range_[9]);	// Wrist 2
 	std::uniform_real_distribution<float> d6((float)joint_range_[10], (float)joint_range_[11]);		// Wrist3
-	std::uniform_real_distribution<float> d7((float)probing_joint_range_wrist_2_[0], (float)probing_joint_range_wrist_2_[1]);		// Wrist2 probing
+	//std::uniform_real_distribution<float> d7((float)probing_joint_range_wrist_2_[0], (float)probing_joint_range_wrist_2_[1]);		// Wrist2 probing
 
 	distri_vec_[0] = d1;
 	distri_vec_[1] = d2;
@@ -1249,8 +1243,8 @@ void PathPlanner::PRMCEPreprocessing()
 		// random set of joint pos
 		for (int j = 0; j < num_joints_; j++) joint_array6[j] = distri_vec_[j](rand_gen_);
 
-		// first half nodes for probing
-		if (i < (num_nodes_/2)) joint_array6[4] = d7(rand_gen_);
+		// first half nodes for probing, obsolete, this is when probe pointing up
+		//if (i < (num_nodes_/2)) joint_array6[4] = d7(rand_gen_);
 		
 		if ( !selfCollision(joint_array6, true))
 		{
@@ -1266,53 +1260,11 @@ void PathPlanner::PRMCEPreprocessing()
 	// manually add regular poses, then inverse kinematics
 	Eigen::Matrix4d tmp_hand_pose = Eigen::Matrix4d::Identity();
 
-	// for probing 
-	int config_idx = 0;
-	tmp_hand_pose(0, 0) = -1.;
-	tmp_hand_pose(1, 1) = -1.;
-	tmp_hand_pose(1, 3) = -0.6; // y
-
 	bool overflow = false;
-
-	for (float z = 0; z <= 0.6f && !overflow; z += 0.1f) {
-		for (float x = -0.5f; x <= 0.5f && !overflow; x += 0.1f) {
-
-			tmp_hand_pose(0, 3) = x;
-			tmp_hand_pose(2, 3) = z;
-
-			std::vector<int> ik_sols_vec;
-
-			inverseKinematics(tmp_hand_pose, ik_sols_vec, PROBING);
-
-			for (auto idx : ik_sols_vec)
-			{
-				float sol_f[6];
-
-				double2float(ik_sols_ + idx * num_joints_, sol_f);
-
-				// wrist 3 make it -180, no rotation, other wise self-collision (sensor and arm)
-				sol_f[5] = -M_PI;
-
-				if (!selfCollision(sol_f)) {
-
-					memcpy(random_nodes_buffer_ + config_idx * num_joints_, sol_f, num_joints_ * sizeof(float));
-
-					config_idx++;
-
-					if (config_idx >= num_nodes_/2) {
-
-						overflow = true;
-						break;
-					}
-				}
-			}
-		}
-	}
-
-	std::cout << "successful manual configs for probing: " << config_idx<<"\n";
+	int config_idx = 0;
 
 	// for imaging
-	config_idx = num_nodes_/2;
+	config_idx = 0;
 	tmp_hand_pose(0, 0) = 1.;
 	tmp_hand_pose(1, 1) = -1.;
 	tmp_hand_pose(2, 2) = -1.;
@@ -1321,40 +1273,43 @@ void PathPlanner::PRMCEPreprocessing()
 
 	for (float z = 0.1f; z <= 0.7f && !overflow; z += 0.1) {
 		for (float x = -0.5f; x <= 0.5f && !overflow; x += 0.1f) {
+			for (float y = -0.5f; y <= -0.5f && !overflow; y += 0.1f) {
 
-			tmp_hand_pose(0, 3) = x;
-			tmp_hand_pose(2, 3) = z;
+				tmp_hand_pose(0, 3) = x;
+				tmp_hand_pose(1, 3) = y;
+				tmp_hand_pose(2, 3) = z;
 
-			std::vector<int> ik_sols_vec;
+				std::vector<int> ik_sols_vec;
 
-			inverseKinematics(tmp_hand_pose, ik_sols_vec, IMAGING);
+				inverseKinematics(tmp_hand_pose, ik_sols_vec, IMAGING);
 
-			for (auto idx : ik_sols_vec)
-			{
-				float sol_f[6];
+				for (auto idx : ik_sols_vec)
+				{
+					float sol_f[6];
 
-				double2float(ik_sols_ + idx * num_joints_, sol_f);
+					double2float(ik_sols_ + idx * num_joints_, sol_f);
 
-				// wrist 3 make it -180, no rotation, other wise self-collision (sensor and arm)
-				sol_f[5] = -M_PI;
+					// wrist 3 make it -180, no rotation, other wise self-collision (sensor and arm)
+					sol_f[5] = -M_PI;
 
-				if (!selfCollision(sol_f)) {
+					if (!selfCollision(sol_f)) {
 
-					memcpy(random_nodes_buffer_ + config_idx * num_joints_, sol_f, num_joints_ * sizeof(float));
+						memcpy(random_nodes_buffer_ + config_idx * num_joints_, sol_f, num_joints_ * sizeof(float));
 
-					config_idx++;
+						config_idx++;
 
-					if (config_idx >= num_nodes_) {
+						if (config_idx >= num_nodes_ / 2) {
 
-						overflow = true;
-						break;
+							overflow = true;
+							break;
+						}
 					}
 				}
 			}
 		}
 	}
 
-	std::cout << "successful manual configs for imaging: " << config_idx - num_nodes_/2 << "\n";
+	std::cout << "successful manual configs for imaging: " << config_idx<< "\n";
 
 	toc = clock();
 	printf("random configs Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);

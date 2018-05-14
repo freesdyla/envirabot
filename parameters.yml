@@ -2,6 +2,7 @@
 ---
 shelf_z_: -0.6
 voxel_grid_size_laser_: 0.001
+normal_estimation_radius_: 0.005
 region_grow_residual_threshold_: 0.01
 region_grow_smoothness_threshold_: 7.0
 region_grow_curvature_threshold_: 20.0
@@ -19,8 +20,8 @@ move_arm_speed_: 0.1
 move_arm_acceleration_: 0.1
 move_joint_speed_: 0.3
 move_joint_acceleration_: 0.3
-view_time_: 100000
-seed_resolution_: 0.02
+view_time_: 1000000
+seed_resolution_: 0.1
 spatial_importance_: 0.5
 normal_importance_: 1.0
 sor_mean_k_: 15
@@ -34,7 +35,11 @@ min_point_AABB_z_: -0.49
 max_point_AABB_x_: 0.5
 max_point_AABB_y_: -0.3
 max_point_AABB_z_: 0.0
-max_samples_per_leaf_: 1
 only_do_probing_ : 1
-num_plants_: 4
+num_plants_: 12
 hyperspectral_imaging_dist_: 0.18
+max_samples_per_leaf_: 4
+probing_patch_rmse_: 0.02
+hyperscan_slice_thickness_: 0.01
+enable_probing_: 0
+enable_path_planning_: 1

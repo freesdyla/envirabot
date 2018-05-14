@@ -9,6 +9,48 @@ int main(int argc, char**argv)
 {
 	VisionArmCombo vac;
 
+#if 0
+	while (true) {
+
+		UINT64 safety_mode = vac.robot_arm_client_->getSafetyMode();
+
+		std::cout << std::hex<<safety_mode << "\n";
+
+		Sleep(1000);
+
+	}
+#endif
+
+	//vac.acquireHyperspectralCalibrationData();
+	
+#if 0
+	float dist;
+	int marker_id;
+	vac.markerDetection(RGB, dist, marker_id, 10.f, true);	
+	std::cout << "dist: " << dist << " marker id" << marker_id<<"\n";
+	std::getchar();
+	return 0;
+#endif
+
+	// go to chamber test
+	//while (1) {		vac.sendRoverToChamber(1);}
+#if 1
+
+	std::cout << "any key to go to chamber 1\n";
+	std::getchar();
+
+	for (int i = 0; i < 100; i++) {
+		std::cout << "round " << i + 1 << "\n";
+		if (vac.sendRoverToChamber(1) != SUCCESS) {
+			std::cout << "error\n";
+			break;
+		}
+	}
+
+	std::cout << "end\n";
+	std::getchar();
+#endif
+
 
 #if 0
 	double array6[6] = {0.015, -0.538, 0.02, M_PI, 0., 0.};
@@ -22,38 +64,18 @@ int main(int argc, char**argv)
 #endif
 
 	//vac.testRun();	std::getchar(); return 0;
-
-	//vac.acquireRGBStereoPair(); std::getchar(); return 0;
 	
-	//vac.setAndSaveParameters(); std::getchar();	return 0;
-	
-	//vac.calibrateToolCenterPoint(4, PAM); std::getchar(); //return 0;
-
-	//vac.TCPCalibrationErrorAnalysis(8); std::getchar(); return 0;
-
-//	vac.acquireLinesOnPlanes();	//return 0;
-	
-//	vac.readCloudAndPoseFromFile(); vac.lineScannerHandEyeCalibration(6); std::getchar();  return 0;
-
-	//vac.calibrateGripperTip(8);
-
-	//vac.testLineScannerProbeCalibrationMatrix(); std::getchar(); return 0;
-
-	//vac.scanAndProbeTest();	std::getchar(); return 0;
-
-//	vac.probePlateCenterTest();	std::getchar(); return 0;
-
-	//vac.scanPotMultiAngle(); std::getchar(); return 0;
-
-
 	//vac.markerDetection();
 
+	//vac.calibrateToolCenterPoint(4, PAM);
+
+	//vac.calibrateThermalCamera(); vac.ThermalHandEyeCalibration();
 	//vac.calibrateKinectRGBCamera(); vac.KinectRGBHandEyeCalibration();
-	vac.calibrateKinectIRCamera(); vac.KinectIRHandEyeCalibration();
+	//vac.calibrateKinectIRCamera(); vac.KinectIRHandEyeCalibration();
 
-	
+	//vac.acquireLinesOnPlanes();
 
-
+	//vac.readCloudAndPoseFromFile(); vac.lineScannerHandEyeCalibration(6); std::getchar();  return 0;
 
 	// Enter chamber and stop at middle position
 #if 0
@@ -78,9 +100,5 @@ int main(int argc, char**argv)
 #endif
 
 	//vac.extractLeafFromPointCloud();
-
-	
-
-	//vac.testLineScannerProbeCalibrationMatrix();
 
 }
