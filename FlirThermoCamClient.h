@@ -10,6 +10,7 @@
 #include <fstream>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include "utilities.h"
 
 #define BUFSIZE 512
 
@@ -29,7 +30,7 @@ public:
 
 	int connectToServer();
 
-	int snapShot(cv::Mat & color_map, cv::Mat & temperature_map);
+	int snapShot(cv::Mat & color_map, cv::Mat & temperature_map, unsigned char focus_dist_cm = 100);
 
 };
 

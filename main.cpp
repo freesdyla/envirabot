@@ -1,14 +1,43 @@
 #include "VisionArmCombo.h"
-#include "HyperspectralCamera.h"
+
 #include <iostream>
 #include <ctime>
 #include <Windows.h>
+#include "utilities.h"
 
 
 int main(int argc, char**argv)
 {
 	VisionArmCombo vac;
 
+#if 0
+	TOF_Swift camh;
+	
+	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer_(new pcl::visualization::PCLVisualizer);
+	viewer_->addCoordinateSystem(0.1);
+	VisionArmCombo::PointCloudT::Ptr cloud_(new VisionArmCombo::PointCloudT);
+
+	camh.setPower(300);
+
+	while (true) {
+
+		camh.getPointCloud(cloud_);
+
+		if (cloud_->size() > 10) {
+			viewer_->removeAllPointClouds();
+			viewer_->addPointCloud(cloud_, "cloud");
+			viewer_->spinOnce(10);
+		}
+
+		cv::Mat ir = camh.getIR();
+		cv::imshow("IR", ir); cv::waitKey(10);
+	}
+
+	std::getchar();
+
+	camh.stop();
+#endif
+	
 #if 0
 	while (true) {
 
@@ -32,9 +61,12 @@ int main(int argc, char**argv)
 	return 0;
 #endif
 
+	//std::cout << "send rover\n";	std::getchar();
+	vac.sendRoverToChamber(vac.cur_chamber_id_); std::getchar();
+
 	// go to chamber test
-	//while (1) {		vac.sendRoverToChamber(1);}
-#if 1
+	//while (1) {		vac.sendRoverToChamber(vac.cur_chamber_id);}
+#if 0
 
 	std::cout << "any key to go to chamber 1\n";
 	std::getchar();
@@ -62,43 +94,17 @@ int main(int argc, char**argv)
 
 	std::getchar();
 #endif
-
-	//vac.testRun();	std::getchar(); return 0;
 	
 	//vac.markerDetection();
 
 	//vac.calibrateToolCenterPoint(4, PAM);
 
 	//vac.calibrateThermalCamera(); vac.ThermalHandEyeCalibration();
-	//vac.calibrateKinectRGBCamera(); vac.KinectRGBHandEyeCalibration();
-	//vac.calibrateKinectIRCamera(); vac.KinectIRHandEyeCalibration();
+	//vac.calibrateRGBCamera(30); vac.RGBHandEyeCalibration();
+	//vac.calibrateIRCamera(30); vac.IRHandEyeCalibration();
 
 	//vac.acquireLinesOnPlanes();
 
 	//vac.readCloudAndPoseFromFile(); vac.lineScannerHandEyeCalibration(6); std::getchar();  return 0;
-
-	// Enter chamber and stop at middle position
-#if 0
-	int num_plants = 7;
-	vac.pot_process_status_.clear();
-	vac.pot_process_status_.resize(num_plants);
-	for (auto & s : vac.pot_process_status_) s = false;
-
-	vac.plant_cluster_min_vec_.clear();
-	vac.plant_cluster_min_vec_.resize(num_plants);
-	vac.plant_cluster_max_vec_.clear();
-	vac.plant_cluster_max_vec_.resize(num_plants);
-
-	vac.mapWorkspaceUsingKinectArm(1, num_plants);
-
-	std::cout << "move rover to 0 and hit enter\n";
-	std::getchar();
-
-	vac.mapWorkspaceUsingKinectArm(0, num_plants);
-
-	std::cout << "Done\n";
-#endif
-
-	//vac.extractLeafFromPointCloud();
 
 }

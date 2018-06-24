@@ -13,8 +13,7 @@ FlirThermoCamClient::FlirThermoCamClient()
 int FlirThermoCamClient::connectToServer()
 {
 	// Try to open a named pipe; wait for it, if necessary. 
-
-	while (1)
+	for (int i = 0; i < 100; i++)
 	{
 		hPipe = CreateFile(
 			lpszPipename,   // pipe name 
@@ -29,32 +28,24 @@ int FlirThermoCamClient::connectToServer()
 							// Break if the pipe handle is valid. 
 
 		if (hPipe != INVALID_HANDLE_VALUE)
+		{
+			isConnected = true;
 			break;
-
-		// Exit if an error other than ERROR_PIPE_BUSY occurs. 
-
-		if (GetLastError() != ERROR_PIPE_BUSY)
-		{
-			_tprintf(TEXT("Could not open pipe. GLE=%d\n"), GetLastError());
-			return -1;
 		}
 
-		// All pipe instances are busy, so wait for 20 seconds. 
-
-		if (!WaitNamedPipe(lpszPipename, 20000))
-		{
-			printf("Could not open pipe: 20 second wait timed out.");
-			return -1;
-		}
+		Sleep(2000);
 	}
 
-	isConnected = true;
+	if (isConnected = false)
+	{
+		Utilities::to_log_file("Failed to connect to FLIR\n");
+		exit(-1);
+	}
 	return 0;
 }
 
-int FlirThermoCamClient::snapShot(cv::Mat & color_map, cv::Mat & temperature_map)
+int FlirThermoCamClient::snapShot(cv::Mat & color_map, cv::Mat & temperature_map, unsigned char focus_dist_cm)
 {
-
 	if (!isConnected)
 	{
 		std::cout << "Not connected to server\n";
@@ -64,7 +55,7 @@ int FlirThermoCamClient::snapShot(cv::Mat & color_map, cv::Mat & temperature_map
 	// Send a message to the pipe server. 
 	//std::cout << "sending cmd 1\n";
 
-	unsigned char cmd = 1;
+	unsigned char cmd = focus_dist_cm;
 
 	fSuccess = WriteFile(
 		hPipe,                  // pipe handle 

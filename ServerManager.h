@@ -19,6 +19,7 @@
 #include <ctype.h>
 #include <thread>
 #include <future>
+#include "utilities.h"
 
 struct ServerManager 
 {
@@ -30,7 +31,7 @@ struct ServerManager
 
 	int makeServerDirectory(std::string path);
 
-	int uploadDirectory(std::string folder_name, std::string chamber_name);
+	int uploadDirectory(std::string folder_name);
 
 	int createNewThreadToUploadDirectory(std::string folder_name, std::string chamber_name);
 
@@ -41,19 +42,19 @@ struct ServerManager
 	int sock, i, auth_pw = 1;
 	struct sockaddr_in sin;
 	const char *fingerprint;
-	LIBSSH2_SESSION *session;
+	LIBSSH2_SESSION *session = NULL;
 	const char *username = "rover";
 	const char *password = "R$DR0v$r";
 
 	char mem[65535];
 
-	std::string data_root_dir_ = "C:\\Users\\lietang123\\Documents\\RoAdFiles\\LineProfilerRobotArmTest\\LineProfilerRobotArmTest\\Enviratron Data\\Chamber_4";
+	std::string data_root_dir_ = "C:\\Users\\lietang123\\Documents\\RoAdFiles\\LineProfilerRobotArmTest\\LineProfilerRobotArmTest\\Enviratron_Data\\";
 
 	WSADATA wsadata;
 	
 	int rc;
 
-	LIBSSH2_SFTP *sftp_session;
+	LIBSSH2_SFTP *sftp_session = NULL;
 };
 
 

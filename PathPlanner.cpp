@@ -2,7 +2,7 @@
 
 PathPlanner::PathPlanner() :
 	octree_(0.01f),
-	num_nodes_(100),	//must be even
+	num_nodes_(300),	//must be even
 	ref_p_nn_(10),
 	prmcegraph_(num_nodes_),
 	num_joints_(6),
@@ -442,79 +442,89 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 
 	// 1. add chamber window top wall, robot arm base center to front edge 16.5cm, robot-to-window 20cm, wall thickness 5cm
 	// floor-to-base height 0.964m, 
-	obb.C << 0.f, -0.25f, 1.161f;
-	obb.a << 1.3f, 0.04f, 0.155f;
+	obb.C << 0.f, -0.3f, 1.05f + 0.2f;
+	obb.a << 1.3f, 0.05f, 0.2f;
 	arm_obbs.push_back(obb);
 
 	// 2. add chamber window bottom wall
-	obb.C << 0.f, -0.25f, -0.34f - 0.3f;
-	obb.a << 1.3f, 0.04f, 0.3f;
+	obb.C << 0.f, -0.3f, -0.34f - 0.3f;
+	obb.a << 1.3f, 0.05f, 0.3f;
 	arm_obbs.push_back(obb);
 
 	// 3. add chamber window left wall
-//	obb.C << 0.99f+0.145f, -0.25f, 0.45f;
-//	obb.a << 0.02f+0.145f, 0.04f, 0.8f;
-//	arm_obbs.push_back(obb);
+	obb.C << 1.2f, -0.3f, 0.45f;
+	obb.a << 0.18f, 0.05f, 0.8f;
+	arm_obbs.push_back(obb);
 
 	// 4. add chamber window right wall
-//	obb.C << -0.99f-0.145f, -0.25f, 0.45f;
-//	obb.a << 0.02f+0.145f, 0.04f, 0.8f;
-//	arm_obbs.push_back(obb);
+	obb.C << -1.2f, -0.3f, 0.45f;
+	obb.a << 0.18f, 0.05f, 0.8f;
+	arm_obbs.push_back(obb);
 
-	// 3. add chamber inside wall
-	obb.C << 0.f, -1.1f, 0.17f;
+	// 5. add chamber left panel
+	obb.C << 1.2f, -0.7f, 0.17f;
+	obb.a << 0.05, 0.4f, 1.4f;
+	arm_obbs.push_back(obb);
+
+	// 6. add chamber right panel
+	obb.C << -1.2f, -0.7f, 0.17f;
+	obb.a << 0.05f, 0.4f, 1.4f;
+	arm_obbs.push_back(obb);
+
+	// 7. add chamber inside wall
+	obb.C << 0.f, -1.13f, 0.17f;
 	obb.a << 1.3f, 0.04f, 1.4f;
 	arm_obbs.push_back(obb);
 
-	// 4. add chamber table
+	// 8. add chamber table
 	obb.C << 0.f, -0.7f, -0.732f;
 	obb.a << 1.3f, 0.35f, 0.01f;
 	arm_obbs.push_back(obb);
 
-	// 5. add frame 1 arm, UR10 DH figure, y axis
+	// 9. add frame 1 arm, UR10 DH figure, y axis
 	ref_points[1].coordinates[2] = 0.21f;
 	constructOBB(ref_points[0], ref_points[1], rot_mats[0], 0.11f, 1, obb);
 	arm_obbs.push_back(obb);
 
-	// 6. 1st long arm, frame 2
+	// 10. 1st long arm, frame 2
 	for (int i = 0; i < 3; i++) ref_points[2].coordinates[i] += rot_mats[1](i, 0)*0.06f;
 	for (int i = 0; i < 3; i++) ref_points[3].coordinates[i] -= rot_mats[1](i, 0)*0.06f;
 	constructOBB(ref_points[2], ref_points[3], rot_mats[1], 0.089f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 7. 2nd long arm, frame 3
+	// 11. 2nd long arm, frame 3
 	for (int i = 0; i < 3; i++) ref_points[4].coordinates[i] += rot_mats[2](i, 0)*0.06f;
 	for (int i = 0; i < 3; i++) ref_points[5].coordinates[i] -= rot_mats[2](i, 0)*0.046f;
 	constructOBB(ref_points[4], ref_points[5], rot_mats[2], 0.045f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 8. frame 4
+	// 12. frame 4
 	for (int i = 0; i < 3; i++) ref_points[6].coordinates[i] -= rot_mats[3](i, 2)*0.06f;
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[3](i, 2)*0.051f;
 	constructOBB(ref_points[6], tmp_rp, rot_mats[3], 0.047f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// 9. frame 5
+	// 13. frame 5
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[4](i, 2)*0.045f;
 	constructOBB(tmp_rp, ref_points[8], rot_mats[4], 0.045f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// 10. sensor block
-	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.19f + rot_mats[5](i, 2)*0.13f + rot_mats[5](i, 1)*0.045f;
-	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.19f + rot_mats[5](i, 2)*0.13f + rot_mats[5](i, 1)*0.045f;
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.13f, 0, obb);
+	// 14. sensor block
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 2)*0.09f + rot_mats[5](i, 1)*0.07f;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 2)*0.09f + rot_mats[5](i, 1)*0.07f;
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.11f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 11. thermal camera (the part above the tool flange)
-	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.125f + rot_mats[5](i, 2)*0.0f + rot_mats[5](i, 1)*0.06f;
-	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.125f - rot_mats[5](i, 2)*0.12f + rot_mats[5](i, 1)*0.06f;
+	// 15. thermal camera (the part above the tool flange)
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.0313f + rot_mats[5](i, 2)*0.0f + rot_mats[5](i, 1)*0.1434f;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.0313f - rot_mats[5](i, 2)*0.12f + rot_mats[5](i, 1)*0.1434f;
 	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.045f, 2, obb);	
 	arm_obbs.push_back(obb);
 
-	// 12. probe stick
-	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*probe_position[0] + rot_mats[5](i, 1)*probe_position[1] /*+ rot_mats[5](i, 2)*0.0f*/;
-	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*probe_position[0] + rot_mats[5](i, 1)*probe_position[1] + rot_mats[5](i, 2)*probe_position[2];
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.015f, 2, obb);
+	// 16. probe cylinder
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*cylinder_back_position[0] + rot_mats[5](i, 1)*cylinder_back_position[1] /*+ rot_mats[5](i, 2)*0.0f*/;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*cylinder_back_position[0] + rot_mats[5](i, 1)*cylinder_back_position[1] + rot_mats[5](i, 2)*cylinder_back_position[2];
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.03f, 2, obb);
 	arm_obbs.push_back(obb);
 }
 
@@ -540,7 +550,7 @@ bool PathPlanner::selfCollision(float* joint_pos, bool pre_processing_stage)
 	}
 	else
 	{
-		if (reference_points.back().coordinates[1] > 0.6f)
+		if (reference_points.back().coordinates[1] > 0.9f)
 		{
 			//std::cout << "hand in the back too far\n";
 			return true;
@@ -977,10 +987,25 @@ void PathPlanner::sweptVolume(float* joint_pos1, float* joint_pos2, std::vector<
 
 bool PathPlanner::selfCollisionBetweenTwoConfigs(float* config1, float* config2)
 {
+	//find the max joint displacement
+	float max_joint_dist = 0.f;
+	int joint_idx = -1;
+	for (int i = 0; i < num_joints_; i++)
+	{
+		float tmp = std::abs(config1[i] - config2[i]);
+		if (tmp > max_joint_dist)
+		{
+			max_joint_dist = tmp;
+			joint_idx = i;
+		}
+	}
+
+	const float min_angle_resolution = M_PI / 60.f;
+
 	float inter_joint_pos[6];
 
 	// normalize
-	float alpha_step = 0.005f;
+	float alpha_step = min_angle_resolution/ max_joint_dist;
 
 	// bisection style
 	for (float layer_alpha = 0.5f; layer_alpha >= alpha_step; layer_alpha *= 0.5f)
@@ -1243,9 +1268,9 @@ void PathPlanner::PRMCEPreprocessing()
 		// random set of joint pos
 		for (int j = 0; j < num_joints_; j++) joint_array6[j] = distri_vec_[j](rand_gen_);
 
-		// first half nodes for probing, obsolete, this is when probe pointing up
-		//if (i < (num_nodes_/2)) joint_array6[4] = d7(rand_gen_);
-		
+		// make wrist 3 (last joint) -180 to prevent cable twisting
+		joint_array6[5] = -M_PI;
+
 		if ( !selfCollision(joint_array6, true))
 		{
 			memcpy(random_nodes_buffer_ + i * num_joints_, joint_array6, num_joints_ * sizeof(float));
@@ -1271,9 +1296,9 @@ void PathPlanner::PRMCEPreprocessing()
 
 	overflow = false;
 
-	for (float z = 0.1f; z <= 0.7f && !overflow; z += 0.1) {
-		for (float x = -0.5f; x <= 0.5f && !overflow; x += 0.1f) {
-			for (float y = -0.5f; y <= -0.5f && !overflow; y += 0.1f) {
+	for (float z = 0.1f; z <= 0.81f && !overflow; z += 0.1) {
+		for (float x = -0.7f; x <= 0.71f && !overflow; x += 0.1f) {
+			for (float y = -0.55f; y <= -0.55f && !overflow; y += 0.1f) {
 
 				tmp_hand_pose(0, 3) = x;
 				tmp_hand_pose(1, 3) = y;
@@ -1349,38 +1374,21 @@ void PathPlanner::PRMCEPreprocessing()
 	tic = clock();
 	// COMPUTE K NEAREST NEIGHBORS
 	flann::Matrix<float> reference_points_mat = flann::Matrix<float>(reference_points_buffer_, num_nodes_, 3 * num_ref_points_);
-/*	flann::Matrix<float> reference_points_mat = flann::Matrix<float>(reference_points_buffer_, num_nodes_/2, 3 * num_ref_points_);	//first half for probing
 
-	flann::Matrix<float> reference_points_mat_imaging = flann::Matrix<float>(reference_points_buffer_+num_nodes_/2*3*num_ref_points_*sizeof(float),
-																	 num_nodes_/2, 3 * num_ref_points_);
-																	 */
 	// L2 norm of reference points on arm in workspace
 	referen_point_index_ = new flann::Index<flann::L2<float>>(reference_points_mat, flann::KDTreeIndexParams(4));
 
 	referen_point_index_->buildIndex();
 
-/*	referen_point_imaging_index_ = new flann::Index<flann::L2<float>>(reference_points_mat_imaging, flann::KDTreeIndexParams(4));
-
-	referen_point_imaging_index_->buildIndex();
-	*/
 	flann::Matrix<float> ref_p_query_mat = flann::Matrix<float>(reference_points_buffer_, num_nodes_, 3 * num_ref_points_);
-/*	flann::Matrix<float> ref_p_query_mat = flann::Matrix<float>(reference_points_buffer_, num_nodes_/2, 3 * num_ref_points_);
-	flann::Matrix<float> ref_p_query_mat_imaging = flann::Matrix<float>(reference_points_buffer_ + num_nodes_ / 2 * 3 * num_ref_points_*sizeof(float),
-																num_nodes_ / 2, 3 * num_ref_points_);
-																*/
+
 	// neighbor index
 	flann::Matrix<int> ref_p_indices_mat(new int[num_nodes_*ref_p_nn_], num_nodes_, ref_p_nn_);
-/*	flann::Matrix<int> ref_p_indices_mat(new int[num_nodes_/2*ref_p_nn_], num_nodes_/2, ref_p_nn_);
-	flann::Matrix<int> ref_p_indices_mat_imaging(new int[num_nodes_ / 2 * ref_p_nn_], num_nodes_ / 2, ref_p_nn_);*/
+
 	// distance 
 	flann::Matrix<float> ref_p_dists_mat(new float[num_nodes_*ref_p_nn_], num_nodes_, ref_p_nn_);
-/*	flann::Matrix<float> ref_p_dists_mat(new float[num_nodes_/2*ref_p_nn_], num_nodes_/2, ref_p_nn_);
-	flann::Matrix<float> ref_p_dists_mat_imaging(new float[num_nodes_ / 2 * ref_p_nn_], num_nodes_ / 2, ref_p_nn_);
-	*/
 
 	referen_point_index_->knnSearch(ref_p_query_mat, ref_p_indices_mat, ref_p_dists_mat, ref_p_nn_, flann::SearchParams(128));
-
-	//referen_point_imaging_index_->knnSearch(ref_p_query_mat_imaging, ref_p_indices_mat_imaging, ref_p_dists_mat_imaging, ref_p_nn_, flann::SearchParams(128));
 
 	toc = clock();
 	printf("flann knn Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
@@ -1396,11 +1404,9 @@ void PathPlanner::PRMCEPreprocessing()
 		for (int n_idx = 1; n_idx < ref_p_nn_; n_idx++)	//n_idx = 0 is the node itself
 		{
 			int neighbor_id =  *(ref_p_indices_mat.ptr() + ref_p_nn_*node_id + n_idx);
-			//int neighbor_id = node_id < num_nodes_/2 ? *(ref_p_indices_mat.ptr() + ref_p_nn_*node_id + n_idx) : *(ref_p_indices_mat_imaging.ptr() + ref_p_nn_*(node_id-num_nodes_/2) + n_idx)+ num_nodes_ / 2;
 
 			// actually squared cuz flann didn't sqrt
 			float l2squared_workspace_dist = *(ref_p_dists_mat.ptr() + ref_p_nn_*node_id + n_idx);
-			//float l2squared_workspace_dist = node_id < num_nodes_ / 2 ? *(ref_p_dists_mat.ptr() + ref_p_nn_*node_id + n_idx) : *(ref_p_dists_mat_imaging.ptr() + ref_p_nn_*(node_id-num_nodes_/2) + n_idx);
 
 			// test if an edge can be added
 			float* node_joint_pos = random_nodes_buffer_ + node_id * num_joints_;
@@ -1502,7 +1508,7 @@ void PathPlanner::addPointCloudToOccupancyGrid(PointCloudT::Ptr cloud)
 	clock_t tic = clock();
 	for (int i = 0; i < cloud->points.size(); i++)	blockCells(cloud->points[i]);
 	clock_t toc = clock();
-	printf("add point cloud Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+	//printf("add point cloud Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 }
 
 void PathPlanner::viewOccupancyGrid(boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer)
@@ -1562,14 +1568,14 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	}
 	
 	// check path from start to goal directly
-	if (try_direct_path && !collisionCheckTwoConfigs(start_joint_pos, end_joint_pos))
+	if (try_direct_path && !selfCollisionBetweenTwoConfigs(start_joint_pos, end_joint_pos) && !collisionCheckTwoConfigs(start_joint_pos, end_joint_pos))
 	{
 		shortest_path_index_vec_.clear();
 		prmce_swept_volume_counter_++;
 		return true;
 	}
 	clock_t toc = clock();
-	printf("Check direct path time: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+//	printf("Check direct path time: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 
 	tic = clock();
 	prmce_swept_volume_counter_++;
@@ -1593,10 +1599,7 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	flann::Matrix<float> dists_mat(new float[2 * ref_p_nn_], 2, ref_p_nn_);
 
 	// index_ for L2 in Cspace !
-//	if(imaging_or_probing == PROBING)
-		referen_point_index_->knnSearch(query_mat, indices_mat, dists_mat, ref_p_nn_, flann::SearchParams(128));
-//	else if(imaging_or_probing == IMAGING)
-//		referen_point_imaging_index_->knnSearch(query_mat, indices_mat, dists_mat, ref_p_nn_, flann::SearchParams(128));
+	referen_point_index_->knnSearch(query_mat, indices_mat, dists_mat, ref_p_nn_, flann::SearchParams(128));
 
 	//for (int i = 0; i < 2 * ref_p_nn_; i++) std::cout << "index: " << *(indices_mat.ptr() + i) << " distance " << *(dists_mat.ptr() + i) << "\n";// << " cc label " << connected_component_[*(indices_mat.ptr() + i)] << "\n";
 
@@ -1606,11 +1609,11 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	// check collision on path
 	for (int i = 0; i < ref_p_nn_; i++)
 	{
-		//int neighbor = imaging_or_probing == PROBING ? *(indices_mat.ptr() + i) : *(indices_mat.ptr() + i) + num_nodes_/2;
 		int neighbor = *(indices_mat.ptr() + i);
 
 		// collision check on edge
-		if (!collisionCheckTwoConfigs(start_joint_pos, random_nodes_buffer_ + neighbor*num_joints_))
+		if (!selfCollisionBetweenTwoConfigs(start_joint_pos, random_nodes_buffer_ + neighbor*num_joints_)
+			&& !collisionCheckTwoConfigs(start_joint_pos, random_nodes_buffer_ + neighbor*num_joints_))
 		{
 			start = neighbor;
 			break;
@@ -1628,11 +1631,10 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 
 	for (int i = 0; i < ref_p_nn_; i++)
 	{
-		//int neighbor = imaging_or_probing == PROBING ? *(indices_mat.ptr() + ref_p_nn_ + i) : *(indices_mat.ptr() + ref_p_nn_ + i) +num_nodes_/2;
-
 		int neighbor = *(indices_mat.ptr() + ref_p_nn_ + i);
 
-		if (!collisionCheckTwoConfigs(end_joint_pos, random_nodes_buffer_ + neighbor*num_joints_))
+		if (!selfCollisionBetweenTwoConfigs(end_joint_pos, random_nodes_buffer_ + neighbor*num_joints_)
+			&& !collisionCheckTwoConfigs(end_joint_pos, random_nodes_buffer_ + neighbor*num_joints_))
 		{
 			goal = neighbor;
 			break;
@@ -1648,6 +1650,7 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 		return false;
 	}
 
+#if 0
 	toc = clock();
 	printf("connect start and goal to roadmap Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 
@@ -1662,6 +1665,7 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	for (int i = 0; i < num_joints_; i++)
 		std::cout << (*(random_nodes_buffer_ + goal*num_joints_ + i))*180./M_PI << " ";
 	std::cout << "\n";
+#endif
 
 	tic = clock();
 
@@ -1729,8 +1733,8 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	}
 	catch (found_goal fg)
 	{
-		toc = clock();
-		printf("grahp search Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+		//toc = clock();
+		//printf("grahp search Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 
 		shortest_path_index_vec_.clear();
 
@@ -1742,18 +1746,19 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 
 		std::reverse(std::begin(shortest_path_index_vec_), std::end(shortest_path_index_vec_));
 
+#if 0
 		std::cout << "A* shortest path from " << start << " to " << goal  << ": ";
 		std::vector<prmcevertex_descriptor>::iterator spi = shortest_path_index_vec_.begin();
-		
 		for (++spi; spi != shortest_path_index_vec_.end(); ++spi) std::cout << " -> " << *spi;
-
 		std::cout << std::endl << "Total travel distance (m): " << sqrt(d[goal]) << std::endl;
+#endif
 
 		found_path = d[goal] < 500.f ? true : false;
 	}
 		
 	if (smooth)
 	{
+		std::cout << "Smoothing path...\n";
 		smoothPath();
 	}
 
@@ -1811,8 +1816,6 @@ void PathPlanner::savePathPlanner(std::string filename)
 	oa << *this;
 
 	referen_point_index_->save(filename+".idx");
-
-//	referen_point_imaging_index_->save(filename + "_imaging.idx");
 	
 	clock_t toc = clock();
 	printf("save path planner Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
@@ -1832,7 +1835,6 @@ bool PathPlanner::loadPathPlanner(std::string filename)
 
 	if (boost::filesystem::exists(filename+".dat") 
 		&& boost::filesystem::exists(filename + ".idx")
-	//	&& boost::filesystem::exists(filename + "_imaging.idx")
 		)
 	{
 		prmcegraph_.clear();
@@ -1844,18 +1846,11 @@ bool PathPlanner::loadPathPlanner(std::string filename)
 
 		// COMPUTE K NEAREST NEIGHBORS
 		flann::Matrix<float> reference_points_mat = flann::Matrix<float>(reference_points_buffer_, num_nodes_, 3 * num_ref_points_);
-	/*	flann::Matrix<float> reference_points_mat = flann::Matrix<float>(reference_points_buffer_, num_nodes_/2, 3 * num_ref_points_);
-		flann::Matrix<float> reference_points_mat_imaging = flann::Matrix<float>(reference_points_buffer_+ num_nodes_ / 2*3 * num_ref_points_*sizeof(float),
-																				num_nodes_/2, 3 * num_ref_points_);
-																				*/
+
 		// L2 norm of reference points on arm in workspace
 		referen_point_index_ = new flann::Index<flann::L2<float>>(reference_points_mat, flann::SavedIndexParams(filename+".idx"));
-	/*	referen_point_index_ = new flann::Index<flann::L2<float>>(reference_points_mat, flann::SavedIndexParams(filename + ".idx"));
-		referen_point_imaging_index_ = new flann::Index<flann::L2<float>>(reference_points_mat_imaging, flann::SavedIndexParams(filename + "_imaging.idx"));
-		*/
-
+	
 		referen_point_index_->buildIndex();
-		//referen_point_imaging_index_->buildIndex();
 
 		success = path_planner_ready_ =true;
 	}
@@ -1871,7 +1866,7 @@ bool PathPlanner::loadPathPlanner(std::string filename)
 
 void PathPlanner::resetOccupancyGrid()
 {
-	clock_t tic = clock();
+	//clock_t tic = clock();
 	for (int i = 0; i < num_cells_; i++)
 	{
 		grid_[i].isOccupiedCounter = 0;
@@ -1880,8 +1875,8 @@ void PathPlanner::resetOccupancyGrid()
 
 	prmce_round_counter_ = prmce_swept_volume_counter_ = 1;
 
-	clock_t toc = clock();
-	printf("reset grid Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+	//clock_t toc = clock();
+	//printf("reset grid Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 }
 
 void PathPlanner::smoothPath()
@@ -1893,18 +1888,21 @@ void PathPlanner::smoothPath()
 	if (shortest_path_index_vec_.size() == 2)
 	{
 		if (!collisionCheckTwoConfigs(random_nodes_buffer_ + shortest_path_index_vec_[0] * num_joints_,
-			random_nodes_buffer_ + shortest_path_index_vec_[1] * num_joints_))
+			random_nodes_buffer_ + shortest_path_index_vec_[1] * num_joints_)
+		 && !selfCollisionBetweenTwoConfigs(random_nodes_buffer_ + shortest_path_index_vec_[0] * num_joints_,
+			random_nodes_buffer_ + shortest_path_index_vec_[1] * num_joints_)
+			)
 		{
 			shortest_path_index_vec_.pop_back();
 		}
-
+#if 0
 		clock_t toc = clock();
 		printf("smooth path Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 
 		std::cout << "smooth path: ";
 		for (auto e : shortest_path_index_vec_) std::cout << e << "->";
 		std::cout << "\n";
-
+#endif
 		return;
 	}
 
@@ -1918,7 +1916,10 @@ void PathPlanner::smoothPath()
 	{
 		while (new_vertex < shortest_path_index_vec_.size() &&
 			!collisionCheckTwoConfigs(random_nodes_buffer_ + shortest_path_index_vec_[cur_vertex]*num_joints_, 
-										random_nodes_buffer_ + shortest_path_index_vec_[new_vertex]*num_joints_))
+										random_nodes_buffer_ + shortest_path_index_vec_[new_vertex]*num_joints_)
+		 && !selfCollisionBetweenTwoConfigs(random_nodes_buffer_ + shortest_path_index_vec_[cur_vertex] * num_joints_,
+			 random_nodes_buffer_ + shortest_path_index_vec_[new_vertex] * num_joints_)
+			)
 		{
 			new_vertex++;
 			prmce_swept_volume_counter_++;
@@ -1933,11 +1934,11 @@ void PathPlanner::smoothPath()
 	}
 	
 	clock_t toc = clock();
-	printf("smooth path Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+//	printf("smooth path Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 
-	std::cout << "smooth path: ";
-	for (auto e : smooth_path) std::cout << e << "->";
-	std::cout << "\n";
+//	std::cout << "smooth path: ";
+//	for (auto e : smooth_path) std::cout << e << "->";
+//	std::cout << "\n";
 
 	shortest_path_index_vec_.swap(smooth_path);
 }
@@ -1947,7 +1948,7 @@ bool PathPlanner::collisionCheckForSingleConfig(float* config, bool shorten_prob
 {
 	if (selfCollision(config))
 	{
-		std::cout << "self collision\n";
+		//std::cout << "self collision\n";
 		return true;
 	}
 

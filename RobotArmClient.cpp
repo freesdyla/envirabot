@@ -31,6 +31,8 @@ RobotArmClient::RobotArmClient()
 		WSACleanup();
 	}
 
+	std::cout << "connecting to UR10...\n";
+
 	// Attempt to connect to an address until one succeeds
 	for (ptr = result; ptr != NULL; ptr = ptr->ai_next) 
 	{
@@ -65,7 +67,7 @@ RobotArmClient::RobotArmClient()
 	freeaddrinfo(result);
 
 	if (ConnectSocket == INVALID_SOCKET) {
-		printf("Unable to connect to server!\n");
+		printf("Unable to connect UR10 to server!\n");
 		WSACleanup();
 		return;
 	}
@@ -73,6 +75,9 @@ RobotArmClient::RobotArmClient()
 	URMsgHandler.push_back(std::thread(&RobotArmClient::startRecvTCP, this));
 
 	Sleep(1000);
+
+	// turn off laser
+	laserScannerLightControl(false);
 }
 
 void RobotArmClient::startRecvTCP()
@@ -146,7 +151,8 @@ void RobotArmClient::startRecvTCP()
 			//break;
 		}
 		else
-			std::cout << "UR msg size wrong:" << iResult << std::endl;
+			//std::cout << "UR msg size wrong:" << iResult << std::endl;
+			std::cerr << "UR" << iResult << std::endl;
 
 		//clock_t toc = clock();
 		//printf("Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
@@ -338,16 +344,18 @@ int RobotArmClient::waitTillHandReachDstConfig(double* dst_joint_config)
 
 	while (true)
 	{
-		if (distanceToDstConfig_ < 5e-4) break;
+		if (distanceToDstConfig_ < 0.03) break;
 
 		if (getSafetyMode() != 0xf03f) {
 			std::cout << "UR10 stopped\n";
 			return -1;
 		}
 
-		Sleep(3);
+		Sleep(10);
 		//std::cout << distanceToDstConfig_ << std::endl;
 	}
+
+	Sleep(1000);
 
 	return 0;
 }
@@ -550,6 +558,42 @@ void RobotArmClient::whiteBoardServoControl(bool extend) {
 		char msg1[128];
 
 		sprintf(msg1, "set_standard_analog_out(1, 0.0)\n");
+
+		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+	}
+}
+
+void RobotArmClient::laserScannerLightControl(bool on) {
+
+	if (on) {
+
+		char msg[128];
+
+		sprintf(msg, "set_digital_out(2,False)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(200);
+
+		char msg1[128];
+
+		sprintf(msg1, "set_digital_out(2,False)\n");
+
+		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+	}
+	else {
+
+		char msg[128];
+
+		sprintf(msg, "set_digital_out(2,True)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(200);
+
+		char msg1[128];
+
+		sprintf(msg1, "set_digital_out(2,True)\n");
 
 		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
 	}

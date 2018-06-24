@@ -19,9 +19,11 @@
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/model_outlier_removal.h>
+#include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/project_inliers.h>
 #include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/filters/crop_box.h>
 #include <pcl/ml/kmeans.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/surface/mls.h>
@@ -37,13 +39,19 @@
 #include <opencv2/aruco.hpp>
 #include <Eigen/Eigenvalues>
 #include <vector>
+#include <bitset>
+#include <thread>
+#include <future>
 #include <ctime>
 #include "RobotArmClient.h" // need to be 1st due to winsock
 #include "ServerManager.h"
+#include "utilities.h"
 
 #include <ddeml.h>
 #include "KeyenceLineProfiler.h"
-#include "KinectThread.h"
+#include "TOF_Swift.h"
+#include "BaslerRGB.h"
+//#include "KinectThread.h"
 #include "PathPlanner.h"
 //roboteq
 #include "Constants.h"	
@@ -78,22 +86,33 @@
 #define CLOSE_DOOR 1
 #define OPEN_CURTAIN 2
 #define CLOSE_CURTAIN 3
-#define STOP_VENTILATION 4
-#define START_VENTILATION 5
+#define PAUSE_LIGHT 4
+#define RESUME_LIGHT 5
 
 //marker detection camera
 #define RGB 0
 #define IR 1
 
 #define SUCCESS 0
+#define EMPTY_POINT_CLOUD -1
 #define STOP_AT_WRONG_DOOR -2
 #define DOOR_OPEN_FAIL -3
 #define DOOR_CLOSE_FAIL -4
 #define FAIL_TO_SEE_DOOR_WHEN_EXITING -5
 #define CURTAIN_OPEN_FAIL -6
 #define STOP_AT_DOOR_TIMEOUT -7
+#define WRONG_OPTION -8
 
-#define EMPTY_POINT_CLOUD -1
+//moveToConfig
+#define GET_POINT_CLOUD				1 << 0
+#define DISABLE_DIRECT_PATH			1 << 1
+#define DISABLE_SMOOTH_PATH			1 << 2
+#define DISABLE_MOVE				1 << 3
+#define SKIP_ADD_OCCUPANCY_GRID		1 << 4
+#define VIEW_PATH					1 << 5
+
+#define UPDATE_POT_CONFIG 0
+#define READ_POT_CONFIG 1
 
 struct VisionArmCombo
 {
@@ -138,6 +157,10 @@ struct VisionArmCombo
 	};
 
 	std::vector<ArmConfig> imaging_config_vec;
+	std::vector<std::vector<ArmConfig>> imaging_config_vec_vec_;
+
+	std::vector<ArmConfig> rgb_top_view_imaging_config_vec_;
+	std::vector<ArmConfig> thermal_top_view_imaging_config_vec_;
 
 	// UR10 dh parameters
 	const double d1 = 0.1273;
@@ -151,28 +174,21 @@ struct VisionArmCombo
 	int SIGN(double x) { return (x > 0) - (x < 0); }
 	const double PI = M_PI;
 
-	// UR10 joint range
-/*	double joint_range_for_probe_[12] = { -200. / 180.*M_PI, 20. / 180.*M_PI,	// base
-										  -180. / 180.*M_PI, 0. / 180.*M_PI,	// shoulder
-										  -160.f / 180.f*M_PI, -10.f / 180.f*M_PI,	// elbow
-										  -160. / 180.*M_PI, 60. / 180.* M_PI,	// wrist 1
-										  0.f / 180.f*M_PI, 180.f / 180.f*M_PI,	// wrist 2
-										  -260.f/180.f*M_PI, -100.f/180.f*M_PI // wrist 3
-										};
-										*/
 	const int num_joints_ = 6;
 
 	RobotArmClient* robot_arm_client_ = NULL;
 
 	KeyenceLineProfiler* line_profiler_ = NULL;
 
-	KinectThread* kinect_thread_ = NULL;
-
 	HyperspectralCamera* hypercam_ = NULL;
 
 	FlirThermoCamClient* thermocam_ = NULL;
 
 	Raman* raman_ = NULL;
+
+	TOF_Swift* tof_cam_ = NULL;
+
+	BaslerRGB* rgb_cam_ = NULL;
 	
 	std::ofstream result_file_;
 
@@ -185,8 +201,6 @@ struct VisionArmCombo
 	pcl::Normal pre_normal_;
 
 	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer_;
-
-	Eigen::Matrix4f cam2hand_kinect_;
 
 	// Distance vector of calibration plane in sensor frame
 	std::vector<Eigen::Vector4d*> normalized_plane_coefficients_vec_sensor_frame_;
@@ -202,7 +216,11 @@ struct VisionArmCombo
 	Eigen::Matrix4f hand_to_hyperspectral_;
 	Eigen::Matrix4f hand_to_thermal_;
 
-	PointCloudT::Ptr kinect_cloud_;
+	PointCloudT::Ptr tof_cloud_;
+
+	float vis_z_range_;
+
+	float chamber_floor_z_ = -0.72;
 
 	PointCloudT::Ptr laser_cloud_;
 
@@ -219,6 +237,9 @@ struct VisionArmCombo
 	pcl::PassThrough<PointT> pass_;
 
 	pcl::ExtractIndices<PointT> extract_indices_;
+
+	pcl::RadiusOutlierRemoval<PointT> ror_;
+
 
 	PathPlanner pp_;
 
@@ -251,9 +272,9 @@ struct VisionArmCombo
 
 	float scan_radius_;
 
-	cv::Mat kinect_rgb_hand_to_eye_cv_, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_;
+	cv::Mat rgb_hand_to_eye_cv_, rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_;
 
-	cv::Mat kinect_infrared_hand_to_eye_cv_, kinect_infrared_camera_matrix_cv_, kinect_infrared_dist_coeffs_cv_;
+	cv::Mat infrared_hand_to_eye_cv_, infrared_camera_matrix_cv_, infrared_dist_coeffs_cv_;
 
 	cv::Mat flir_thermal_hand_to_eye_cv_, flir_thermal_camera_matrix_cv_, flir_thermal_dist_coeffs_cv_;
 
@@ -263,7 +284,7 @@ struct VisionArmCombo
 
 	float marker_length_;
 
-	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_, gripper_to_hand_, hand_to_depth_, hand_to_thermal_d_;
+	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_, gripper_to_hand_, hand_to_depth_, hand_to_thermal_d_, hand_to_scanner_;
 		
 	Eigen::Matrix4d probe_to_hand_pam_, probe_to_hand_raman_532_, probe_to_hand_raman_1064_;
 
@@ -310,14 +331,24 @@ struct VisionArmCombo
 	float sor_mean_k_ = 50;
 	float sor_std_ = 1.0;
 
+	float ror_radius_ = 0.01f;
+	int ror_num_ = 4;
+
 	std::vector<std::vector<pcl::PointXYZRGBNormal>> leaf_probing_pn_vector_;
 
 	ArmConfig home_config_, home_config_right_, check_door_inside_config_;
-	ArmConfig check_curtain_config_;
+	ArmConfig check_curtain_config_, map_chamber_front_config_, between_chamber_airlock_config_;
 
 	int num_plants_ = 1;
 
 	float hyperspectral_imaging_dist_ = 0.21f;
+
+	const int num_chambers_ = 8;
+
+	// chamber pots configuration
+	cv::Vec<float, 8> pot_diameter_vec_;
+
+	std::vector<cv::Mat> pot_position_vec_;
 
 	static bool probing_rank_comparator(pcl::PointXYZRGBNormal & a, pcl::PointXYZRGBNormal & b)
 	{
@@ -334,6 +365,10 @@ struct VisionArmCombo
 	{
 		return a.x > b.x;
 	}
+
+	static bool pot_center_x_comparator(cv::Vec3f & a, cv::Vec3f & b) {	return a[0] > b[0]; }
+
+	static bool pot_center_y_comparator(cv::Vec3f & a, cv::Vec3f & b) { return a[1] < b[1]; }
 
 	std::vector<LeafIDnX> leaf_cluster_order_;
 
@@ -356,6 +391,8 @@ struct VisionArmCombo
 
 	ServerManager data_server_manager_;
 
+	bool remap_pot_position_ = true;
+
 	VisionArmCombo();
 
 	~VisionArmCombo();
@@ -373,8 +410,6 @@ struct VisionArmCombo
 	void initRobotArmClient();
 
 	void initLineProfiler();
-
-	void initKinectThread();
 
 	void initHyperspectralCam();
 
@@ -412,7 +447,7 @@ struct VisionArmCombo
 
 	void pp_callback(const pcl::visualization::PointPickingEvent& event, void*);
 
-	int mapWorkspaceUsingKinectArm(int rover_position, int num_plants);
+	int mapWorkspace(int rover_position, int num_plants);
 
 	void addArmModelToViewer(std::vector<PathPlanner::RefPoint> & ref_points);
 
@@ -422,7 +457,7 @@ struct VisionArmCombo
 
 	void viewPlannedPath(float* start_pose, float* goal_pose);
 
-	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec, int imaging_or_probing = IMAGING);
+	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec);
 
 	void forward(const double* q, double* T);
 
@@ -430,12 +465,11 @@ struct VisionArmCombo
 
 	void double2float(double* array6_d, float* array6_f);
 
-	bool moveToConfigGetKinectPointCloud(ArmConfig & config, bool get_cloud = true, bool try_direct_path = true, 
-											bool add_cloud_to_occupancy_grid = true, int imaging_or_probing = IMAGING);
+	bool moveToConfigGetPointCloud(ArmConfig & config, int options = 0);
 
 	double L2Norm(double* array6_1, double* array6_2);
 
-	void processGrowthChamberEnviroment(PointCloudT::Ptr cloud, float shelf_z_value, int num_plants, int rover_position);
+	void processGrowthChamberEnviroment(PointCloudT::Ptr cloud, float shelf_z_value, int num_plants, int rover_position=1, bool update_pot_position = true);
 
 #if 1
 	void addSupervoxelConnectionsToViewer(PointT &supervoxel_center,
@@ -469,13 +503,13 @@ struct VisionArmCombo
 
 	void display();
 
-	void calibrateKinectRGBCamera();
+	void calibrateRGBCamera(int nframes=30);
 
-	void KinectRGBHandEyeCalibration();
+	void RGBHandEyeCalibration();
 
-	void calibrateKinectIRCamera();
+	void calibrateIRCamera(int nframes=30);
 
-	void KinectIRHandEyeCalibration();
+	void IRHandEyeCalibration();
 
 	void calibrateThermalCamera();
 
@@ -507,12 +541,40 @@ struct VisionArmCombo
 	bool switchBetweenImagingAndProbing(int target_mode);
 
 	//communications with chamber
-	void controlChamberDoor(int chamber_id, int action);
+	void controlChamber(int chamber_id, int action);
 
 	int sendRoboteqVar(int id, int value);
 
 	void acquireHyperspectralCalibrationData();
 
+	void initTOFCamera();
+
+	void initRGBCamera();
+
+	void readOrUpdateChamberPotConfigurationFile(int operation = UPDATE_POT_CONFIG);
+
+	int imagePotsTopView();
+
+	void createBoxCloud(Eigen::Vector3f min, Eigen::Vector3f max, float resolution, PointCloudT::Ptr cloud);
+
+	bool computeImageConfigforPot(cv::Vec3f & pot_xyz, float pot_diameter, cv::Mat & camera_intrinsic, 
+									Eigen::Matrix4d & hand_to_camera, ArmConfig & imaging_config, double & dist_to_pot);
+
+	int mapPotPosition(PointCloudT::Ptr cloud_in_arm_base);
+
+	int saveThermalImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & color_map, cv::Mat & temperature_map);
+
+	int saveRGBImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & rgb_img);
+
+	int saveTOFImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & ir_img_16u, cv::Mat & depth_img_16u);
+
+	bool checkHandPoseReachable(Eigen::Matrix4d & hand_pose, ArmConfig & target_config);
+
+	bool computeLineScanConfigforPot(Eigen::Vector3d & min, Eigen::Vector3d & max, double scan_angle, PointCloudT::Ptr cloud);
+
+	bool checkHandPoseReachableAlongAxis(Eigen::Matrix4d & start_hand_pose, double step, double range, Eigen::Matrix4d & result_hand_pose);
+
+	int openOrCloseCurtain(int chamber_id, int option);
 };
 
 

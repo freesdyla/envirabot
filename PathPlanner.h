@@ -255,8 +255,8 @@ struct PathPlanner
 
 	bool path_planner_ready_;
 
-	const int start_check_obb_idx_ = 6;	
-	const int end_check_obb_idx_ = 9;
+	const int start_check_obb_idx_ = 10;	
+	const int end_check_obb_idx_ = 13;
 
 	float tcp_y_limit_ = -0.2f;
 
@@ -275,6 +275,7 @@ struct PathPlanner
 	const double PI = M_PI;
 
 	double probe_position[3] = { 0.0215, 0.1275, -0.3}; // in robot hand pose
+	double cylinder_back_position[3] = { 0.025, 0.13, -0.33 }; // in robot hand pose
 
 	PathPlanner();
 

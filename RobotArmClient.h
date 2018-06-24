@@ -127,6 +127,8 @@ struct RobotArmClient
 	void probeCylinderControl(bool extend);
 
 	void whiteBoardServoControl(bool extend);
+
+	void laserScannerLightControl(bool on);
 };
 
 #endif

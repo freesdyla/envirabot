@@ -18,14 +18,16 @@ scan_speed_: 0.1
 scan_acceleration_: 0.5
 move_arm_speed_: 0.1 
 move_arm_acceleration_: 0.1
-move_joint_speed_: 0.3
-move_joint_acceleration_: 0.3
+move_joint_speed_: 0.5
+move_joint_acceleration_: 0.2
 view_time_: 1000000
 seed_resolution_: 0.1
 spatial_importance_: 0.5
 normal_importance_: 1.0
 sor_mean_k_: 15
 sor_std_: 1.0
+ror_radius_: 0.005
+ror_num_: 10
 plant_center_x_: -0.1
 plant_center_y_: -0.7
 plant_center_z_: -0.4
@@ -36,10 +38,13 @@ max_point_AABB_x_: 0.5
 max_point_AABB_y_: -0.3
 max_point_AABB_z_: 0.0
 only_do_probing_ : 1
-num_plants_: 12
+num_plants_: 14
 hyperspectral_imaging_dist_: 0.18
 max_samples_per_leaf_: 4
-probing_patch_rmse_: 0.02
+probing_patch_rmse_: 0.1
 hyperscan_slice_thickness_: 0.01
 enable_probing_: 0
 enable_path_planning_: 1
+cur_chamber_id_: 1
+vis_z_range_: 0.5
+remap_pot_position_: 0

@@ -139,9 +139,9 @@ void KinectThread::updateFrame()
 		if (FILTER_DEPTH)
 		{
 			const int win_rad = 2;
-			for (int y = 1; y < cDepthHeight - 1; y++)
+			for (int y = win_rad; y < cDepthHeight - win_rad; y++)
 			{
-				for (int x = 1; x < cDepthWidth - 1; x++)
+				for (int x = win_rad; x < cDepthWidth - win_rad; x++)
 				{
 					int maxJump = 0;
 
@@ -234,12 +234,12 @@ void KinectThread::updateFrame()
 					CameraSpacePoint cameraSpacePoint = { 0.0f, 0.0f, 0.0f };
 					pCoordinateMapper->MapDepthPointToCameraSpace(depthSpacePoint, depth, &cameraSpacePoint);
 
-					if (cameraSpacePoint.Z > 2.f)
+					if (cameraSpacePoint.Z > 3.f)
 						continue;
 
 					// need to negate x and y to have Kinect Fusion world coordinate system, normal camera coordinate system x->left, y->down
-					point.x = -cameraSpacePoint.X;
-					point.y = -cameraSpacePoint.Y;
+					point.x = cameraSpacePoint.X;
+					point.y = cameraSpacePoint.Y;
 					point.z = cameraSpacePoint.Z;
 					point.b = *color_p;
 					point.g = *(++color_p);

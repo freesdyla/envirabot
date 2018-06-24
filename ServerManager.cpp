@@ -2,21 +2,29 @@
 
 ServerManager::ServerManager()
 {
+	int result = init();
 
-	init();
+	if (result != 0)
+	{
+		Utilities::to_log_file("Fail to connect to storage server\n");
+	}
 }
 
 ServerManager::~ServerManager()
 {
-	libssh2_sftp_shutdown(sftp_session);
+	if (sftp_session != NULL && session != NULL)
+	{
 
-	libssh2_session_disconnect(session, "Shut down ssh session");
+		libssh2_sftp_shutdown(sftp_session);
 
-	libssh2_session_free(session);
+		libssh2_session_disconnect(session, "Shut down ssh session");
 
-	closesocket(sock);
+		libssh2_session_free(session);
 
-	libssh2_exit();
+		closesocket(sock);
+
+		libssh2_exit();
+	}
 }
 
 int ServerManager::init() {
@@ -44,11 +52,13 @@ int ServerManager::init() {
 
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(22234);
-	sin.sin_addr.s_addr = inet_addr("10.25.215.217");
+	sin.sin_addr.s_addr = inet_addr("10.25.215.209");
 
 	if (connect(sock, (struct sockaddr*)(&sin),	sizeof(struct sockaddr_in)) != 0) {
 		
-		std::cout<<"failed to connect!\n";
+		Utilities::to_log_file("failed to connect to storage server!");
+
+		exit(-1);
 
 		return 3;
 	}
@@ -107,8 +117,20 @@ int ServerManager::makeServerDirectory(std::string path)
 	return 0;
 }
 
-int ServerManager::uploadDirectory(std::string folder_name, std::string chamber_name)
+int ServerManager::uploadDirectory(std::string folder_name)
 {
+	std::vector<std::string> str_vec;
+	boost::split(str_vec, folder_name, boost::is_any_of("-"));
+
+	std::string chamber_name;
+
+	if (str_vec.size() == 8)
+	{
+		chamber_name = "Chamber_" + str_vec.front().substr(1, 1);
+	}
+	else
+		return -1;
+
 	std::string absolute_path = data_root_dir_ + chamber_name + "\\" + folder_name;
 
 	std::string linux_server_dir = chamber_name + "/" + folder_name;
@@ -123,11 +145,11 @@ int ServerManager::uploadDirectory(std::string folder_name, std::string chamber_
 
 		if (boost::filesystem::is_directory(p)) {
 
-			std::cout << "folder: ";
+			//std::cout << "folder: ";
 
 			if (strs.size() != 0) {
 
-				std::cout << strs.back() << "\n";
+				//std::cout << strs.back() << std::endl;
 
 				std::string destination_dir = folder_name + "/" + strs.back();
 
@@ -185,21 +207,18 @@ int ServerManager::uploadDirectory(std::string folder_name, std::string chamber_
 				libssh2_sftp_close(sftp_handle);
 
 				fclose(file);
-		
 			}
 		}
 
-
 		std::cout << p << std::endl;
 	}
-
 	
 	return 0;
 }
 
 int ServerManager::createNewThreadToUploadDirectory(std::string folder_name, std::string chamber_name)
 {
-	auto upload_thread = std::async(&ServerManager::uploadDirectory, this, folder_name, chamber_name);
+	auto upload_thread = std::async(&ServerManager::uploadDirectory, this, folder_name);
 
 	return upload_thread.get();
 }

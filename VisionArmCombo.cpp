@@ -6,10 +6,14 @@ VisionArmCombo::VisionArmCombo() :
 	voxel_grid_size_(0.002f),
 	counter_(0)
 {
-	//pp_.PRMCEPreprocessing(); pp_.savePathPlanner("pp"); std::getchar(); return;
-	
-	initRobotArmClient();
+//	pp_.PRMCEPreprocessing(); pp_.savePathPlanner("pp"); std::getchar(); exit(0);
+
+	//auto upload_thread = std::async(&ServerManager::uploadDirectory, &data_server_manager_, "C3_2018-6-17-11-3-45-514"); upload_thread.get();  exit(0);
+
+	//initRobotArmClient();
 	initVisionCombo();
+
+	initTOFCamera();
 
 //	float Fo, Fm, FvFm, qP, qL, qN, NPQ, YNPQ, YNO, F, FmPrime, PAR, YII, ETR, FoPrime;
 
@@ -29,24 +33,25 @@ VisionArmCombo::VisionArmCombo() :
 	initHyperspectralCam();	// must disconnect flir ethernet before specim is connected
 	#endif
 
-	#if 0
+	#if 1
 	//std::cout << "hyperspectral init done. Press key to continue.\n";
 	//std::getchar();
 	initThermoCam();
 	#endif
 
-	initKinectThread();
+	//initRGBCamera();
 
 	//initLineProfiler();
 
-	//initRobotArmClient();
-#endif
-
-
 #ifdef ENABLE_PP
 	if (!pp_.loadPathPlanner("pp"))	std::cout << "load path planner fail\n";
+
 	//for (int i = 1; i<pp_.num_nodes_; i += 2) viewPlannedPath(pp_.random_nodes_buffer_ + (i - 1) * 6, pp_.random_nodes_buffer_ + i * 6); return;
 #endif
+
+	initRobotArmClient();
+#endif
+
 
 #if 0
 	PointCloudT::Ptr tmp_point_cloud(new PointCloudT);
@@ -94,8 +99,14 @@ void VisionArmCombo::initVisionCombo()
 	check_door_inside_config_.setJointPos(-180., -5., -135., -40., 0., -180.);
 	check_door_inside_config_.toRad();
 
-	check_curtain_config_.setJointPos(-90., -5., -135., -40., 90., -180.);
+	check_curtain_config_.setJointPos(-90., -10., -119., -48., 90., -180.);
 	check_curtain_config_.toRad();
+
+	map_chamber_front_config_.setJointPos(-90, 0., -90., -102., 90., -180.);
+	map_chamber_front_config_.toRad();
+
+	between_chamber_airlock_config_.setJointPos(-90., -25., -140., -64., 90., -180);
+	between_chamber_airlock_config_.toRad();
 
 	viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
 	viewer_->addCoordinateSystem(0.3);
@@ -110,6 +121,8 @@ void VisionArmCombo::initVisionCombo()
 
 	handToScanner_ = guessHandToScanner_;
 
+	hand_to_scanner_ = guessHandToScanner_.cast<double>();
+
 	//std::cout << "hand to scanner\n" << handToScanner_ << "\n";
 
 	std::ifstream file("lineScannerHandEyeCalibration.bin", std::ios::in | std::ios::binary);
@@ -121,7 +134,8 @@ void VisionArmCombo::initVisionCombo()
 			for (int j = 0; j < 4; j++)
 			{
 				float* ptr = (float*)buffer + i * 4 + j;
-		//		handToScanner_.row(i)(j) = *(ptr);
+				handToScanner_.row(i)(j) = *(ptr);
+				hand_to_scanner_.row(i)(j) = *(ptr);
 			}
 		std::cout << "handToScanner:\n" << handToScanner_ << "\n";
 	}
@@ -155,9 +169,6 @@ void VisionArmCombo::initVisionCombo()
 
 	probe_to_hand_.col(3).head<3>() = tool_center_point_.cast<double>();
 
-	//probe pointing up, rotate around y of hand by 180
-	probe_to_hand_(0, 0) = -1.; probe_to_hand_(2, 2) = -1.;
-
 	probe_to_hand_ = probe_to_hand_.inverse();
 
 	marker_length_ = 0.1016f;	//4 inch
@@ -177,9 +188,6 @@ void VisionArmCombo::initVisionCombo()
 
 	probe_to_hand_pam_.col(3).head<3>() = tool_center_point_pam_.cast<double>();
 
-	//probe pointing up, rotate around y of hand by 180
-	probe_to_hand_pam_(0, 0) = -1.; probe_to_hand_pam_(2, 2) = -1.;
-
 	probe_to_hand_pam_ = probe_to_hand_pam_.inverse();
 
 	fs.open("tool_center_point_calib_RAMAN_532.yml", cv::FileStorage::READ);
@@ -196,9 +204,6 @@ void VisionArmCombo::initVisionCombo()
 	probe_to_hand_raman_532_ = Eigen::Matrix4d::Identity();
 
 	probe_to_hand_raman_532_.col(3).head<3>() = tool_center_point_raman_532_.cast<double>();
-
-	//probe pointing up, rotate around y of hand by 180
-	probe_to_hand_raman_532_(0, 0) = -1.; probe_to_hand_raman_532_(2, 2) = -1.;
 
 	probe_to_hand_raman_532_ = probe_to_hand_raman_532_.inverse();
 
@@ -217,29 +222,25 @@ void VisionArmCombo::initVisionCombo()
 
 	probe_to_hand_raman_1064_.col(3).head<3>() = tool_center_point_raman_1064_.cast<double>();
 
-	//probe pointing up, rotate around y of hand by 180
-	probe_to_hand_raman_1064_(0, 0) = -1.; probe_to_hand_raman_1064_(2, 2) = -1.;
-
 	probe_to_hand_raman_1064_ = probe_to_hand_raman_1064_.inverse();
 
-	
 
-	fs.open("kinectRGBCalibration.yml", cv::FileStorage::READ);
+	fs.open("RGBCalibration.yml", cv::FileStorage::READ);
 
 	if (fs.isOpened())
 	{
-		fs["camera_matrix"] >> kinect_rgb_camera_matrix_cv_;
+		fs["camera_matrix"] >> rgb_camera_matrix_cv_;
 
-		fs["distortion_coefficients"] >> kinect_rgb_dist_coeffs_cv_;
+		fs["distortion_coefficients"] >> rgb_dist_coeffs_cv_;
 	}
 
 	fs.release();
 
-	fs.open("kinectRGBHandEyeCalibration.yml", cv::FileStorage::READ);
+	fs.open("RGBHandEyeCalibration.yml", cv::FileStorage::READ);
 
 	if (fs.isOpened())
 	{
-		fs["hand to eye"] >> kinect_rgb_hand_to_eye_cv_;
+		fs["hand to eye"] >> rgb_hand_to_eye_cv_;
 	}
 
 	fs.release();
@@ -264,9 +265,35 @@ void VisionArmCombo::initVisionCombo()
 
 	fs.release();
 
+	fs.open("IRCalibration.yml", cv::FileStorage::READ);
+
+	if (fs.isOpened())
+	{
+		fs["camera_matrix"] >> infrared_camera_matrix_cv_;
+
+		fs["distortion_coefficients"] >> infrared_dist_coeffs_cv_;
+
+		fs.release();
+	}
+
+	fs.open("IRHandEyeCalibration.yml", cv::FileStorage::READ);
+
+	if (fs.isOpened())
+	{
+		fs["hand to eye"] >> infrared_hand_to_eye_cv_;
+
+		fs.release();
+	}
+
+	cvTransformToEigenTransform(infrared_hand_to_eye_cv_, hand_to_depth_);
+
+	cvTransformToEigenTransform(rgb_hand_to_eye_cv_, hand_to_rgb_);
+
 	cvTransformToEigenTransform(flir_thermal_hand_to_eye_cv_, hand_to_thermal_d_);
 
 	hand_to_thermal_ = hand_to_thermal_d_.cast<float>();
+
+	readOrUpdateChamberPotConfigurationFile(READ_POT_CONFIG);
 
 	// entry full
 	fs.open("parameters.yml", cv::FileStorage::READ);
@@ -301,6 +328,8 @@ void VisionArmCombo::initVisionCombo()
 		fs["normal_importance_"] >> normal_importance_;
 		fs["sor_mean_k_"] >> sor_mean_k_;
 		fs["sor_std_"] >> sor_std_;
+		fs["ror_radius_"] >> ror_radius_;
+		fs["ror_num_"] >> ror_num_;
 		fs["plant_center_x_"] >> plant_center_[0];
 		fs["plant_center_y_"] >> plant_center_[1];
 		fs["plant_center_z_"] >> plant_center_[2];
@@ -317,36 +346,11 @@ void VisionArmCombo::initVisionCombo()
 		fs["probing_patch_rmse_"] >> probing_patch_rmse_;
 		fs["hyperscan_slice_thickness_"] >> hyperscan_slice_thickness_;
 		fs["enable_probing_"] >> enable_probing_;
+		fs["cur_chamber_id_"] >> cur_chamber_id_;
+		fs["vis_z_range_"] >> vis_z_range_;
+		fs["remap_pot_position_"] >> remap_pot_position_;
 	}
 	fs.release();
-
-
-	fs.open("kinectIRCalibration.yml", cv::FileStorage::READ);
-
-	if (fs.isOpened())
-	{
-		fs["camera_matrix"] >> kinect_infrared_camera_matrix_cv_;
-
-		fs["distortion_coefficients"] >> kinect_infrared_dist_coeffs_cv_;
-
-		fs.release();
-	}
-
-	fs.open("kinectIRHandEyeCalibration.yml", cv::FileStorage::READ);
-
-	if (fs.isOpened())
-	{
-		fs["hand to eye"] >> kinect_infrared_hand_to_eye_cv_;
-
-		fs.release();
-	}
-
-	cvTransformToEigenTransform(kinect_infrared_hand_to_eye_cv_, hand_to_depth_);
-
-	cam2hand_kinect_ = hand_to_depth_.cast<float>();
-
-	cvTransformToEigenTransform(kinect_rgb_hand_to_eye_cv_, hand_to_rgb_);
-
 
 	marker_dictionary_ = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_50);
 
@@ -370,8 +374,8 @@ void VisionArmCombo::initVisionCombo()
 
 	scan_end_to_hand_ = scan_end_to_hand_.inverse()*handToScanner_.cast<double>().inverse();
 
-	kinect_cloud_.reset(new PointCloudT);
-	kinect_cloud_->is_dense = true;
+	tof_cloud_.reset(new PointCloudT);
+	tof_cloud_->is_dense = true;
 
 	laser_cloud_.reset(new PointCloudT);
 	laser_cloud_->is_dense = true;
@@ -385,13 +389,54 @@ void VisionArmCombo::initVisionCombo()
 
 	ArmConfig imaging_config;
 
-	imaging_config.setJointPos(-88.55, -91.57, -92.23, -80.27, 90.6, -180.68);
+	imaging_config.setJointPos(-49.63, -100.76, -53., -100.48, 108.29, -136.27);
 	imaging_config.toRad();
 	imaging_config_vec.push_back(imaging_config);
 
+	imaging_config.setJointPos(-62.52, -95.38, -54.65, -120.76, 89.4, -151.62);
+	imaging_config.toRad();
+	imaging_config_vec.push_back(imaging_config);
+
+	imaging_config.setJointPos(-97.27, -97.40, -53.56, -117.03, 71.37, -186.64);
+	imaging_config.toRad();
+	imaging_config_vec.push_back(imaging_config);
+
+	imaging_config_vec_vec_.resize(3);
+	imaging_config_vec_vec_[1] = imaging_config_vec;
+
+	//thermal 
+	imaging_config.setJointPos(-126.47, -118.80, -38.58, -113.25, 89.48, -216.49);
+	imaging_config.toRad();
+	thermal_top_view_imaging_config_vec_.push_back(imaging_config);
+
+	imaging_config.setJointPos(-58.67, -87.23, -78.06, -105.43, 90.36, -148.75);
+	imaging_config.toRad();
+	thermal_top_view_imaging_config_vec_.push_back(imaging_config);
+
+	imaging_config.setJointPos(-30.05, -124.89, -28.72, -116.86, 90.64, -120.07);
+	imaging_config.toRad();
+	thermal_top_view_imaging_config_vec_.push_back(imaging_config);
+
+	//rgb
+	imaging_config.setJointPos(-26.77, -115.72, -51.58, -103.13, 90.67, -116.81);
+	imaging_config.toRad();
+	rgb_top_view_imaging_config_vec_.push_back(imaging_config);
+
+	imaging_config.setJointPos(-78.58, -77.29, -94.58, -98.93, 90.10, -168.67);
+	imaging_config.toRad();
+	rgb_top_view_imaging_config_vec_.push_back(imaging_config);
+
+	imaging_config.setJointPos(-125.83, -102.94, -68.92, -98.77, 89.49, -215.88);
+	imaging_config.toRad();
+	rgb_top_view_imaging_config_vec_.push_back(imaging_config);
+	
+
 	sor_.setMeanK(sor_mean_k_);
 	sor_.setStddevMulThresh(sor_std_);
+	ror_.setRadiusSearch(ror_radius_);
+	ror_.setMinNeighborsInRadius(ror_num_);
 
+#if 1
 	int status = motor_controller_.Connect("COM1");
 
 	if (status != RQ_SUCCESS)
@@ -400,7 +445,7 @@ void VisionArmCombo::initVisionCombo()
 	Sleep(10);
 	motor_controller_.SetCommand(_R, 2);	//restart script
 	Sleep(100);
-	
+#endif
 }
 
 void VisionArmCombo::pp_callback(const pcl::visualization::PointPickingEvent& event, void*)
@@ -468,11 +513,6 @@ void VisionArmCombo::initLineProfiler()
 	line_profiler_ = new KeyenceLineProfiler();
 }
 
-void VisionArmCombo::initKinectThread()
-{
-	kinect_thread_ = new KinectThread();
-}
-
 void VisionArmCombo::initHyperspectralCam() {
 
 	hypercam_ = new HyperspectralCamera();
@@ -484,7 +524,7 @@ void VisionArmCombo::initThermoCam() {
 
 	ShellExecute(NULL, TEXT("open"), TEXT("C:\\Users\\lietang123\\Documents\\RoAdFiles\\FlirThermoCamServer\\FlirThermoCamServer\\bin\\Release\\FlirThermoCamServer.exe"), NULL, NULL, SW_SHOWDEFAULT);
 
-	Sleep(6000);
+	//Sleep(6000);
 
 	thermocam_ = new FlirThermoCamClient();
 }
@@ -926,6 +966,8 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 		return;
 	}
 
+	line_profiler_->m_vecProfileData.clear();
+
 	double curPoseD[6];
 	robot_arm_client_->getCartesianInfo(curPoseD);
 	//robot_arm_client_->printCartesianInfo(curPoseD);
@@ -1105,7 +1147,7 @@ void VisionArmCombo::scanLeafWithHyperspectral(std::vector<Eigen::Matrix4d*> & v
 	std::vector<cv::Mat> hyperspectral_frames;
 
 #ifdef ENABLE_PP
-	if (!moveToConfigGetKinectPointCloud(valid_arm_config_sequence[0], false, true, false, IMAGING)) {
+	if (!moveToConfigGetPointCloud(valid_arm_config_sequence[0])) {
 
 		std::cout << "Path to hyperspectral imaging pose not found\n";
 		return;
@@ -1629,21 +1671,14 @@ std::string VisionArmCombo::getCurrentDateTimeStr()
 
 
 /*
-	register point cloud from kinect in robot base frame
+	register point cloud in robot base frame in growth chamber
 */
 
-int VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plants)
+int VisionArmCombo::mapWorkspace(int rover_position, int num_plants)
 {
-
-	//pcl::io::loadPCDFile("laser_scan.pcd", *kinect_cloud_);
-
-	//extractLeafProbingPoints(kinect_cloud_);
-
-	//return;
-
-	//pp_.PRMCEPreprocessing(); pp_.savePathPlanner("pp"); for (int i=1; i<pp_.num_nodes_; i+=2) viewPlannedPath(pp_.random_nodes_buffer_+(i-1)*6, pp_.random_nodes_buffer_+i*6); return;
-
 	growthChamberPointCloudVec_[rover_position]->clear();
+
+	tof_cam_->setPower(2600);
 
 #ifdef ENABLE_PP
 	pp_.resetOccupancyGrid();
@@ -1651,92 +1686,96 @@ int VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plant
 	#if 1
 	PointCloudT::Ptr window_side_panel(new PointCloudT);
 
-	if (rover_position == 2) {
+	if (rover_position == 2)
+		createBoxCloud(Eigen::Vector3f(0.44f, -0.3f, -0.44f), Eigen::Vector3f(0.85f, -0.21f, 1.14f), 0.01f, window_side_panel);
+	else if (rover_position == 0)
+		createBoxCloud(Eigen::Vector3f(-0.85f, -0.3f, -0.44f), Eigen::Vector3f(-0.44f, -0.21f, 1.14f), 0.01f, window_side_panel);
 
-		for (float x = 0.44f; x < 0.85f; x += 0.01f)
-		{
-			for (float y = -0.3f; y < -0.21f; y += 0.01f)
-			{
-				for (float z = -0.44f; z < 1.14f; z += 0.01f)
-				{
-					PointT p;
-					p.x = x; p.y = y; p.z = z;
-					p.r = p.g = p.b = 255;
-					window_side_panel->push_back(p);
-				}
-			}
-		}
-	}
-	else if (rover_position == 0) {
-
-		for (float x = -0.85f; x < -0.44f; x += 0.01f)
-		{
-			for (float y = -0.3f; y < -0.21f; y += 0.01f)
-			{
-				for (float z = -0.44f; z < 1.14f; z += 0.01f)
-				{
-					PointT p;
-					p.x = x; p.y = y; p.z = z;
-					p.r = p.g = p.b = 255;
-					window_side_panel->push_back(p);
-				}
-			}
-		}
-	}
-
-	if (rover_position != 1)
-	{
+	if(rover_position != 1)
 		pp_.addPointCloudToOccupancyGrid(window_side_panel);
-		showOccupancyGrid();
-		display();
-	}
+	//showOccupancyGrid();
 	#endif
 #endif
 
-	kinect_cloud_->clear();
+	tof_cloud_->clear();
 
-	int scan_count = 0;
 
-	ArmConfig mapping_config;
-	//mapping_config.setJointPos(-90, -90, -90, -90, 90, -180);
-	mapping_config.setJointPos(-87.42, -73.57, -114.13, -82.3, 90, -177.45);
-	mapping_config.toRad();
-	std::cout << "mapping scene\n";
-	scanGrowthChamberWithKinect(rover_position, mapping_config, true);
+	// map growth chamber from airlock to see if the robot arm can go in
+	bool imaging_in_chamber_ok = true;
+	
+#if 0
+	
+	std::cout << "map chamber front side\n";
+	moveToConfigGetPointCloud(map_chamber_front_config_, GET_POINT_CLOUD);
+#endif 
 
-	std::cout << "showing occupancy grid\n";
-	showOccupancyGrid();
+	//moveToConfigGetPointCloud(between_chamber_airlock_config_, TRY_DIRECT_PATH | MOVE | SMOOTH_PATH);
 
-#if 1
-	if (rover_position == 1)	//center
+	if (!imaging_in_chamber_ok)
 	{
-		// left
-		mapping_config.setJointPos(-42, -105, -71, -90, 84, -132);
-		mapping_config.toRad();
+		// image plants from airlock
 
-		moveToConfigGetKinectPointCloud(mapping_config, true, true, true);
 
-		//right
-		mapping_config.setJointPos(-124, -115, -57, -91, 93, -214);
-		mapping_config.toRad();
-
-		moveToConfigGetKinectPointCloud(mapping_config, true, true, true);
+		return -1;
 	}
+
+	if (remap_pot_position_) 
+	{
+		PointCloudT::Ptr chamber_cloud(new PointCloudT);
+
+		ArmConfig mapping_config;
+
+		Eigen::Matrix4d tof_cam_pose;
+		
+		tof_cam_pose.col(0) << 1., 0., 0., 0.;
+		tof_cam_pose.col(1) << 0., -1., 0., 0.;
+		tof_cam_pose.col(2) << 0., 0., -1., 0.;
+		tof_cam_pose.col(3) << 0., -0.7, 0.7, 1.;
+
+		float step = 0.6f;
+
+		for (float x = -step; x <= step*1.1f; x += step) {
+
+			tof_cam_pose(0, 3) = x;
+
+			Eigen::Matrix4d hand_pose = tof_cam_pose*hand_to_depth_.inverse();
+
+			if (checkHandPoseReachable(hand_pose, mapping_config))
+			{
+				moveToConfigGetPointCloud(mapping_config, GET_POINT_CLOUD | VIEW_PATH);
+
+				*chamber_cloud += *tof_cloud_;
+			}
+
+		}
+
+		viewer_->addPointCloud(chamber_cloud, "chamber_cloud");
+
+
+#if 0
+		std::cout << "map pot position..." << std::endl;
+
+		for (int i = 0; i < imaging_config_vec_vec_[rover_position].size(); i++)
+		{
+			moveToConfigGetPointCloud(imaging_config_vec_vec_[rover_position][i], GET_POINT_CLOUD);
+		}
 #endif
 
-#if 1
-	std::cout << "acquire Kinect data...\n";
-	for (int i = 0; i < imaging_config_vec.size(); i++)
-	{
-		moveToConfigGetKinectPointCloud(imaging_config_vec[i], true, true, true);
+		// no data
+		if (chamber_cloud->points.size() < 100) return EMPTY_POINT_CLOUD;
+
+		*growthChamberPointCloudVec_[rover_position] += *tof_cloud_;
+
+		mapPotPosition(chamber_cloud);
 	}
-#endif
 
-	// no data
-	if (kinect_cloud_->points.size() < 100) return EMPTY_POINT_CLOUD;
+	tof_cam_->setPower(600);
 
-	*growthChamberPointCloudVec_[rover_position] += *kinect_cloud_;
+	imagePotsTopView();
 
+	tof_cam_->setPower(2600);
+
+#if 0
 	if (rover_position != 1)
 	{
 		// initial guess transforn
@@ -1750,14 +1789,14 @@ int VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plant
 		viewer_->removeAllPointClouds();
 
 		std::cout << "initial alignment\n";
-		viewer_->addPointCloud(kinect_cloud_, "new pc", 0);
+		viewer_->addPointCloud(tof_cloud_, "new pc", 0);
 		viewer_->addPointCloud(initial_transformed_pc, "initial transform", 0);
 		display();
 
 		std::cout << "ICP\n";
 		pcl::IterativeClosestPoint<PointT, PointT> icp;
 		icp.setInputSource(initial_transformed_pc);
-		icp.setInputTarget(kinect_cloud_);
+		icp.setInputTarget(tof_cloud_);
 		PointCloudT::Ptr final_transformed_pc(new PointCloudT);
 		icp.align(*final_transformed_pc);
 
@@ -1766,7 +1805,7 @@ int VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plant
 		viewer_->removeAllPointClouds();
 
 		std::cout << "final alignment\n";
-		viewer_->addPointCloud(kinect_cloud_, "right pc", 0);
+		viewer_->addPointCloud(tof_cloud_, "right pc", 0);
 		viewer_->addPointCloud(final_transformed_pc, "final_transformed_pc", 0);
 
 		icp_final_transformation_ = icp.getFinalTransformation();
@@ -1775,26 +1814,27 @@ int VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plant
 		display();
 
 		//combine current kinect cloud with the cloud in the middle position
-		*final_transformed_pc += *kinect_cloud_;
+		*final_transformed_pc += *tof_cloud_;
 
 		// voxel grid donwsample
 		vox_.setInputCloud(final_transformed_pc);
 		vox_.setLeafSize(voxel_grid_size_, voxel_grid_size_, voxel_grid_size_);
 
-		vox_.filter(*kinect_cloud_);
+		vox_.filter(*tof_cloud_);
 
 #ifdef ENABLE_PP
-		pp_.addPointCloudToOccupancyGrid(kinect_cloud_);
+		pp_.addPointCloudToOccupancyGrid(tof_cloud_);
 #endif
 		std::cout << "showing occupancy grid\n";
 		showOccupancyGrid();
 		
 	}
+#endif
 	
-
+#if 0
 	if (rover_position == 1)
-		processGrowthChamberEnviroment(kinect_cloud_, shelf_z_, num_plants, rover_position);
-#if 1
+		processGrowthChamberEnviroment(tof_cloud_, shelf_z_, num_plants, rover_position);
+	#if 1
 	else 
 	{
 		//right position, pot x value < 0
@@ -1835,7 +1875,10 @@ int VisionArmCombo::mapWorkspaceUsingKinectArm(int rover_position, int num_plant
 			}
 		}
 	}
+	#endif
 #endif
+
+//	moveToConfigGetPointCloud(between_chamber_airlock_config_);
 
 }
 
@@ -2328,7 +2371,9 @@ void VisionArmCombo::addOBBArmModelToViewer(std::vector<PathPlanner::OBB> & arm_
 		cube_coeff.values[8] = arm_obbs[j].a(1)*2.f;
 		cube_coeff.values[9] = arm_obbs[j].a(2)*2.f;
 
-		viewer_->addCube(cube_coeff, "cube"+std::to_string(j), 0);
+		std::string name = "cube" + std::to_string(j);
+		viewer_->addCube(cube_coeff,name);
+		if(j < 9) viewer_->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_OPACITY, 0.25, name);
 
 		Eigen::Affine3f transform;
 		Eigen::Matrix4f temp_mat = Eigen::Matrix4f::Identity();
@@ -2434,7 +2479,7 @@ void VisionArmCombo::viewPlannedPath(float* start_pose, float* goal_pose)
 	https://github.com/ros-industrial/universal_robot/blob/indigo-devel/ur_kinematics/src/ur_kin.cpp
 	Analytical solutions + picking the feasible one
 */
-int VisionArmCombo::inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec, int imaging_or_probing)
+int VisionArmCombo::inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec)
 {
 	ik_sols_vec.clear();
 	const double q6_des = -PI;
@@ -2593,12 +2638,12 @@ int VisionArmCombo::inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik
 			double min = pp_.joint_range_[j * 2];
 			double max = pp_.joint_range_[j * 2 + 1];
 
-			if (imaging_or_probing == PROBING && j == 4) { //wrist 2
+	/*		if (imaging_or_probing == PROBING && j == 4) { //wrist 2
 
 				min = pp_.probing_joint_range_wrist_2_[0];
 				max = pp_.probing_joint_range_wrist_2_[1];
 			}
-
+			*/
 
 			double q = ik_sols_[i * 6 + j];
 
@@ -2671,7 +2716,7 @@ void VisionArmCombo::double2float(double* array6_d, float* array6_f)
 	for (int i = 0; i < 6; i++) array6_f[i] = array6_d[i];
 }
 
-bool VisionArmCombo::moveToConfigGetKinectPointCloud(ArmConfig & config, bool get_cloud, bool try_direct_path, bool add_cloud_to_occupancy_grid, int imaging_or_probing)
+bool VisionArmCombo::moveToConfigGetPointCloud(ArmConfig & config, int options)
 {
 
 #ifdef ENABLE_PP
@@ -2694,9 +2739,22 @@ bool VisionArmCombo::moveToConfigGetKinectPointCloud(ArmConfig & config, bool ge
 	if (pp_.selfCollision(config.joint_pos_f))
 #endif
 	{
-		std::cout << "target config collision found\n";
+		//std::cout << "target config collision found\n";
 		return false;
 	}
+
+	// parse options, do not use "?:" operator to initialize boolean variable. does not work with msvc compiler so far
+	bool smooth_path = !(options & DISABLE_SMOOTH_PATH); 
+
+	bool try_direct_path = !(options & DISABLE_DIRECT_PATH);
+
+	bool view_path = options & VIEW_PATH;
+
+	bool move = !(options & DISABLE_MOVE);
+
+	bool get_cloud = options & GET_POINT_CLOUD;
+
+	bool add_cloud_to_occupancy_grid = !(options & SKIP_ADD_OCCUPANCY_GRID);
 
 	double start_pose_d[6];
 	robot_arm_client_->getCurJointPose(start_pose_d);
@@ -2717,17 +2775,21 @@ bool VisionArmCombo::moveToConfigGetKinectPointCloud(ArmConfig & config, bool ge
 	{
 
 #ifdef ENABLE_PP
-		if (!pp_.planPath(start_pose, config.joint_pos_f, true, try_direct_path, imaging_or_probing))
+		if (!pp_.planPath(start_pose, config.joint_pos_f, smooth_path, try_direct_path, IMAGING))
 		{
-			std::cout << "collsion-free path not found\n";
-			viewPlannedPath(start_pose, config.joint_pos_f);
+			//std::cout << "collsion-free path not found\n";
+			if(view_path) viewPlannedPath(start_pose, config.joint_pos_f);
 			return false;
 		}
 
-		viewPlannedPath(start_pose, config.joint_pos_f);
+		if (view_path) viewPlannedPath(start_pose, config.joint_pos_f);
 
-		pre_tcp_pos = pp_.fk_mat_.col(3).head<3>();
-		pre_elbow_pos = pp_.DH_mat_vec_[1].col(3).head<3>();
+		// this is for just checking if there is a path
+		if (!move)
+			return true;
+
+		//pre_tcp_pos = pp_.fk_mat_.col(3).head<3>();
+		//pre_elbow_pos = pp_.DH_mat_vec_[1].col(3).head<3>();
 
 		for (int i = 0; i < pp_.shortest_path_index_vec_.size(); i++)
 		{
@@ -2735,10 +2797,10 @@ bool VisionArmCombo::moveToConfigGetKinectPointCloud(ArmConfig & config, bool ge
 			memcpy(config_f, pp_.random_nodes_buffer_ + pp_.shortest_path_index_vec_[i] * pp_.num_joints_, pp_.num_joints_*sizeof(float));
 
 			pp_.forwardKinematicsUR10(config_f);
-			distance_traveled_tcp += (pp_.fk_mat_.col(3).head<3>() - pre_tcp_pos).norm();
-			distance_traveled_elbow += (pp_.DH_mat_vec_[1].col(3).head<3>() - pre_elbow_pos).norm();
-			pre_tcp_pos = pp_.fk_mat_.col(3).head<3>();
-			pre_elbow_pos = pp_.DH_mat_vec_[1].col(3).head<3>();
+			//distance_traveled_tcp += (pp_.fk_mat_.col(3).head<3>() - pre_tcp_pos).norm();
+			//distance_traveled_elbow += (pp_.DH_mat_vec_[1].col(3).head<3>() - pre_elbow_pos).norm();
+			//pre_tcp_pos = pp_.fk_mat_.col(3).head<3>();
+			//pre_elbow_pos = pp_.DH_mat_vec_[1].col(3).head<3>();
 
 			double config_d[6];
 			float2double(config_f, config_d);
@@ -2750,80 +2812,68 @@ bool VisionArmCombo::moveToConfigGetKinectPointCloud(ArmConfig & config, bool ge
 
 		robot_arm_client_->moveHandJ(config.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
 
-		pp_.forwardKinematicsUR10(config.joint_pos_f);
-		distance_traveled_tcp += (pp_.fk_mat_.col(3).head<3>() - pre_tcp_pos).norm();
-		distance_traveled_elbow += (pp_.DH_mat_vec_[1].col(3).head<3>() - pre_elbow_pos).norm();
+		//pp_.forwardKinematicsUR10(config.joint_pos_f);
+		//distance_traveled_tcp += (pp_.fk_mat_.col(3).head<3>() - pre_tcp_pos).norm();
+		//distance_traveled_elbow += (pp_.DH_mat_vec_[1].col(3).head<3>() - pre_elbow_pos).norm();
 
-		std::cout << "tcp traveled distance (m): " << distance_traveled_tcp<<"\n";
-		std::cout << "elbow traveled distance (m): " << distance_traveled_elbow << "\n";
+		//std::cout << "tcp traveled distance (m): " << distance_traveled_tcp<<"\n";
+		//std::cout << "elbow traveled distance (m): " << distance_traveled_elbow << "\n";
 	}
+
 
 	if (get_cloud)
 	{
-		Sleep(1000);
-
-		// get point cloud from kinect
+		Sleep(500);
+		// get point cloud from tof camera
 		PointCloudT::Ptr point_cloud(new PointCloudT);
 
-		kinect_thread_->getCurPointCloud(point_cloud);
-
-	/*	viewer_->removeAllPointClouds();
+		tof_cam_->getPointCloud(point_cloud);
+		
+	#if 0
+		viewer_->removeAllPointClouds();
 		viewer_->addPointCloud(point_cloud);
-		display();*/
-
-		// depth value correction
-		//for (int i = 0; i < point_cloud->points.size(); i++) point_cloud->points[i].z -= 0.024f;
+		display();
+	#endif
 
 		// get robot hand pose
-		Eigen::Matrix4f hand2base;
+		Eigen::Matrix4d hand_pose;
 
-		getCurHandPose(hand2base);
+		getCurHandPoseD(hand_pose);
 
-		Eigen::Matrix4f cam2base;
-
-		cam2base = hand2base*cam2hand_kinect_;
+		Eigen::Matrix4d cam_pose = hand_pose*hand_to_depth_;
 
 		PointCloudT::Ptr cloud_in_base(new PointCloudT);
 
-		pcl::transformPointCloud(*point_cloud, *cloud_in_base, cam2base);
+		pcl::transformPointCloud(*point_cloud, *cloud_in_base, cam_pose);
 
-		pass_.setInputCloud(cloud_in_base);
-		pass_.setFilterFieldName("y");
-		pass_.setFilterLimits(-1.02f, -0.35f);
-		pass_.setFilterLimitsNegative(false);
-		pass_.filter(*point_cloud);
+		for (auto & p : cloud_in_base->points)
+			p.r = p.g = p.b = (unsigned char)( std::max((p.z + 0.7f)/ vis_z_range_ * 255.f, 0.f));
 
-		pass_.setInputCloud(point_cloud);
-		pass_.setFilterFieldName("z");
-		pass_.setFilterLimits(-0.65f, 1.28f);
-		pass_.filter(*cloud_in_base);
+		pcl::CropBox<PointT> crop_box;
+		crop_box.setInputCloud(cloud_in_base);
+		crop_box.setMin(Eigen::Vector4f(-2.f, -1.2f, -0.65f, 1.0f));
+		crop_box.setMax(Eigen::Vector4f(2.f, -0.1f, 1.28f, 1.0f));
+		std::vector<int> indices;
+		crop_box.filter(indices);
 
-		*kinect_cloud_ += *cloud_in_base;
-
-		// voxel grid donwsample
-		vox_.setInputCloud(kinect_cloud_);
-		vox_.setLeafSize(voxel_grid_size_, voxel_grid_size_, voxel_grid_size_);
-
-		point_cloud->clear();
-		vox_.filter(*point_cloud);
-
-		kinect_cloud_->clear();
-
-		*kinect_cloud_ += *point_cloud;
-
-		std::wcout << "Kinect cloud size: " << kinect_cloud_->size() << "\n";
+		ror_.setInputCloud(cloud_in_base);
+		ror_.setIndices(boost::make_shared<std::vector<int>>(indices));
+		std::vector<int> indices_2;
+		ror_.filter(*tof_cloud_);
 
 #ifdef ENABLE_PP
-		if(add_cloud_to_occupancy_grid)	pp_.addPointCloudToOccupancyGrid(kinect_cloud_);
+		if(add_cloud_to_occupancy_grid)	pp_.addPointCloudToOccupancyGrid(tof_cloud_);
 #endif
 
+#if 0
 		viewer_->removeAllPointClouds();
 
-		viewer_->addPointCloud(kinect_cloud_, "cloud", 0);
+		viewer_->addPointCloud(tof_cloud_, "cloud", 0);
 
 		viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "cloud");
 
 		display();
+#endif
 	}
 
 	return true;
@@ -2840,7 +2890,8 @@ double VisionArmCombo::L2Norm(double* array6_1, double* array6_2)
 	return sqrt(distance);
 }
 
-void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_arm_base, float shelf_z_value, int num_plants, int rover_position = 1)
+void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_arm_base, float shelf_z_value, 
+													int num_plants, int rover_position, bool update_pot_position)
 {
 	int64 t0 = cv::getTickCount();
 
@@ -2857,20 +2908,20 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 	*cloud_in_arm_base = *cloud;
 	pass_.setInputCloud(cloud_in_arm_base);
 	pass_.setFilterFieldName("y");
-	pass_.setFilterLimits(-1.5f, -0.3f);
+	pass_.setFilterLimits(-1.1f, -0.4f);
 	pass_.setFilterLimitsNegative(false);
 	pass_.filter(*cloud);
 #endif
 
 	// remove side walls
+	*cloud_in_arm_base = *cloud;
 	pass_.setInputCloud(cloud_in_arm_base);
 	pass_.setFilterFieldName("x");
 
 	int num_pot_left = 0;
 	
 	if(rover_position == 1)
-		//pass_.setFilterLimits(-1.f, 1.f);
-		pass_.setFilterLimits(-1.0f, 0.58f);
+		pass_.setFilterLimits(-1.2f, 1.2f);
 	else if (rover_position == 0)
 	{
 		int boundary_object_idx;
@@ -2946,10 +2997,10 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 	pass_.filter(*cloud);
 
 	int64 t1 = cv::getTickCount();
-	std::cout << "pass through filter time:" << (t1 - t0) / cv::getTickFrequency() << "\n";
+//	std::cout << "pass through filter time:" << (t1 - t0) / cv::getTickFrequency() << "\n";
 
 	std::string save_path(data_saving_folder_.begin(), data_saving_folder_.end());
-	save_path.append("kinect_top_view.pcd");
+	save_path.append("top_view.pcd");
 
 	std::cout <<"cloud size: "<< cloud->size() << "\n";
 	std::cout << save_path << "\n";
@@ -2958,11 +3009,18 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 
 	// remove small clusters
 	t0 = cv::getTickCount();
-	*cloud_in_arm_base = *cloud;
-	smallClusterRemoval(cloud_in_arm_base, 0.02, 10, cloud);
+	pcl::VoxelGrid<PointT> vox;
+	vox.setInputCloud(cloud);
+	vox.setLeafSize(0.02f, 0.02f, 0.02f);
+	vox.filter(*cloud_in_arm_base);
+
+	*cloud = *cloud_in_arm_base;
+
+	//*cloud_in_arm_base = *cloud;
+	//smallClusterRemoval(cloud_in_arm_base, 0.04, 10, cloud);
 
 	t1 = cv::getTickCount();
-	std::cout << "remove small cluster time:" << (t1 - t0) / cv::getTickFrequency() << "\n";
+//	std::cout << "remove small cluster time:" << (t1 - t0) / cv::getTickFrequency() << "\n";
 
 	//Eigen::Vector4f min, max;
 	//pcl::getMinMax3D(*cloud, min, max);
@@ -2970,18 +3028,20 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 	
 	t0 = cv::getTickCount();
 	// opencv kmeans
+	
 	std::vector<cv::Point3f> cv_points(cloud->points.size());
 	cv::Mat labels;
-	
+
 	for (int i = 0; i < cloud->points.size(); i++)
 	{
 		cv::Point3f point;
 		point.x = cloud->points[i].x;
 		point.y = cloud->points[i].y;
-		//point.z = cloud->points[i].z;
-		point.z = 0;		// project point cloud to x-y plane to get pot center (x,y)
+		point.z = -0.55f;		// distance between soil and base, project point cloud to x-y plane to get pot center (x,y)
 		cv_points[i] = point;
 	}
+
+	num_plants = pot_position_vec_[cur_chamber_id_ - 1].cols*pot_position_vec_[cur_chamber_id_ - 1].rows;
 
 	cv::Mat object_centers_on_side;
 	// object_centers z value = 0 
@@ -2991,23 +3051,94 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 		cv::kmeans(cv_points, num_pot_left, labels, cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 40, 0.001), 10, cv::KMEANS_PP_CENTERS, object_centers_on_side);
 
 	t1 = cv::getTickCount();
-	std::cout << "k-means time:" << (t1 -t0)/cv::getTickFrequency()<<"\n";
+//	std::cout << "k-means time:" << (t1 -t0)/cv::getTickFrequency()<<"\n";
 
 	//std::cout << object_centers_.rows<<" "<<object_centers_.cols<< "\n";
 
 	//object_centers dimension rows: number of plants, cols: 3 (x,y,z)
 
 	// insertion sort object centers based on x value
-	if(rover_position == 1)
-	for (int i = 1; i < object_centers_.rows; i++)
+	if (rover_position == 1)
 	{
-		int j = i;
-		while (j > 0 && object_centers_.at<cv::Vec3f>(j, 0)[0] > object_centers_.at<cv::Vec3f>(j-1,0)[0])
+		std::vector<cv::Vec3f> pot_center_vec_;
+		pot_center_vec_.resize(object_centers_.rows);
+
+		for (int i = 0; i < pot_center_vec_.size(); i++)
 		{
-			cv::Vec3f tmp(object_centers_.at<cv::Vec3f>(j-1, 0));
-			object_centers_.at<cv::Vec3f>(j - 1, 0) = object_centers_.at<cv::Vec3f>(j, 0);
-			object_centers_.at<cv::Vec3f>(j, 0) = tmp;
-			j--;
+			pot_center_vec_[i] = object_centers_.at<cv::Vec3f>(i, 0);
+			//std::cout << pot_center_vec_[i]<<"\n";
+		}
+
+		int pot_rows = pot_position_vec_[cur_chamber_id_ - 1].rows;
+		int pot_cols = pot_position_vec_[cur_chamber_id_ - 1].cols;
+
+		std::sort(pot_center_vec_.begin(), pot_center_vec_.end(), VisionArmCombo::pot_center_y_comparator);
+
+		for (int i = 0; i < pot_rows; i++)
+			std::sort(pot_center_vec_.begin() + pot_cols*i, pot_center_vec_.begin() + pot_cols*(i+1), VisionArmCombo::pot_center_x_comparator);
+
+		pot_position_vec_[cur_chamber_id_ - 1].create(pot_rows, pot_cols, CV_32FC3);
+
+		for (int i = 0; i < pot_center_vec_.size(); i++) {
+			int x = i % pot_cols;
+			int y = i / pot_cols;
+			pot_position_vec_[cur_chamber_id_ - 1].at<cv::Vec3f>(y, x) = pot_center_vec_[i];
+		}
+
+		pcl::CropBox<PointT> crop_box;
+
+		crop_box.setInputCloud(cloud);
+
+		for (int i = 0; i < pot_center_vec_.size(); i++) {
+
+			int x = i % pot_cols;
+			int y = i / pot_cols;
+			
+			cv::Vec3f pot_xyz = pot_position_vec_[cur_chamber_id_ - 1].at<cv::Vec3f>(y, x);
+
+			const float radius = pot_diameter_vec_[cur_chamber_id_ - 1] * 0.5f;
+
+			crop_box.setMin(Eigen::Vector4f(pot_xyz[0] - radius, pot_xyz[1] - radius, pot_xyz[2] - 1.0, 1.f));
+
+			crop_box.setMax(Eigen::Vector4f(pot_xyz[0] + radius, pot_xyz[1] + radius, pot_xyz[2] + 1.0, 1.f));
+
+			std::vector<int> pot_point_indices;
+
+			crop_box.filter(pot_point_indices);
+
+			float average_height = 0.f;
+
+			for (auto idx : pot_point_indices)
+				average_height += cloud->points[idx].z;
+
+			average_height /= pot_point_indices.size();
+
+			// update pot center z
+			pot_position_vec_[cur_chamber_id_ - 1].at<cv::Vec3f>(y, x)[2] = average_height;
+
+			for (auto idx : pot_point_indices)
+				cloud->points[idx].r = cloud->points[idx].g = cloud->points[idx].b = 180;
+		}
+
+		readOrUpdateChamberPotConfigurationFile(UPDATE_POT_CONFIG);
+
+		viewer_->removeAllPointClouds();
+		viewer_->addPointCloud(cloud, "cloud");
+		display();
+
+		imagePotsTopView();
+		
+
+		for (int i = 1; i < object_centers_.rows; i++)
+		{
+			int j = i;
+			while (j > 0 && object_centers_.at<cv::Vec3f>(j, 0)[0] > object_centers_.at<cv::Vec3f>(j - 1, 0)[0])
+			{
+				cv::Vec3f tmp(object_centers_.at<cv::Vec3f>(j - 1, 0));
+				object_centers_.at<cv::Vec3f>(j - 1, 0) = object_centers_.at<cv::Vec3f>(j, 0);
+				object_centers_.at<cv::Vec3f>(j, 0) = tmp;
+				j--;
+			}
 		}
 	}
 	else
@@ -3022,6 +3153,8 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 			j--;
 		}
 	}
+
+
 
 	int tmp_num = rover_position == 1 ? num_plants : num_pot_left;
 
@@ -3042,6 +3175,7 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 	
 	for (int i = 0; i < cv_points.size(); i++)
 	{
+		// kmeans labels
 		int label = labels.at<int>(i, 0);
 		//PointT point;
 		//point.x = cv_points[i].x;
@@ -3080,6 +3214,7 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 
 			pcl::compute3DCentroid(tmp_pc, centroid);
 
+			//find pot center
 			float min_distance = 1e3f;
 			int best_idx = -1;
 			for (int j = 0; j < object_centers_.rows; j++)
@@ -3468,8 +3603,8 @@ void VisionArmCombo::processGrowthChamberEnviroment(PointCloudT::Ptr cloud_in_ar
 		display();
 	}
 
-	kinect_cloud_->clear();
-	*kinect_cloud_ += *cloud;
+	tof_cloud_->clear();
+	*tof_cloud_ += *cloud;
 
 	viewer_->removeAllPointClouds();
 	viewer_->addPointCloud(cloud);
@@ -3752,10 +3887,8 @@ bool VisionArmCombo::computeCollisionFreeProbeOrScanPose(PointT & point, pcl::No
 
 		std::vector<int> ik_sols_vec;
 
-		if(sensor_type == PROBE)
-			inverseKinematics(pose, ik_sols_vec, PROBING);
-		else
-			inverseKinematics(pose, ik_sols_vec, IMAGING);
+
+		inverseKinematics(pose, ik_sols_vec);
 
 		//if (ik_sols_vec.size() == 0) std::cout << "no ik solution\n";
 		
@@ -3853,7 +3986,7 @@ bool VisionArmCombo::computeCollisionFreeProbeOrScanPose(PointT & point, pcl::No
 
 	std::vector<int> ik_sols_vec;
 
-	inverseKinematics(pose, ik_sols_vec, IMAGING);
+	inverseKinematics(pose, ik_sols_vec);
 
 	solution_found = false;
 
@@ -4328,7 +4461,7 @@ void VisionArmCombo::extractLeafProbingPointsAndHyperspectralScanPoses(PointClou
 
 					std::vector<int> ik_sols_vec;
 
-					inverseKinematics(*hand_pose, ik_sols_vec, IMAGING);
+					inverseKinematics(*hand_pose, ik_sols_vec);
 
 					//if (ik_sols_vec.size() == 0) std::cout << "no ik solution\n";
 
@@ -4479,6 +4612,7 @@ bool VisionArmCombo::probeLeaf(PointT & probe_point, pcl::Normal & normal, int p
 	// try probe
 	if (computeCollisionFreeProbeOrScanPose(probe_point, normal, PROBE, solution_config_vec_refine, probe_hand_pose_final, hand_translation_refine))
 	{
+
 		/*std::cout << "probe?\n";
 		std::string key;
 		std::getline(std::cin, key);
@@ -4502,7 +4636,7 @@ bool VisionArmCombo::probeLeaf(PointT & probe_point, pcl::Normal & normal, int p
 	//	Eigen::Matrix4d probe_hand_pose_prepare = probe_hand_pose_final*probe_to_hand_.inverse()*final_to_prepare*probe_to_hand_;
 
 		Eigen::Matrix4d probe_hand_pose_prepare = probe_hand_pose_final;
-		probe_hand_pose_prepare.col(3).head<3>() += probe_hand_pose_prepare.col(2).head<3>()*0.08;	// plus: probe in opposite direction of hand
+		//probe_hand_pose_prepare.col(3).head<3>() += probe_hand_pose_prepare.col(2).head<3>()*0.08;	// plus: probe in opposite direction of hand
 
 		//std::cout << "probe_hand_pose_final\n" << probe_hand_pose_final << "\n";
 
@@ -4521,7 +4655,7 @@ bool VisionArmCombo::probeLeaf(PointT & probe_point, pcl::Normal & normal, int p
 		// ik
 		std::vector<int> ik_sols_vec;
 
-		inverseKinematics(probe_hand_pose_prepare, ik_sols_vec, PROBING);
+		inverseKinematics(probe_hand_pose_prepare, ik_sols_vec);
 
 		bool solution_found = false;
 
@@ -4559,7 +4693,7 @@ bool VisionArmCombo::probeLeaf(PointT & probe_point, pcl::Normal & normal, int p
 
 		//std::cout << "try to move to prepare probe pose\n";
 
-		if (!moveToConfigGetKinectPointCloud(prepare_probe_config, false, true))
+		if (!moveToConfigGetPointCloud(prepare_probe_config))
 		{
 			std::cout << "could not reach prepare probe pose\n";
 			return false;
@@ -4569,63 +4703,17 @@ bool VisionArmCombo::probeLeaf(PointT & probe_point, pcl::Normal & normal, int p
 		Eigen::Vector3f trans = point_on_leaf - probe_hand_pose_final.topLeftCorner<3, 3>().cast<float>()*tool_center_point_;
 
 		double pose[6];
-		Eigen::Matrix4d transform;
-		getCurHandPoseD(transform);	//need to get current pose because of the small difference between fk solution using joint values and UR current pose
 		
-		//save initial pose
-		double tmp_pose[6];
-		eigenMat4dToArray6(transform, tmp_pose);
-
-		Eigen::Vector3d dir = transform.col(3).head(3);
-		
-		transform.col(3).head(3) = point_on_leaf.cast<double>();
-		transform = transform*probe_to_hand_;
-
-		dir = transform.col(3).head(3) - dir;
-
-		//eigenMat4dToArray6(transform, pose);
 		eigenMat4dToArray6(probe_hand_pose_final, pose);
 
-		double step_size = 0.001;
-		double norm = dir.norm();
-
-		dir.normalize();
-
-		double length;
-
-		// probe block test
-	/*	for (length = step_size; length < norm; length += step_size)
-		{
-			tmp_pose[0] += step_size*dir[0]; tmp_pose[1] += step_size*dir[1]; tmp_pose[2] += step_size*dir[2];
-			robot_arm_client_->moveHandL(tmp_pose, 0.002, 0.002);
-			//robot_arm_client_->waitTillHandReachDstPose(pose);
-			std::cout << "length " << length << " norm " << norm << "\n";
-			std::getchar();
-		}
-		*/
-
 		robot_arm_client_->moveHandL(pose, 0.04, 0.04);
-		//robot_arm_client_->moveHandL(pose, 0.005, 0.005);
-		//robot_arm_client_->waitTillHandReachDstPose(pose);
 
 		Sleep(1000);
 
+		// extend probe
+		robot_arm_client_->probeCylinderControl(true);
 
-	/*	std::cout << "Done?\n";
-
-		std::getline(std::cin, key);
-
-		if (key == "n")
-		{
-			for (length = norm+step_size; length < norm+0.01; length += step_size)
-			{
-				tmp_pose[0] += step_size*dir[0]; tmp_pose[1] += step_size*dir[1]; tmp_pose[2] += step_size*dir[2];
-				robot_arm_client_->moveHandL(tmp_pose, 0.002, 0.002);
-				//robot_arm_client_->waitTillHandReachDstPose(pose);
-				std::cout << "length " << length << " norm+0.01 " << norm+0.01 << "\n";
-				std::getchar();
-			}
-		}*/
+		Sleep(2000);
 
 		std::string save_path(data_saving_folder_.begin(), data_saving_folder_.end());
 
@@ -4714,11 +4802,15 @@ bool VisionArmCombo::probeLeaf(PointT & probe_point, pcl::Normal & normal, int p
 			}
 		}
 
+		robot_arm_client_->probeCylinderControl(false);
+
 		display();
+
+		
 
 		//robot_arm_client_->moveHandJ(solution_config_vec_refine[0].joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
 
-		robot_arm_client_->moveHandJ(prepare_probe_config.joint_pos_d, move_joint_speed_, move_joint_acceleration_*0.5, true);
+		//robot_arm_client_->moveHandJ(prepare_probe_config.joint_pos_d, move_joint_speed_, move_joint_acceleration_*0.5, true);
 
 		return true;
 	}
@@ -4732,12 +4824,13 @@ void VisionArmCombo::display()
 	else viewer_->spinOnce(view_time_);
 }
 
-void VisionArmCombo::calibrateKinectRGBCamera()
+void VisionArmCombo::calibrateRGBCamera(int nframes)
 {
-	if (robot_arm_client_ == NULL) initRobotArmClient();
-	if (kinect_thread_ == NULL)	initKinectThread();
+	if (robot_arm_client_ == NULL || rgb_cam_ == NULL) {
 
-	int nframes = 20;
+		std::cerr<<"Not connected to UR10 or RGB camera\n";
+		return;
+	}
 
 	if (nframes % 2 != 0 || nframes < 6)
 	{
@@ -4755,12 +4848,12 @@ void VisionArmCombo::calibrateKinectRGBCamera()
 
 	// IMPORTANT
 	cv::SimpleBlobDetector::Params params;
-	params.maxArea = 200 * 200;
+	params.maxArea = 400 * 400;
 	params.minArea = 20 * 20;
 	cv::Ptr<cv::FeatureDetector> blobDetect = cv::SimpleBlobDetector::create(params);
 
-	imageSize.width = kinect_thread_->cColorWidth;
-	imageSize.height = kinect_thread_->cColorHeight;
+	imageSize.width = rgb_cam_->img_width_;
+	imageSize.height = rgb_cam_->img_height_;
 
 	boardSize.width = 4;
 	boardSize.height = 11;
@@ -4775,7 +4868,7 @@ void VisionArmCombo::calibrateKinectRGBCamera()
 
 		while (true)
 		{
-			view = kinect_thread_->getCurRGB();
+			view = rgb_cam_->getRGB();
 
 			cv::cvtColor(view, viewGray, CV_BGR2GRAY);
 
@@ -4797,7 +4890,7 @@ void VisionArmCombo::calibrateKinectRGBCamera()
 
 			cv::Mat shrinked;
 
-			cv::resize(view_copy, shrinked, cv::Size(), 0.5, 0.5);
+			cv::resize(view_copy, shrinked, cv::Size(), 0.4, 0.4);
 
 			cv::imshow("rgb", shrinked);
 
@@ -4865,7 +4958,7 @@ void VisionArmCombo::calibrateKinectRGBCamera()
 
 	bool ok = cv::checkRange(cameraMatrix) && cv::checkRange(distCoeffs);
 
-	cv::FileStorage fs("kinectRGBCalibration.yml", cv::FileStorage::WRITE);
+	cv::FileStorage fs("RGBCalibration.yml", cv::FileStorage::WRITE);
 
 	fs << "camera_matrix" << cameraMatrix;
 	fs << "distortion_coefficients" << distCoeffs;
@@ -5069,14 +5162,14 @@ void VisionArmCombo::calibrateThermalCamera() {
 
 }
 
-void VisionArmCombo::calibrateKinectIRCamera()
+// IR of odos time-of-flight camera
+void VisionArmCombo::calibrateIRCamera(int nframes)
 {
-	//if (robot_arm_client_ == NULL) initRobotArmClient();
-	if (kinect_thread_ == NULL)	initKinectThread();
-
-	kinect_thread_->stream_infrared_ = true;
-
-	int nframes = 30;
+	if (tof_cam_ == NULL || robot_arm_client_ == NULL)
+	{
+		std::cerr << "TOF camera or UR10 not connected\n";
+		return;
+	}
 
 	if (nframes % 2 != 0 || nframes < 6)
 	{
@@ -5098,8 +5191,8 @@ void VisionArmCombo::calibrateKinectIRCamera()
 	params.minArea = 5 * 5;
 	cv::Ptr<cv::FeatureDetector> blobDetect = cv::SimpleBlobDetector::create(params);
 
-	imageSize.width = kinect_thread_->cDepthWidth;
-	imageSize.height = kinect_thread_->cDepthHeight;
+	imageSize.width = tof_cam_->img_width_;
+	imageSize.height = tof_cam_->img_height_;
 
 	boardSize.width = 4;
 	boardSize.height = 11;
@@ -5114,18 +5207,20 @@ void VisionArmCombo::calibrateKinectIRCamera()
 
 		while (true)
 		{
-			view = kinect_thread_->getCurIR();
+			view = tof_cam_->getIR();
 
-			cv::normalize(view, viewGray, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+			//cv::normalize(view, viewGray, 0, 255, cv::NORM_MINMAX, CV_8UC1);
 
 			pointbuf.clear();
 
 			// ASYMMETRIC CIRCLE GRID PATTERN
-			bool found = findCirclesGrid(viewGray, boardSize, pointbuf, cv::CALIB_CB_ASYMMETRIC_GRID | cv::CALIB_CB_CLUSTERING, blobDetect);
+			bool found = findCirclesGrid(view, boardSize, pointbuf, cv::CALIB_CB_ASYMMETRIC_GRID | cv::CALIB_CB_CLUSTERING, blobDetect);
 
 			cv::Mat view_copy;
 
 			view.copyTo(view_copy);
+
+			cv::cvtColor(view, view_copy, CV_GRAY2BGR);
 
 			if (found)
 			{
@@ -5200,7 +5295,7 @@ void VisionArmCombo::calibrateKinectIRCamera()
 
 	bool ok = cv::checkRange(cameraMatrix) && cv::checkRange(distCoeffs);
 
-	cv::FileStorage fs("kinectIRCalibration.yml", cv::FileStorage::WRITE);
+	cv::FileStorage fs("IRCalibration.yml", cv::FileStorage::WRITE);
 
 	fs << "camera_matrix" << cameraMatrix;
 	fs << "distortion_coefficients" << distCoeffs;
@@ -5238,9 +5333,9 @@ void VisionArmCombo::calibrateKinectIRCamera()
 /*
 	robot sensor calibration solving ax=xb on euclidean group 1994
 */
-void VisionArmCombo::KinectRGBHandEyeCalibration()
+void VisionArmCombo::RGBHandEyeCalibration()
 {
-	cv::FileStorage fs("kinectRGBCalibration.yml", cv::FileStorage::READ);
+	cv::FileStorage fs("RGBCalibration.yml", cv::FileStorage::READ);
 	cv::FileNode camera_poses = fs["camera poses"];
 	cv::FileNode tcp_poses = fs["TCP poses"];
 
@@ -5351,16 +5446,16 @@ void VisionArmCombo::KinectRGBHandEyeCalibration()
 
 	std::cout << "hand to eye\n" << hand_to_eye << "\n";
 
-	cv::FileStorage fs1("kinectRGBHandEyeCalibration.yml", cv::FileStorage::WRITE);
+	cv::FileStorage fs1("RGBHandEyeCalibration.yml", cv::FileStorage::WRITE);
 
 	fs1 << "hand to eye" << hand_to_eye;
 
 	fs1.release();
 }
 
-void VisionArmCombo::KinectIRHandEyeCalibration()
+void VisionArmCombo::IRHandEyeCalibration()
 {
-	cv::FileStorage fs("kinectIRCalibration.yml", cv::FileStorage::READ);
+	cv::FileStorage fs("IRCalibration.yml", cv::FileStorage::READ);
 	cv::FileNode camera_poses = fs["camera poses"];
 	cv::FileNode tcp_poses = fs["TCP poses"];
 
@@ -5471,7 +5566,7 @@ void VisionArmCombo::KinectIRHandEyeCalibration()
 
 	std::cout << "hand to eye\n" << hand_to_eye << "\n";
 
-	cv::FileStorage fs1("kinectIRHandEyeCalibration.yml", cv::FileStorage::WRITE);
+	cv::FileStorage fs1("IRHandEyeCalibration.yml", cv::FileStorage::WRITE);
 
 	fs1 << "hand to eye" << hand_to_eye;
 
@@ -5613,16 +5708,16 @@ int VisionArmCombo::markerDetection(int rgb_or_ir, float & nearest_marker_dist, 
 	{
 
 		if (rgb_or_ir == RGB) {
-			img_tmp = kinect_thread_->getCurRGB();
+			
+			img_tmp = rgb_cam_->getRGB();
+
 			cv::resize(img_tmp, img_rgb, cv::Size(), 0.5, 0.5);
 		}
 		else {
 
-			img_tmp = kinect_thread_->getCurIR();
+			img_tmp = tof_cam_->getIR();
 
-			cv::normalize(img_tmp, img_gray, 0, 255, cv::NORM_MINMAX, CV_8UC1);
-
-			cv::cvtColor(img_gray, img_rgb, CV_GRAY2BGR);
+			cv::cvtColor(img_tmp, img_rgb, CV_GRAY2BGR);
 		}
 
 		std::vector<int> markerIds;
@@ -5631,7 +5726,7 @@ int VisionArmCombo::markerDetection(int rgb_or_ir, float & nearest_marker_dist, 
 
 		std::vector<cv::Vec3d> rvecs, tvecs;
 
-		cv::aruco::estimatePoseSingleMarkers(markerCorners, marker_length_, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, rvecs, tvecs);
+		cv::aruco::estimatePoseSingleMarkers(markerCorners, marker_length_, rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_, rvecs, tvecs);
 
 		cv::aruco::drawDetectedMarkers(img_rgb, markerCorners, markerIds);
 
@@ -5669,9 +5764,9 @@ int VisionArmCombo::markerDetection(int rgb_or_ir, float & nearest_marker_dist, 
 		if (nearest_marker_idx >= 0) {
 
 			if (rgb_or_ir == RGB)
-				cv::aruco::drawAxis(img_rgb, kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, rvecs[nearest_marker_idx], tvecs[nearest_marker_idx], marker_length_*0.5f);
+				cv::aruco::drawAxis(img_rgb, rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_, rvecs[nearest_marker_idx], tvecs[nearest_marker_idx], marker_length_*0.5f);
 			else
-				cv::aruco::drawAxis(img_rgb, kinect_infrared_camera_matrix_cv_, kinect_infrared_dist_coeffs_cv_, rvecs[nearest_marker_idx], tvecs[nearest_marker_idx], marker_length_*0.5f);
+				cv::aruco::drawAxis(img_rgb, infrared_camera_matrix_cv_, infrared_dist_coeffs_cv_, rvecs[nearest_marker_idx], tvecs[nearest_marker_idx], marker_length_*0.5f);
 			//std::cout << "id " << i << " rot " << rvecs[i] << " tran " << tvecs[i] << "\n";
 			
 			nearest_marker_dist = min_dist;
@@ -5743,6 +5838,7 @@ void VisionArmCombo::cvTransformToEigenTransform(cv::Mat & cv_transform, Eigen::
 
 void VisionArmCombo::EigenTransformToCVTransform( Eigen::Matrix4d & eigen_transform, cv::Mat & cv_transform)
 {
+	cv_transform.create(4, 4, CV_64F);
 	for (int y = 0; y < 4; y++)
 		for (int x = 0; x < 4; x++)
 			cv_transform.at<double>(y, x) = eigen_transform(y, x);
@@ -5787,7 +5883,6 @@ void VisionArmCombo::scanAndProbeTest()
 	
 	getCurHandPose(cur_pose);
 
-	line_profiler_->m_vecProfileData.clear();
 	scanTranslateOnly(tran, scan_cloud, scan_acceleration_, scan_speed_);
 
 	vox_.setInputCloud(scan_cloud);
@@ -5819,7 +5914,6 @@ void VisionArmCombo::scanAndProbeTest()
 	Eigen::Matrix4f cur_pose1;
 	getCurHandPose(cur_pose1);
 
-	line_profiler_->m_vecProfileData.clear();
 	scanTranslateOnly(tran, scan_cloud1, scan_acceleration_, scan_speed_);
 
 	vox_.setInputCloud(scan_cloud1);
@@ -5904,7 +5998,6 @@ void VisionArmCombo::scanAndProbeTest()
 
 	tran[1] = -0.2;
 
-	line_profiler_->m_vecProfileData.clear();
 	scanTranslateOnly(tran, scan_cloud2, scan_acceleration_, scan_speed_);
 
 	vox_.setInputCloud(scan_cloud2);
@@ -5931,7 +6024,6 @@ void VisionArmCombo::scanAndProbeTest()
 
 	getCurHandPose(cur_pose);
 
-	line_profiler_->m_vecProfileData.clear();
 	scanTranslateOnly(tran, scan_cloud3, scan_acceleration_, scan_speed_);
 
 	vox_.setInputCloud(scan_cloud3);
@@ -5957,8 +6049,6 @@ void VisionArmCombo::scanAndProbeTest()
 
 	getCurHandPose(cur_pose);
 
-
-	line_profiler_->m_vecProfileData.clear();
 	scanTranslateOnly(tran, scan_cloud4, scan_acceleration_, scan_speed_);
 
 	vox_.setInputCloud(scan_cloud4);
@@ -6007,12 +6097,6 @@ int VisionArmCombo::sendRoboteqVar(int id, int value)
 
 bool VisionArmCombo::scanGrowthChamberWithKinect(int location_id, ArmConfig & imaging_config, bool add_to_occupancy_grid=false)
 {
-	if (kinect_thread_ == NULL)
-	{
-		std::cout << "Kinect not running\n";
-		return false;
-	}
-
 	float step = 45.f;
 
 	ArmConfig config(imaging_config);
@@ -6022,7 +6106,14 @@ bool VisionArmCombo::scanGrowthChamberWithKinect(int location_id, ArmConfig & im
 
 	for (int i = 0; i <3; i++)
 	{
-		if (/*i==1 &&*/ moveToConfigGetKinectPointCloud(config, true, true, add_to_occupancy_grid))
+
+		bool direct_path;
+		if (i == 0)
+			direct_path = false;
+		else
+			direct_path = true;
+
+		if (/*i==1 &&*/ moveToConfigGetPointCloud(config,  GET_POINT_CLOUD))
 		{
 			std::cout << "Scan idx " << i + 1<<"\n";
 		}
@@ -6060,7 +6151,7 @@ int VisionArmCombo::scanPlantCluster(cv::Vec3f &object_center, float max_z, floa
 		//std::cout << "hand translation: " << hand_translation.transpose() << "\n";
 
 		// move to the start scan pose
-		if (moveToConfigGetKinectPointCloud(solution_config_vec[0], false, true))
+		if (moveToConfigGetPointCloud(solution_config_vec[0]))
 		{
 			double vec[3];
 			vec[0] = hand_translation(0);
@@ -6081,7 +6172,6 @@ int VisionArmCombo::scanPlantCluster(cv::Vec3f &object_center, float max_z, floa
 			scan_start_hand_pose = curPose.cast<double>();
 
 			// Use laser scanner
-			line_profiler_->m_vecProfileData.clear();
 			scanTranslateOnly(vec, scan_cloud, scan_acceleration_, scan_speed_);
 
 	/*		viewer_->addPointCloud(scan_cloud, "scan_cloud", 0);
@@ -6163,7 +6253,7 @@ int VisionArmCombo::scanPlantCluster(cv::Vec3f &object_center, float max_z, floa
 	if (computeCollisionFreeProbeOrScanPose(point, normal, THERMAL, solution_config_vec, scan_start_hand_pose, hand_translation))
 	{
 		// move to the start scan pose
-		if (moveToConfigGetKinectPointCloud(solution_config_vec[0], false, true))
+		if (moveToConfigGetPointCloud(solution_config_vec[0]))
 		{
 			cv::Mat color_map, temperature_map;
 
@@ -6284,11 +6374,9 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 			return -1;
 		}
 
-#if 1
 		robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_arm_speed_, move_arm_acceleration_, true);
-#endif
 
-#if 1
+	#if 0
 		cur_rover_status = -1;
 		motor_controller_.GetValue(_VAR, 4, cur_rover_status);
 
@@ -6309,7 +6397,7 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 			return SUCCESS;
 		}
 
-		std::cout << "current rover status: " << cur_rover_status << "\n";
+		std::cout << "current rover status: " << cur_rover_status << std::endl;
 
 		//std::getchar();
 
@@ -6327,8 +6415,7 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 			Sleep(1000);
 		}
 
-		std::cout << "stop at door\n"; //std::getchar();
-
+		std::cout << "stop at door"<<std::endl; //std::getchar();
 
 		//check if arrive at the target chamber
 		if (target_chamber_id % 2 == 0)	//right side chamber
@@ -6347,7 +6434,7 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 				if (marker_id == target_chamber_id)	break;
 
 				if (++timeout_cnt > 20) {
-					std::cout << "Stop at door timeout\n";
+					std::cout << "Stop at door timeout" << std::endl;
 					return STOP_AT_DOOR_TIMEOUT;
 				}
 			}
@@ -6433,7 +6520,7 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 		//return 0;
 
 		//open door
-		controlChamberDoor(target_chamber_id, OPEN_DOOR);
+		controlChamber(target_chamber_id, OPEN_DOOR);
 
 		Sleep(5000);
 
@@ -6460,7 +6547,7 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 			}
 
 			if (++timeout_cnt > 10) {
-				std::cout << "Door failed to open.\n";
+				std::cout << "Door failed to open."<<std::endl;
 				return DOOR_OPEN_FAIL;
 			}
 
@@ -6468,9 +6555,15 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 		}
 
 		if (marker_id != target_chamber_id) {
-			std::cout << "See Chamber " << marker_id << " but target is " << target_chamber_id << "\n";
+			std::cout << "See Chamber " << marker_id << " but target is " << target_chamber_id << std::endl;
 			return STOP_AT_WRONG_DOOR;
 		}
+	#endif
+
+		// update motor controller script
+		sendRoboteqVar(7, cur_chamber_id_);
+
+		Sleep(100);
 
 		sendRoboteqVar(2, 1); //enter chamber
 
@@ -6486,10 +6579,10 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 			Sleep(1000);
 		}
 
-		std::cout << "stop in chamber\n"; //std::getchar();
+		std::cout << "stop in chamber" << std::endl; //std::getchar();
 
 		//close door
-		//controlChamberDoor(target_chamber_id, CLOSE_DOOR);
+		//controlChamber(target_chamber_id, CLOSE_DOOR);
 
 		Sleep(4000);
 
@@ -6505,12 +6598,10 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 			Sleep(1000);
 		}
 
-		std::cout << "reach chamber center location\n";
-
-#endif
+		std::cout << "reach chamber center location" << std::endl;
 
 		//check if door is close
-#if 0
+	#if 0
 		robot_arm_client_->moveHandJ(check_door_inside_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
 
 		timeout_cnt = 0;
@@ -6531,47 +6622,24 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 
 			Sleep(1000);
 		}
-#endif
+	#endif
 
 		//open curtain
-		controlChamberDoor(target_chamber_id, OPEN_CURTAIN);
-
-		robot_arm_client_->moveHandJ(check_curtain_config_.joint_pos_d, move_arm_speed_, move_arm_acceleration_, true);
-
-		Sleep(15000);
-#endif
-
-#if 1
-		//validate curtain open
-		timeout_cnt = 0;
-
-		while (1) {
-
-			Sleep(1000);
-			
-			marker_id = -1;
-			markerDetection(IR, marker_dist, marker_id);
-
-			if (marker_id == 0)	break;
-
-			if (++timeout_cnt > 20) {
-				std::cout << "Curtain open timeout\n";
-				return CURTAIN_OPEN_FAIL;
-			}
+		if (openOrCloseCurtain(cur_chamber_id_, CLOSE_CURTAIN) != SUCCESS)
+		{
+			return CURTAIN_OPEN_FAIL;
 		}
-
-		Sleep(2000);
+#endif
 	}
 
-	#endif
 
 	// assuming inside chamber, at center location, collect data
 #if 1
-	std::string cur_time_str = getCurrentDateTimeStr();
+	std::string folder_name = "C"+std::to_string(target_chamber_id) + "-" + getCurrentDateTimeStr();
 
-	std::wstring folder_name(cur_time_str.begin(), cur_time_str.end());
+	std::wstring folder_name_w(folder_name.begin(), folder_name.end());
 
-	data_saving_folder_ = L"Enviratron Data\\Chamber " + std::to_wstring(target_chamber_id) + L"\\" + folder_name + L"\\";
+	data_saving_folder_ = L"Enviratron_Data\\Chamber_" + std::to_wstring(target_chamber_id) + L"\\" + folder_name_w + L"\\";
 
 	std::cout << CreateDirectory(data_saving_folder_.c_str(), NULL);
 
@@ -6585,17 +6653,20 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 	plant_cluster_max_vec_.clear();
 	plant_cluster_max_vec_.resize(num_plants_);
 
-
-	mapWorkspaceUsingKinectArm(1, num_plants_);
+	mapWorkspace(1, num_plants_);
 
 	// plan path to check_curtain_config
-	moveToConfigGetKinectPointCloud(check_curtain_config_, false, true, false);
+	moveToConfigGetPointCloud(check_curtain_config_);
+
+	// upload data to server ASYNC
+	auto upload_thread = std::async(&ServerManager::uploadDirectory, &data_server_manager_, folder_name);
 #endif
 		
+#if 0
 	if (only_do_probing_ != 1)
 	{
 		// close curtain
-		controlChamberDoor(target_chamber_id, CLOSE_CURTAIN);
+		controlChamber(target_chamber_id, CLOSE_CURTAIN);
 		
 		// go to chamber center location
 		sendRoboteqVar(3, 1); //go to chamber center
@@ -6619,9 +6690,9 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 		robot_arm_client_->moveHandJ(check_door_inside_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
 
 		// open door
-		controlChamberDoor(target_chamber_id, OPEN_DOOR);
+		controlChamber(target_chamber_id, OPEN_DOOR);
 		Sleep(10);
-		controlChamberDoor(target_chamber_id, OPEN_DOOR);
+		controlChamber(target_chamber_id, OPEN_DOOR);
 
 		// wait for door open
 		Sleep(5000);
@@ -6637,7 +6708,7 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 
 			if (++timeout_cnt > 20) {
 
-				std::cout << "Door failed to close for exit!\n";
+				std::cout << "Door failed to close for exit!"<<std::endl;
 
 				return DOOR_OPEN_FAIL;
 			}
@@ -6691,16 +6762,23 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 			Sleep(1000);
 		}
 
-		controlChamberDoor(target_chamber_id, CLOSE_DOOR);
+		controlChamber(target_chamber_id, CLOSE_DOOR);
+	}
+#endif
+
+	if (upload_thread.get() != SUCCESS) {
+
+		std::string msg = "upload data error for chamber " + std::to_string(target_chamber_id) + "\n";
+		Utilities::to_log_file(msg);
 	}
 
 	return 0;
 
 
 #if 0
-	mapWorkspaceUsingKinectArm(2, num_plants_);
+	mapWorkspace(2, num_plants_);
 
-	if (!moveToConfigGetKinectPointCloud(safe_config, false, true, false))
+	if (!moveToConfigGetPointCloud(safe_config))
 	{
 		return;
 	}
@@ -6754,9 +6832,6 @@ void VisionArmCombo::TCPCalibrationErrorAnalysis(int numPoseNeeded)
 
 void VisionArmCombo::acquireRGBStereoPair()
 {
-	if (robot_arm_client_ == NULL) return;
-	if (kinect_thread_ == NULL)	return;
-
 	PointCloudT::Ptr laser_cloud(new PointCloudT);
 
 #if 1
@@ -6793,8 +6868,8 @@ void VisionArmCombo::acquireRGBStereoPair()
 	double baseline = 0.03;
 
 	cv::Size img_size_cv;
-	img_size_cv.height = kinect_thread_->cColorHeight;
-	img_size_cv.width = kinect_thread_->cColorWidth;
+	img_size_cv.height = rgb_cam_->img_height_;
+	img_size_cv.width = rgb_cam_->img_width_;
 
 	rgb_pose1(0, 3) = plate_center_[0];
 	rgb_pose1(1, 3) = plate_center_[1];
@@ -6817,7 +6892,7 @@ void VisionArmCombo::acquireRGBStereoPair()
 	//robot_arm_client_->waitTillHandReachDstPose(array6);
 	Sleep(1500);
 	
-	rgb1 = kinect_thread_->getCurRGB();
+	rgb1 = rgb_cam_->getRGB();
 
 
 	eigenMat4dToArray6(hand_pose2, array6);
@@ -6825,7 +6900,7 @@ void VisionArmCombo::acquireRGBStereoPair()
 	//robot_arm_client_->waitTillHandReachDstPose(array6);
 	Sleep(1500);
 
-	rgb2 = kinect_thread_->getCurRGB();
+	rgb2 = rgb_cam_->getRGB();
 
 	cv::Mat R, T, R1, R2, P1, P2, Q;
 	cv::Rect validRoi[2];
@@ -6834,8 +6909,8 @@ void VisionArmCombo::acquireRGBStereoPair()
 	T = cv::Mat::zeros(3, 1, CV_64F);
 	T.at<double>(0, 0) = baseline;
 
-	cv::stereoRectify(kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_,
-						kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_,
+	cv::stereoRectify(rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_,
+						rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_,
 						img_size_cv, R, T, R1, R2, P1, P2, Q,
 						cv::CALIB_ZERO_DISPARITY, 1, img_size_cv, &validRoi[0], &validRoi[1]);
 
@@ -6846,18 +6921,18 @@ void VisionArmCombo::acquireRGBStereoPair()
 	bool isVerticalStereo = fabs(P2.at<double>(1, 3)) > fabs(P2.at<double>(0, 3));
 
 	cv::Mat rmap[2][2];
-	initUndistortRectifyMap(kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, R1, P1, img_size_cv, CV_16SC2, rmap[0][0], rmap[0][1]);
-	initUndistortRectifyMap(kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, R2, P2, img_size_cv, CV_16SC2, rmap[1][0], rmap[1][1]);
+	initUndistortRectifyMap(rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_, R1, P1, img_size_cv, CV_16SC2, rmap[0][0], rmap[0][1]);
+	initUndistortRectifyMap(rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_, R2, P2, img_size_cv, CV_16SC2, rmap[1][0], rmap[1][1]);
 
 #if 0
-	initUndistortRectifyMap(kinect_rgb_camera_matrix_cv_, kinect_rgb_dist_coeffs_cv_, cv::Mat(), 
-							kinect_rgb_camera_matrix_cv_, img_size_cv, CV_16SC2, rmap[0][0], rmap[0][1]);
+	initUndistortRectifyMap(rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_, cv::Mat(), 
+							rgb_camera_matrix_cv_, img_size_cv, CV_16SC2, rmap[0][0], rmap[0][1]);
 
 	rmap[1][0] = rmap[0][0];
 	rmap[1][1] = rmap[0][1];
-	Q.at<double>(2, 3) = kinect_rgb_camera_matrix_cv_.at<double>(0, 0);
-	Q.at<double>(0, 3) = -kinect_rgb_camera_matrix_cv_.at<double>(0, 2);
-	Q.at<double>(1, 3) = -kinect_rgb_camera_matrix_cv_.at<double>(1, 2);
+	Q.at<double>(2, 3) = rgb_camera_matrix_cv_.at<double>(0, 0);
+	Q.at<double>(0, 3) = -rgb_camera_matrix_cv_.at<double>(0, 2);
+	Q.at<double>(1, 3) = -rgb_camera_matrix_cv_.at<double>(1, 2);
 	Q.at<double>(3, 2) = -1. / baseline;
 
 	std::cout << "Q" << Q << "\n";
@@ -7103,7 +7178,7 @@ bool VisionArmCombo::switchBetweenImagingAndProbing(int target_mode) {
 
 }
 
-void VisionArmCombo::controlChamberDoor(int chamber_id, int action)
+void VisionArmCombo::controlChamber(int chamber_id, int action)
 {
 	boost::asio::io_service io_service;
 	boost::asio::ip::udp::socket socket(io_service);
@@ -7118,17 +7193,25 @@ void VisionArmCombo::controlChamberDoor(int chamber_id, int action)
 	std::string command;
 
 	if (action == OPEN_DOOR)
-		command = "open door " + std::to_string(chamber_id) + " rover";
+		command = "open door ";
 	else if(action == CLOSE_DOOR)
-		command = "close door " + std::to_string(chamber_id) + " rover";
+		command = "close door ";
 	else if (action == OPEN_CURTAIN)
-		command = "open curtain " + std::to_string(chamber_id) + " rover";
+		command = "open curtain ";
 	else if (action == CLOSE_CURTAIN)
-		command = "close curtain " + std::to_string(chamber_id) + " rover";
+		command = "close curtain ";
+	else if (action == PAUSE_LIGHT)
+		command = "pause lighting ";
+	else if (action == RESUME_LIGHT)
+		command = "resume lighting ";
+
+	command += std::to_string(chamber_id) + " rover";
 
 	socket.send_to(boost::asio::buffer(command, command.size()), remote_endpoint, 0, err);
 
 	socket.close();
+
+	Sleep(100);
 }
 
 void VisionArmCombo::acquireHyperspectralCalibrationData()
@@ -7263,9 +7346,6 @@ void VisionArmCombo::acquireHyperspectralCalibrationData()
 		params.minArea = 20 * 20;
 		cv::Ptr<cv::FeatureDetector> blobDetect = cv::SimpleBlobDetector::create(params);
 
-		imageSize.width = kinect_thread_->cColorWidth;
-		imageSize.height = kinect_thread_->cColorHeight;
-
 		boardSize.width = 4;
 		boardSize.height = 11;
 
@@ -7275,8 +7355,6 @@ void VisionArmCombo::acquireHyperspectralCalibrationData()
 
 		// ASYMMETRIC CIRCLE GRID PATTERN
 		bool found = findCirclesGrid(img, boardSize, pointbuf, cv::CALIB_CB_ASYMMETRIC_GRID | cv::CALIB_CB_CLUSTERING, blobDetect);
-
-	
 
 		cv::Mat color;
 		cv::cvtColor(img, color, CV_GRAY2BGR);
@@ -7291,4 +7369,658 @@ void VisionArmCombo::acquireHyperspectralCalibrationData()
 		cv::waitKey(0);
 	}
 
+}
+
+void VisionArmCombo::initTOFCamera()
+{
+
+	tof_cam_ = new TOF_Swift();
+}
+
+void VisionArmCombo::initRGBCamera()
+{
+	rgb_cam_ = new BaslerRGB();
+}
+
+
+void VisionArmCombo::readOrUpdateChamberPotConfigurationFile(int operation)
+{
+	if (operation == READ_POT_CONFIG)
+	{
+		cv::FileStorage fs("chamber_pots_configuration.yml", cv::FileStorage::READ);
+
+		fs["pot_diameter_vec_"] >> pot_diameter_vec_;
+
+		//std::cout << pot_diameter_vec_ << "\n";
+
+		pot_position_vec_.resize(num_chambers_);
+
+		for (int i = 0; i < num_chambers_; i++) {
+
+			std::string name = "pot_position_" + std::to_string(i);
+
+			fs[name] >> pot_position_vec_[i];
+
+			//	std::cout << pot_position_vec_[i] << "\n";
+		}
+
+		fs.release();
+	}
+	else if (operation == UPDATE_POT_CONFIG)
+	{
+		cv::FileStorage fs("chamber_pots_configuration.yml", cv::FileStorage::WRITE);
+
+		fs << "pot_diameter_vec_ " << pot_diameter_vec_;
+
+		for (int i = 0; i < num_chambers_; i++) {
+
+			std::string name = "pot_position_" + std::to_string(i);
+
+			fs << name << pot_position_vec_[i];
+		}
+
+		fs.release();
+	}
+}
+
+int VisionArmCombo::imagePotsTopView()
+{
+	cv::Mat pot_pos = pot_position_vec_[cur_chamber_id_ - 1];
+
+	const float pot_diameter = pot_diameter_vec_[cur_chamber_id_ - 1];
+
+	const float pot_height = 0.22f;
+
+	ArmConfig imaging_config;
+
+	// image pots column by column
+	for (int x = 0; x < pot_pos.cols; x++)
+	{
+		// traverse pots like a snake, faster
+		for (int y = 0; y < pot_pos.rows; y++)
+		{
+			int y_snake = x % 2 == 0 ? y : pot_pos.rows - y - 1;
+
+			cv::Vec3f pot_xyz = pot_pos.at<cv::Vec3f>(y_snake, x);
+
+			double distance_to_pot;
+
+			int plant_id = Utilities::gridID2PotID(x, y, pot_pos.rows);
+
+			PointCloudT::Ptr plant_cloud(new PointCloudT);
+			Eigen::Vector4f plant_centroid;
+
+			// first use depth camera to image pot and refine pot z
+#if 1
+			if (tof_cam_ != NULL && computeImageConfigforPot(pot_xyz, pot_diameter, infrared_camera_matrix_cv_, hand_to_depth_, imaging_config, distance_to_pot))
+			{
+				moveToConfigGetPointCloud(imaging_config, GET_POINT_CLOUD);
+				
+				pcl::CropBox<PointT> crop_box;
+				float radius = pot_diameter*0.6;
+				crop_box.setInputCloud(tof_cloud_);
+				crop_box.setMin(Eigen::Vector4f(pot_xyz[0] - radius, pot_xyz[1] - radius, chamber_floor_z_, 1.f));
+				crop_box.setMax(Eigen::Vector4f(pot_xyz[0] + radius, pot_xyz[1] + radius, 2.0f, 1.f));
+				crop_box.filter(*plant_cloud);
+
+
+				//viewer_->removeAllPointClouds(); viewer_->addPointCloud(plant_cloud, "plant"); display();
+				
+				pcl::compute3DCentroid(*plant_cloud, plant_centroid);
+
+				Eigen::Vector4f min, max;
+				pcl::getMinMax3D(*plant_cloud, min, max);
+
+				if (max(2) > pot_xyz[2])
+				{
+					//std::cout << "updated plant centroid z" << plant_centroid(2)<<" original: "<<pot_xyz[2] << std::endl;
+					pot_xyz[2] = max(2);
+					pot_position_vec_[cur_chamber_id_ - 1].at<cv::Vec3f>(y_snake, x)[2] = max(2);
+					readOrUpdateChamberPotConfigurationFile(UPDATE_POT_CONFIG);
+				}
+
+				if (computeImageConfigforPot(pot_xyz, pot_diameter, infrared_camera_matrix_cv_, hand_to_depth_, imaging_config, distance_to_pot))
+				{
+					moveToConfigGetPointCloud(imaging_config, GET_POINT_CLOUD);
+
+					Eigen::Matrix4d camera_pose; getCurHandPoseD(camera_pose);
+
+					camera_pose = camera_pose*hand_to_depth_;
+
+					cv::Mat ir_img, ir_img_16u, depth_img_16u;
+
+					ir_img_16u = tof_cam_->getIR16U();
+
+					depth_img_16u = tof_cam_->getDepth16U();
+
+					saveTOFImageData(plant_id, camera_pose, ir_img_16u, depth_img_16u);
+
+					ir_img = tof_cam_->getIR();
+
+					cv::imshow("ir", ir_img);
+					cv::waitKey(view_time_);
+				}
+			}
+#endif 
+
+#if 1
+			if (rgb_cam_ != NULL && computeImageConfigforPot(pot_xyz, pot_diameter, rgb_camera_matrix_cv_, hand_to_rgb_, imaging_config, distance_to_pot))
+			{
+				moveToConfigGetPointCloud(imaging_config);
+
+				Eigen::Matrix4d camera_pose; getCurHandPoseD(camera_pose);
+
+				camera_pose = camera_pose*hand_to_rgb_;
+
+				cv::Mat rgb_img = rgb_cam_->getRGB();
+
+				saveRGBImageData(plant_id, camera_pose, rgb_img);
+
+				cv::Mat tmp;
+				cv::resize(rgb_img, tmp, cv::Size(), 0.2, 0.2);
+
+				cv::imshow("rgb", tmp); cv::waitKey(view_time_);
+			}
+#endif
+
+#if 1
+			if (thermocam_ != NULL && computeImageConfigforPot(pot_xyz, pot_diameter, flir_thermal_camera_matrix_cv_, hand_to_thermal_d_, imaging_config, distance_to_pot))
+			{
+				moveToConfigGetPointCloud(imaging_config);
+				
+				cv::Mat color_map, temperature_map;
+
+				if (thermocam_->isConnected) {
+
+					Eigen::Matrix4d camera_pose; getCurHandPoseD(camera_pose);
+
+					camera_pose = camera_pose*hand_to_thermal_d_;
+
+					unsigned char focus_dist_cm = (unsigned char)(distance_to_pot*100.);
+
+					thermocam_->snapShot(color_map, temperature_map, focus_dist_cm);
+
+					saveThermalImageData(plant_id, camera_pose, color_map, temperature_map);
+
+					cv::imshow("thermal", color_map);
+					cv::waitKey(view_time_);
+				}
+			}
+#endif
+
+#if 0
+			if (plant_cloud->size() > 100)
+			{
+				// turn light off
+
+				double scan_angle;
+				if (pot_xyz[0] > 0.7f)
+					scan_angle = -30. / 180. * M_PI;
+				else if (pot_xyz[0] < -0.7f)
+					scan_angle = 30. / 180. * M_PI;
+				else
+					scan_angle = 0.;
+
+				double radius = pot_diameter*0.6f;
+			
+				Eigen::Vector4f min, max;
+				pcl::getMinMax3D(*plant_cloud, min, max);
+
+				std::cout << "plant min " << min.transpose() << "\nmax " << max.transpose() << "\n";
+
+				if (max(2) > chamber_floor_z_ + pot_height && max(2) < 0.5f)
+				{
+					Eigen::Vector3d min(pot_xyz[0] - radius, pot_xyz[1] - radius, chamber_floor_z_);
+					Eigen::Vector3d max(pot_xyz[0] + radius, pot_xyz[1] + radius, max(2));
+
+					PointCloudT::Ptr cloud(new PointCloudT);
+
+					computeLineScanConfigforPot(min, max, scan_angle, cloud);
+				}
+			}
+#endif	
+
+
+		}
+	}
+
+	
+
+	return SUCCESS;
+}
+
+void VisionArmCombo::createBoxCloud(Eigen::Vector3f min, Eigen::Vector3f max, float resolution, PointCloudT::Ptr cloud)
+{
+	for (float x = min(0); x <= max(0); x += resolution)
+	{
+		for (float y = min(1); y <= max(1); y += resolution)
+		{
+			for (float z = min(2); z <= max(2); z += resolution)
+			{
+				PointT p;
+				p.x = x;
+				p.y = y;
+				p.z = z;
+				p.r = p.g = p.b = 255;
+				cloud->push_back(p);
+			}
+		}
+	}
+}
+
+bool VisionArmCombo::computeImageConfigforPot(cv::Vec3f & pot_xyz, float pot_diameter, cv::Mat & camera_intrinsic, Eigen::Matrix4d & hand_to_camera, ArmConfig & imaging_config, double & dist_to_pot)
+{
+	const float chamber_center_y = -0.7f;
+
+	bool imaging_pose_found = false;
+
+	Eigen::Vector3f camera_moving_dir(-pot_xyz[0], chamber_center_y - pot_xyz[1], 0.);
+	camera_moving_dir.normalize();
+
+	double best_config_array6[6];
+
+	dist_to_pot = 0.75*pot_diameter*std::max(camera_intrinsic.at<double>(0, 0) / camera_intrinsic.at<double>(0, 2),
+											camera_intrinsic.at<double>(1, 1) / camera_intrinsic.at<double>(1, 2));
+
+	// minimum camera to plant distance 0.15 m
+	dist_to_pot = std::max(dist_to_pot, 0.15);
+
+	// try multiple camera poses. Start from right above, then move away from the walls
+	for (float offset = 0.f; offset < pot_diameter && !imaging_pose_found; offset += 0.05f)
+	{
+		//try rotate around z axis
+		float best_angle = std::numeric_limits<float>().max();
+
+		for (float angle = -140./180.*M_PI; angle <= 141. / 180.*M_PI; angle += 10.f / 180.f*M_PI)
+		{
+			Eigen::Matrix4d rot = Eigen::Matrix4d::Identity();
+			rot.block<3, 3>(0, 0) = Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitZ()).matrix();
+
+			Eigen::Matrix4d camera_pose = Eigen::Matrix4d::Identity();
+			camera_pose(0, 0) = 1.;
+			camera_pose(1, 1) = -1.;
+			camera_pose(2, 2) = -1.;
+			camera_pose(0, 3) = pot_xyz[0] + camera_moving_dir(0)*offset;
+			camera_pose(1, 3) = pot_xyz[1] + camera_moving_dir(1)*offset;;
+			camera_pose(2, 3) = pot_xyz[2] + dist_to_pot;
+
+			camera_pose = camera_pose*rot;
+
+			Eigen::Matrix4d hand_pose = camera_pose*hand_to_camera.inverse();
+
+			ArmConfig arm_config;
+
+			if (checkHandPoseReachable(hand_pose, arm_config))
+			{
+				if (std::abs(angle) < std::abs(best_angle))
+				{
+					best_angle = angle;
+
+					std::memcpy((uchar*)best_config_array6, (uchar*)arm_config.joint_pos_d, sizeof(double)*num_joints_);
+
+					imaging_pose_found = true;
+				}
+			}
+		}
+	}
+
+	if (imaging_pose_found)
+	{
+		imaging_config.setJointPos(best_config_array6[0], best_config_array6[1], best_config_array6[2],
+			best_config_array6[3], best_config_array6[4], best_config_array6[5]);
+	}
+
+	return imaging_pose_found;
+}
+
+int VisionArmCombo::mapPotPosition(PointCloudT::Ptr cloud_in_arm_base)
+{
+	// keep points above shelf 
+	PointCloudT::Ptr cloud(new PointCloudT);
+
+	pcl::CropBox<PointT> crop_box;
+	crop_box.setInputCloud(cloud_in_arm_base);
+	crop_box.setMin(Eigen::Vector4f( -1.15f, -1.1f, shelf_z_, 1.f));
+	crop_box.setMax(Eigen::Vector4f(  1.15f, -0.4, 1.28f, 1.f));
+	crop_box.filter(*cloud);
+
+	std::string save_path(data_saving_folder_.begin(), data_saving_folder_.end());
+	save_path.append("top_view_mapping.pcd");
+
+	if (cloud->size() != 0)
+		pcl::io::savePCDFileBinary(save_path, *cloud);
+	else
+	{
+		Utilities::to_log_file("top_view_mapping cloud empty");
+		return EMPTY_POINT_CLOUD;
+	}
+
+	pcl::VoxelGrid<PointT> vox;
+	vox.setInputCloud(cloud);
+	vox.setLeafSize(0.02f, 0.02f, 0.02f);
+	PointCloudT downsample_cloud;
+	vox.filter(downsample_cloud);
+
+	// opencv kmeans
+	std::vector<cv::Point3f> cv_points(downsample_cloud.points.size());
+
+	int index = 0;
+	for (auto & p:downsample_cloud.points)
+	{
+		cv::Point3f point;
+		point.x = p.x;
+		point.y = p.y;
+		point.z = -0.55f;		// distance between soil and base, project point cloud to x-y plane to get pot center (x,y)
+		cv_points[index++] = point;
+	}
+
+	int num_plants = pot_position_vec_[cur_chamber_id_ - 1].cols*pot_position_vec_[cur_chamber_id_ - 1].rows;
+
+	cv::Mat labels, pot_centers_cv;
+
+	//pot_centers dimension rows: number of plants, cols: 3 (x,y,z)
+	cv::kmeans(cv_points, num_plants, labels, cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 40, 0.001), 10, cv::KMEANS_PP_CENTERS, pot_centers_cv);
+
+	// copy from cv::Mat to std::vector
+	std::vector<cv::Vec3f> pot_center_vec_;
+	pot_center_vec_.resize(num_plants);
+	for (int i = 0; i < pot_center_vec_.size(); i++)
+		pot_center_vec_[i] = pot_centers_cv.at<cv::Vec3f>(i, 0);
+
+	int pot_rows = pot_position_vec_[cur_chamber_id_ - 1].rows;
+	int pot_cols = pot_position_vec_[cur_chamber_id_ - 1].cols;
+
+	std::sort(pot_center_vec_.begin(), pot_center_vec_.end(), VisionArmCombo::pot_center_y_comparator);
+
+	for (int i = 0; i < pot_rows; i++)
+		std::sort(pot_center_vec_.begin() + pot_cols*i, pot_center_vec_.begin() + pot_cols*(i + 1), VisionArmCombo::pot_center_x_comparator);
+
+	// update 
+	pot_position_vec_[cur_chamber_id_ - 1].create(pot_rows, pot_cols, CV_32FC3);
+
+	crop_box.setInputCloud(cloud);
+
+	for (int i = 0; i < pot_center_vec_.size(); i++) {
+		int x = i % pot_cols;
+		int y = i / pot_cols;
+
+		cv::Vec3f pot_xyz = pot_center_vec_[i];
+
+		pot_position_vec_[cur_chamber_id_ - 1].at<cv::Vec3f>(y, x) = pot_xyz;
+
+		const float radius = pot_diameter_vec_[cur_chamber_id_ - 1] * 0.5f;
+
+		crop_box.setMin(Eigen::Vector4f(pot_xyz[0] - radius, pot_xyz[1] - radius, pot_xyz[2] - 1.0, 1.f));
+
+		crop_box.setMax(Eigen::Vector4f(pot_xyz[0] + radius, pot_xyz[1] + radius, pot_xyz[2] + 1.0, 1.f));
+
+		std::vector<int> pot_point_indices;
+
+		crop_box.filter(pot_point_indices);
+
+		Eigen::Vector4f min, max;
+
+		pcl::PointIndices indices;
+		indices.indices = pot_point_indices;
+
+		pcl::getMinMax3D(*cloud, indices, min, max);
+
+	/*	float average_height = 0.f;
+
+		for (auto idx : pot_point_indices)
+			average_height += cloud->points[idx].z;
+
+		average_height /= pot_point_indices.size();
+*/
+		// update pot center z
+		pot_position_vec_[cur_chamber_id_ - 1].at<cv::Vec3f>(y, x)[2] = max(2);
+
+		unsigned char r, g, b;
+		r = std::rand() / 255;
+		g = std::rand() / 255;
+		b = std::rand() / 255;
+
+		for (auto idx : pot_point_indices)
+		{
+			cloud->points[idx].r = r;
+			cloud->points[idx].g = g;
+			cloud->points[idx].b = b;
+		}
+	}
+
+	readOrUpdateChamberPotConfigurationFile(UPDATE_POT_CONFIG);
+
+	viewer_->removeAllPointClouds();
+	viewer_->addPointCloud(cloud, "cloud");
+	viewer_ -> spin();
+	display();
+
+	return SUCCESS;
+}
+
+int VisionArmCombo::saveThermalImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & color_map, cv::Mat & temperature_map)
+{
+	std::string time_str = getCurrentDateTimeStr();
+
+	std::string save_path(data_saving_folder_.begin(), data_saving_folder_.end());
+
+	std::string false_color = save_path + "thermo_" + std::to_string(plant_id) + "_" + time_str + ".jpg";
+
+	std::string temperature = save_path + "thermo_64F_" + std::to_string(plant_id) + "_" + time_str + ".bin";
+
+	cv::imwrite(false_color, color_map);
+
+	std::ofstream out(temperature, std::ios::out | std::ios::binary);
+
+	out.write((char*)temperature_map.data, 640 * 480 * sizeof(double));
+
+	out.close();
+
+	cv::Mat camera_pose_cv; EigenTransformToCVTransform(camera_pose, camera_pose_cv);
+
+	std::string pose_file_name = save_path + "thermo_pose_" + std::to_string(plant_id) + "_" + time_str + ".yml";
+	cv::FileStorage fs(pose_file_name, cv::FileStorage::WRITE);
+
+	fs << "thermal_camera_pose" << camera_pose_cv;
+
+	fs.release();
+
+	return SUCCESS;
+}
+
+int VisionArmCombo::saveRGBImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & rgb_img)
+{
+	std::string time_str = getCurrentDateTimeStr();
+
+	std::string save_path(data_saving_folder_.begin(), data_saving_folder_.end());
+
+	std::string rgb_name = save_path + "rgb_" + std::to_string(plant_id)+ "_"+ time_str + ".jpg";
+
+	cv::imwrite(rgb_name, rgb_img);
+
+	cv::Mat camera_pose_cv; EigenTransformToCVTransform(camera_pose, camera_pose_cv);
+
+	std::string pose_file_name = save_path + "rgb_pose_" + std::to_string(plant_id) + "_" + time_str + ".yml";
+	cv::FileStorage fs(pose_file_name, cv::FileStorage::WRITE);
+
+	fs << "rgb_camera_pose" << camera_pose_cv;
+
+	fs.release();
+
+	return SUCCESS;
+}
+
+int VisionArmCombo::saveTOFImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & ir_img_16u, cv::Mat & depth_img_16u)
+{
+	std::string time_str = getCurrentDateTimeStr();
+
+	std::string save_path(data_saving_folder_.begin(), data_saving_folder_.end());
+
+	std::string ir_name = save_path + "ir_" + std::to_string(plant_id) + "_" + time_str + ".bin";
+
+	std::string depth_name = save_path + "depth_" + std::to_string(plant_id) + "_" + time_str + ".bin";
+
+	std::ofstream out(ir_name, std::ios::out | std::ios::binary);
+
+	out.write((char*)ir_img_16u.data, tof_cam_->img_size_ * sizeof(unsigned short));
+
+	out.close();
+
+	out.open(depth_name, std::ios::out | std::ios::binary);
+
+	out.write((char*)depth_img_16u.data, tof_cam_->img_size_ * sizeof(unsigned short));
+
+	out.close();
+
+	cv::Mat camera_pose_cv; EigenTransformToCVTransform(camera_pose, camera_pose_cv);
+
+	std::string pose_file_name = save_path + "depth_pose_" + std::to_string(plant_id) + "_" + time_str + ".yml";
+	cv::FileStorage fs(pose_file_name, cv::FileStorage::WRITE);
+
+	fs << "depth_camera_pose" << camera_pose_cv;
+
+	fs.release();
+
+	return SUCCESS;
+}
+
+bool VisionArmCombo::checkHandPoseReachable(Eigen::Matrix4d & hand_pose, ArmConfig & target_config)
+{
+	std::vector<int> ik_sols_vec;
+
+	inverseKinematics(hand_pose, ik_sols_vec);
+
+	for (auto idx : ik_sols_vec)
+	{
+		double* sol_d = ik_sols_ + idx*num_joints_;
+
+		target_config.setJointPos(sol_d[0], sol_d[1], sol_d[2], sol_d[3], sol_d[4], sol_d[5]);
+
+		// test if there is a path to go there
+		if (moveToConfigGetPointCloud(target_config, DISABLE_MOVE | DISABLE_SMOOTH_PATH))
+			return true;
+	}
+
+	return false;
+}
+
+bool VisionArmCombo::computeLineScanConfigforPot(Eigen::Vector3d & min, Eigen::Vector3d & max, double scan_angle, PointCloudT::Ptr cloud)
+{
+	robot_arm_client_->laserScannerLightControl(true);
+
+	double step_y = 0.18;
+
+	double x_range = std::abs(max(0) - min(0));
+		
+	double y = 0.5*(min(1) + max(1));
+
+	double x = min(0) + 0.3*std::sin(scan_angle);
+
+	double z = max(2) + 0.3*std::cos( std::abs(scan_angle) );
+
+	ArmConfig start_config, end_config;
+	bool start_pose_reachable = false;
+	bool end_pose_reachable = false;
+
+	Eigen::Matrix4d scanner_start_pose, test_hand_pose, final_start_hand_pose, final_end_hand_pose;
+	scanner_start_pose.col(0) << 0., 1., 0., 0.; //x->y_base
+	scanner_start_pose.col(1) << 1., 0., 0., 0.;	//y->x_base
+	scanner_start_pose.col(2) << 0., 0., -1., 0.;	//z->-z_base
+	scanner_start_pose.col(3) << x, y, z, 1.0;
+
+	Eigen::Matrix4d rot = Eigen::Matrix4d::Identity();
+	rot.block<3, 3>(0, 0) = Eigen::AngleAxisd(scan_angle, Eigen::Vector3d::UnitX()).matrix();
+
+	scanner_start_pose = scanner_start_pose*rot;
+
+	scanner_start_pose = scanner_start_pose*hand_to_scanner_.inverse();
+
+	std::cout << "scanner_start_pose\n" << scanner_start_pose << std::endl;
+	
+	start_pose_reachable = checkHandPoseReachable(scanner_start_pose, start_config);
+
+	Eigen::Matrix4d scanner_end_pose = scanner_start_pose;
+	scanner_end_pose(0, 3) += x_range;
+
+	std::cout << "scanner_end_pose\n" << scanner_end_pose << std::endl;
+
+	end_pose_reachable = checkHandPoseReachable(scanner_end_pose, end_config);
+
+	std::cout << "start_pose_reachable " << start_pose_reachable << " \nend_pose_reachable " << end_pose_reachable << std::endl;
+
+	if (start_pose_reachable && end_pose_reachable)
+	{
+		double vec3d[] = { x_range, 0., 0.};
+		moveToConfigGetPointCloud(start_config, VIEW_PATH);
+
+		scanTranslateOnly(vec3d, cloud, scan_acceleration_, scan_speed_);
+
+		PointCloudT::Ptr cloud_in_base(new PointCloudT);
+
+		pcl::transformPointCloud(*cloud, *cloud_in_base, (scanner_start_pose*hand_to_scanner_).cast<float>());
+
+		viewer_->addPointCloud(cloud_in_base, "laser");
+		display();
+	}
+
+	robot_arm_client_->laserScannerLightControl(false);
+	return true;
+}
+
+bool VisionArmCombo::checkHandPoseReachableAlongAxis(Eigen::Matrix4d & start_hand_pose, double step, double range, Eigen::Matrix4d & result_hand_pose)
+{
+	// search along x to find the first reachable scan start pose
+	for (float offset_x = 0; offset_x <=range; offset_x += std::abs(step))
+	{
+		Eigen::Matrix4d test_pose = start_hand_pose;
+
+		if (start_hand_pose(0, 3) > 0.) 
+			test_pose(0, 3) -= offset_x;
+		else 
+			test_pose(0, 3) += offset_x;
+
+		ArmConfig arm_config;
+		
+		if (checkHandPoseReachable(test_pose, arm_config))
+		{
+			result_hand_pose = test_pose;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+int VisionArmCombo::openOrCloseCurtain(int chamber_id, int option)
+{
+	if (option != OPEN_CURTAIN && option != CLOSE_CURTAIN)
+		return WRONG_OPTION;
+	
+	controlChamber(chamber_id, option);
+
+	moveToConfigGetPointCloud(check_curtain_config_);
+
+	tof_cam_->setPower(256);
+
+	cv::Mat ir;
+
+	while (1)
+	{
+		ir = tof_cam_->getDepth16U();
+		
+		float screen_dist = cv::mean(ir).val[0];	// unit 0.1mm
+
+		std::cout << screen_dist << std::endl;
+
+		if (option == OPEN_CURTAIN && screen_dist > 10000.f)
+			break;
+		else if (option == CLOSE_CURTAIN && screen_dist < 3000.f)
+			break;
+
+		Sleep(5000);
+	}
+
+	//Sleep(5000);
+
+	return SUCCESS;
 }
