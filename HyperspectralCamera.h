@@ -17,8 +17,12 @@
 #include <iostream>
 #include <vector>
 #include <mutex>
+#include <atomic>
 
 #define LICENSE_PATH L"C:/Users/Public/Documents/Specim/SpecSensor.lic"
+
+#define CALIBRATION 0
+#define DATA_COLLECTION 1
 
 using namespace std;
 
@@ -31,6 +35,8 @@ struct HyperspectralCamera {
 	SI_H g_hDevice_ = 0;
 
 	static std::vector<std::vector<unsigned char>> frames_;
+
+	static std::vector<cv::Mat> scanlines_;
 
 	double dFrameRate_;
 
@@ -54,7 +60,7 @@ struct HyperspectralCamera {
 
 	static cv::Mat img_8uc3_;
 
-	static unsigned int frame_count_;
+	static std::atomic<unsigned int> frame_count_;
 
 	int frame_data_size_;
 
@@ -71,11 +77,13 @@ struct HyperspectralCamera {
 	
 	void init();
 
-	void start();
+	void start(int options = DATA_COLLECTION);
 
 	void stop();
 
 	static int onDataCallback(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_64 _nFrameNumber, void* _pContext);
+
+	static int onDataCallbackAverageSpectral(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_64 _nFrameNumber, void* _pContext);
 
 	cv::Mat getLastestFrame();
 

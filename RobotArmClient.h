@@ -18,7 +18,7 @@
 #include <mutex>
 #include <atomic>
 #include <cmath>
-
+#include "utilities.h"
 
 // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
 #pragma comment (lib, "Ws2_32.lib")
@@ -26,7 +26,7 @@
 #pragma comment (lib, "AdvApi32.lib")
 
 
-#define DEFAULT_BUFLEN 2048
+#define DEFAULT_BUFLEN 1 << 14
 //#define DEFAULT_PORT "30002"	//10HZ
 #define DEFAULT_PORT "30003" // real time client 125HZ
 
@@ -37,9 +37,9 @@ struct RobotArmClient
 	struct addrinfo *result;
 	struct addrinfo *ptr;
 	struct addrinfo	hints;
-	char recvbuf[DEFAULT_BUFLEN];
+	char *recvbuf;
 	int iResult;
-	int recvbuflen = DEFAULT_BUFLEN;
+	const int recvbuflen = DEFAULT_BUFLEN;
 
 	//robot hand cartesion info
 	double cur_cartesian_info_array[6];
@@ -58,9 +58,11 @@ struct RobotArmClient
 
 	std::atomic<double> distanceToDst_;
 
-	std::atomic<float> tcp_speed_;
+	std::atomic<UINT64> safety_mode_;
 
-	double distanceToDstConfig_;
+	std::atomic<double> tcp_speed_;
+
+	std::atomic<double> distanceToDstConfig_;
 
 	std::vector<std::thread> URMsgHandler;
 
@@ -68,14 +70,12 @@ struct RobotArmClient
 
 	bool TCP_ALIVE;
 
-	UINT64 safety_mode_;
-
 	RobotArmClient();
+
+	~RobotArmClient();
 
 	void startRecvTCP();
 	
-	//void closeTCP();
-
 	void getCartesianInfo(double* array6);
 
 	void getTCPSpeed(double* array6);
@@ -94,7 +94,7 @@ struct RobotArmClient
 
 	int moveHandL(double* dst_cartesian_info, float acceleration, float speed, bool wait2dst = true);
 
-	int moveHandJ(double* dst_joint_config, float speed, float acceleration, bool wait2dst);
+	int moveHandJ(double* dst_joint_config, float speed, float acceleration, bool wait2dst = true);
 
 	void printCartesianInfo(double* array6);
 
@@ -114,7 +114,7 @@ struct RobotArmClient
 
 	void setStartPoseXYZ();
 
-	void waitTillTCPMove();
+	double waitTillTCPMove(double target_speed = 0.01);
 
 	void rotateJointRelative(int id, double deg, float acceleration, float speed);
 

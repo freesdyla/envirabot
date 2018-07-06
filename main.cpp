@@ -15,11 +15,12 @@ int main(int argc, char**argv)
 	
 	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer_(new pcl::visualization::PCLVisualizer);
 	viewer_->addCoordinateSystem(0.1);
-	VisionArmCombo::PointCloudT::Ptr cloud_(new VisionArmCombo::PointCloudT);
 
 	camh.setPower(300);
 
 	while (true) {
+
+		VisionArmCombo::PointCloudT::Ptr cloud_(new VisionArmCombo::PointCloudT);
 
 		camh.getPointCloud(cloud_);
 
@@ -36,21 +37,11 @@ int main(int argc, char**argv)
 	std::getchar();
 
 	camh.stop();
+	return 0;
 #endif
 	
-#if 0
-	while (true) {
-
-		UINT64 safety_mode = vac.robot_arm_client_->getSafetyMode();
-
-		std::cout << std::hex<<safety_mode << "\n";
-
-		Sleep(1000);
-
-	}
-#endif
-
-	//vac.acquireHyperspectralCalibrationData();
+	
+	//vac.hyperspectralCameraCalibration(); std::getchar(); exit(0);
 	
 #if 0
 	float dist;
@@ -61,28 +52,15 @@ int main(int argc, char**argv)
 	return 0;
 #endif
 
+	//vac.moveToConfigGetPointCloud(vac.home_config_); exit(-1);
+
+	//vac.checkDoorFullyOpen(1); std::getchar(); exit(0);
+
 	//std::cout << "send rover\n";	std::getchar();
-	vac.sendRoverToChamber(vac.cur_chamber_id_); std::getchar();
-
-	// go to chamber test
-	//while (1) {		vac.sendRoverToChamber(vac.cur_chamber_id);}
-#if 0
-
-	std::cout << "any key to go to chamber 1\n";
+	for (int i = vac.cur_chamber_id_; i <= 8; i++)
+		vac.sendRoverToChamber(i);
+	
 	std::getchar();
-
-	for (int i = 0; i < 100; i++) {
-		std::cout << "round " << i + 1 << "\n";
-		if (vac.sendRoverToChamber(1) != SUCCESS) {
-			std::cout << "error\n";
-			break;
-		}
-	}
-
-	std::cout << "end\n";
-	std::getchar();
-#endif
-
 
 #if 0
 	double array6[6] = {0.015, -0.538, 0.02, M_PI, 0., 0.};

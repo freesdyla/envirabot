@@ -182,7 +182,7 @@ void PathPlanner::blockCells(PointT & point_in_arm_base)
 		// check out of boundary
 		if (x >= grid_width_ || x<0 || y >= grid_depth_ || y<0 || z >= grid_height_ || z<0)
 		{
-			std::cout << "out of bound" << point_in_arm_base << "\n";
+			//std::cout << "out of bound" << point_in_arm_base << "\n";
 			return;
 		}
 

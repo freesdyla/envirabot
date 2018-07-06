@@ -103,6 +103,9 @@
 #define STOP_AT_DOOR_TIMEOUT -7
 #define WRONG_OPTION -8
 
+#define ENTER_CHAMBER 1
+#define EXIT_CHAMBER 2
+
 //moveToConfig
 #define GET_POINT_CLOUD				1 << 0
 #define DISABLE_DIRECT_PATH			1 << 1
@@ -336,7 +339,7 @@ struct VisionArmCombo
 
 	std::vector<std::vector<pcl::PointXYZRGBNormal>> leaf_probing_pn_vector_;
 
-	ArmConfig home_config_, home_config_right_, check_door_inside_config_;
+	ArmConfig home_config_, home_config_right_, check_door_inside_config_, check_door_open_outside_left_config_, check_door_open_outside_right_config_;
 	ArmConfig check_curtain_config_, map_chamber_front_config_, between_chamber_airlock_config_;
 
 	int num_plants_ = 1;
@@ -393,6 +396,16 @@ struct VisionArmCombo
 
 	bool remap_pot_position_ = true;
 
+	bool multi_work_position_ = true;
+
+	cv::Mat pot_processed_map_;
+	int cur_processing_pot_x_;
+	int cur_processing_pot_y_;
+
+	float pot_height_ = 0.22f;
+
+	std::map<int, float> work_pos_offset_map_ = { {0, -0.49f}, {2, 0.66f} };
+
 	VisionArmCombo();
 
 	~VisionArmCombo();
@@ -431,7 +444,7 @@ struct VisionArmCombo
 
 	void scanTranslateOnly(double * vec3d, PointCloudT::Ptr cloud, float acceleration, float speed);
 
-	void scanTranslateOnlyHyperspectral(double * vec3d, float acceleration, float speed);
+	void scanTranslateOnlyHyperspectral(double * vec3d, cv::Vec6d & start_scan_hand_pose, float acceleration, float speed);
 
 	void scanLine(PointCloudT::Ptr & cloud);
 
@@ -447,7 +460,7 @@ struct VisionArmCombo
 
 	void pp_callback(const pcl::visualization::PointPickingEvent& event, void*);
 
-	int mapWorkspace(int rover_position, int num_plants);
+	int mapWorkspace(int rover_position);
 
 	void addArmModelToViewer(std::vector<PathPlanner::RefPoint> & ref_points);
 
@@ -545,7 +558,7 @@ struct VisionArmCombo
 
 	int sendRoboteqVar(int id, int value);
 
-	void acquireHyperspectralCalibrationData();
+	void hyperspectralCameraCalibration();
 
 	void initTOFCamera();
 
@@ -553,7 +566,7 @@ struct VisionArmCombo
 
 	void readOrUpdateChamberPotConfigurationFile(int operation = UPDATE_POT_CONFIG);
 
-	int imagePotsTopView();
+	int imagePotsTopView(int rover_position = 1);
 
 	void createBoxCloud(Eigen::Vector3f min, Eigen::Vector3f max, float resolution, PointCloudT::Ptr cloud);
 
@@ -575,6 +588,18 @@ struct VisionArmCombo
 	bool checkHandPoseReachableAlongAxis(Eigen::Matrix4d & start_hand_pose, double step, double range, Eigen::Matrix4d & result_hand_pose);
 
 	int openOrCloseCurtain(int chamber_id, int option);
+
+	int enterOrExitChamber(int chamber_id, int option);
+
+	int waitTillReachRoverStatus(int rover_status);
+
+	int waitTillReachPositionInChamber(int target_position);
+
+	int getChamberConfig(int chamber_id);
+
+	void solveHandEyeCalibration(std::vector<Eigen::Matrix4d*> & camera_pose_vec, std::vector<Eigen::Matrix4d*> & tcp_pose_vec, Eigen::Matrix4d & T);
+
+	void solveLinearCameraCalibration(std::vector<std::vector<cv::Point2d>> &image_points_vec, std::vector<cv::Point3d> &corners);
 };
 
 

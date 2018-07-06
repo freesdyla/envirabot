@@ -117,28 +117,40 @@ int ServerManager::makeServerDirectory(std::string path)
 	return 0;
 }
 
-int ServerManager::uploadDirectory(std::string folder_name)
+int ServerManager::uploadDirectory(std::string folder_name, std::string experiment_name)
 {
 	std::vector<std::string> str_vec;
-	boost::split(str_vec, folder_name, boost::is_any_of("-"));
+	boost::split(str_vec, folder_name, boost::is_any_of("_"));
 
 	std::string chamber_name;
 
 	if (str_vec.size() == 8)
 	{
-		chamber_name = "Chamber_" + str_vec.front().substr(1, 1);
+		chamber_name = "chamber_" + str_vec.front().substr(1, 1);
 	}
 	else
 		return -1;
 
-	std::string absolute_path = data_root_dir_ + chamber_name + "\\" + folder_name;
+	std::string absolute_path = data_root_dir_  + chamber_name + "\\" + folder_name;
 
-	std::string linux_server_dir = chamber_name + "/" + folder_name;
+	std::string linux_server_dir = experiment_name +"/" + chamber_name + "/" + folder_name;
+
+//	std::cout << linux_server_dir << std::endl;
 
 	makeServerDirectory(linux_server_dir);
 
-	for (auto & p : boost::filesystem::recursive_directory_iterator(absolute_path)) {
+//	linux_server_dir += "/" + chamber_name;
+//	std::cout << linux_server_dir << std::endl;
 
+//	makeServerDirectory(linux_server_dir);
+
+//	linux_server_dir += "/" + folder_name;
+//	std::cout << linux_server_dir << std::endl;
+
+//	makeServerDirectory(linux_server_dir);
+
+	for (auto & p : boost::filesystem::recursive_directory_iterator(absolute_path)) 
+	{
 		std::vector<std::string> strs;
 
 		boost::split(strs, p.path().string(), boost::is_any_of("\\"));
@@ -162,7 +174,7 @@ int ServerManager::uploadDirectory(std::string folder_name)
 		}
 		else {	//this is a file
 
-			std::string dest = "/home/rover/" + chamber_name + "/"+ folder_name + "/"+ strs.back();
+			std::string dest = "/home/rover/" + experiment_name + "/" + chamber_name + "/"+ folder_name + "/"+ strs.back();
 
 			FILE *file;
 
@@ -210,15 +222,15 @@ int ServerManager::uploadDirectory(std::string folder_name)
 			}
 		}
 
-		std::cout << p << std::endl;
+		std::cout << strs.back() << std::endl;
 	}
 	
 	return 0;
 }
 
-int ServerManager::createNewThreadToUploadDirectory(std::string folder_name, std::string chamber_name)
+int ServerManager::createNewThreadToUploadDirectory(std::string folder_name, std::string chamber_name, std::string experiment_name)
 {
-	auto upload_thread = std::async(&ServerManager::uploadDirectory, this, folder_name);
+	auto upload_thread = std::async(&ServerManager::uploadDirectory, this, folder_name, experiment_name);
 
 	return upload_thread.get();
 }

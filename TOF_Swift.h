@@ -45,8 +45,6 @@ public:
 	std::vector<std::thread> thread_vec_;
 	bool streaming_ = false;
 
-	cv::Mat cv_multiplier_x_, cv_multiplier_y_, cv_multiplier_z_;
-
 	PointCloudT::Ptr cloud_;
 
 	std::mutex update_mutex_;

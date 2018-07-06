@@ -308,6 +308,7 @@ int RoboteqDevice::GetValue(int operatingItem, int index, int &result)
 	string response;
 	char command[10];
 	char args[50];
+	result = -1;
 
 	if(operatingItem < 0 || operatingItem > 255)
 		return RQ_INVALID_OPER_ITEM;

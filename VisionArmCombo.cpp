@@ -8,50 +8,34 @@ VisionArmCombo::VisionArmCombo() :
 {
 //	pp_.PRMCEPreprocessing(); pp_.savePathPlanner("pp"); std::getchar(); exit(0);
 
-	//auto upload_thread = std::async(&ServerManager::uploadDirectory, &data_server_manager_, "C3_2018-6-17-11-3-45-514"); upload_thread.get();  exit(0);
+	//auto upload_thread = std::async(&ServerManager::uploadDirectory, &data_server_manager_, "c1_2018_6_28_13_58_39_562", "experiment"); upload_thread.get();  exit(0);
+	//	float Fo, Fm, FvFm, qP, qL, qN, NPQ, YNPQ, YNO, F, FmPrime, PAR, YII, ETR, FoPrime;
+	//	MiniPamActPlusYield(Fo, Fm, FvFm, qP, qL, qN, NPQ, YNPQ, YNO, F, FmPrime, PAR, YII, ETR, FoPrime);
 
-	//initRobotArmClient();
-	initVisionCombo();
-
-	initTOFCamera();
-
-//	float Fo, Fm, FvFm, qP, qL, qN, NPQ, YNPQ, YNO, F, FmPrime, PAR, YII, ETR, FoPrime;
-
-//	MiniPamActPlusYield(Fo, Fm, FvFm, qP, qL, qN, NPQ, YNPQ, YNO, F, FmPrime, PAR, YII, ETR, FoPrime);
-
-#if 1
-
-//	initRaman();
-/*	raman_->getSpectrum(0, 7000);
+	//	initRaman();
+	/*	raman_->getSpectrum(0, 7000);
 	raman_->saveLastSpectrum("raman.csv");
 
 	raman_->getSpectrum(1, 7000);
 	raman_->saveLastSpectrum("raman_ir.csv");
 	*/
 
-	#if 0
-	initHyperspectralCam();	// must disconnect flir ethernet before specim is connected
-	#endif
+	initVisionCombo();
 
-	#if 1
-	//std::cout << "hyperspectral init done. Press key to continue.\n";
-	//std::getchar();
+//	initHyperspectralCam();	// must disconnect flir ethernet before specim is connected
+
+	//std::cout << "hyperspectral init done. Press key to continue.\n"; std::getchar();
 	initThermoCam();
-	#endif
-
-	//initRGBCamera();
-
-	//initLineProfiler();
+	initTOFCamera();
+	initRGBCamera();
+	initLineProfiler();
 
 #ifdef ENABLE_PP
 	if (!pp_.loadPathPlanner("pp"))	std::cout << "load path planner fail\n";
-
 	//for (int i = 1; i<pp_.num_nodes_; i += 2) viewPlannedPath(pp_.random_nodes_buffer_ + (i - 1) * 6, pp_.random_nodes_buffer_ + i * 6); return;
 #endif
 
 	initRobotArmClient();
-#endif
-
 
 #if 0
 	PointCloudT::Ptr tmp_point_cloud(new PointCloudT);
@@ -90,14 +74,17 @@ VisionArmCombo::~VisionArmCombo()
 
 void VisionArmCombo::initVisionCombo()
 {
-	home_config_.setJointPos(-131., -5., -135., -40., 31., -180.);
+	home_config_.setJointPos(-131., -5., -135., -40., 70., -180.);
 	home_config_.toRad();
 
-	home_config_right_.setJointPos(-131., -5., -135., -40., 18., -180.);
+	home_config_right_.setJointPos(-131., -5., -135., -40., 0., -180.);
 	home_config_right_.toRad();
 
 	check_door_inside_config_.setJointPos(-180., -5., -135., -40., 0., -180.);
 	check_door_inside_config_.toRad();
+
+	check_door_open_outside_left_config_.setJointPos(-163., -62., -152., 52., 88., -180.);
+	check_door_open_outside_left_config_.toRad();
 
 	check_curtain_config_.setJointPos(-90., -10., -119., -48., 90., -180.);
 	check_curtain_config_.toRad();
@@ -309,10 +296,6 @@ void VisionArmCombo::initVisionCombo()
 		fs["region_grow_num_neighbors_"] >> region_grow_num_neighbors_;
 		fs["region_grow_min_cluster_size_"] >> region_grow_min_cluster_size_;
 		fs["region_grow_max_cluster_size_"] >> region_grow_max_cluster_size_;
-		fs["plate_center_x_"] >> plate_center_[0];
-		fs["plate_center_y_"] >> plate_center_[1];
-		fs["plate_center_z_"] >> plate_center_[2];
-		fs["plate_radius_"] >> plate_radius_;
 		double f;
 		fs["laser_scan_frequency_"] >> f;
 		laser_scan_period_ = 1.0 / f;
@@ -322,7 +305,6 @@ void VisionArmCombo::initVisionCombo()
 		fs["move_arm_acceleration_"] >> move_arm_acceleration_;
 		fs["move_joint_speed_"] >> move_joint_speed_;
 		fs["move_joint_acceleration_"] >> move_joint_acceleration_;
-		fs["view_time_"] >> view_time_;
 		fs["seed_resolution_"] >> seed_resolution_;
 		fs["spatial_importance_"] >> spatial_importance_;
 		fs["normal_importance_"] >> normal_importance_;
@@ -330,16 +312,6 @@ void VisionArmCombo::initVisionCombo()
 		fs["sor_std_"] >> sor_std_;
 		fs["ror_radius_"] >> ror_radius_;
 		fs["ror_num_"] >> ror_num_;
-		fs["plant_center_x_"] >> plant_center_[0];
-		fs["plant_center_y_"] >> plant_center_[1];
-		fs["plant_center_z_"] >> plant_center_[2];
-		fs["min_point_AABB_x_"] >> min_point_AABB_(0);
-		fs["min_point_AABB_y_"] >> min_point_AABB_(1);
-		fs["min_point_AABB_z_"] >> min_point_AABB_(2);
-		fs["max_point_AABB_x_"] >> max_point_AABB_(0);
-		fs["max_point_AABB_y_"] >> max_point_AABB_(1);
-		fs["max_point_AABB_z_"] >> max_point_AABB_(2);
-		fs["only_do_probing_"] >> only_do_probing_;
 		fs["num_plants_"] >> num_plants_;
 		fs["hyperspectral_imaging_dist_"] >> hyperspectral_imaging_dist_;
 		fs["max_samples_per_leaf_"] >> max_samples_per_leaf_;
@@ -349,6 +321,9 @@ void VisionArmCombo::initVisionCombo()
 		fs["cur_chamber_id_"] >> cur_chamber_id_;
 		fs["vis_z_range_"] >> vis_z_range_;
 		fs["remap_pot_position_"] >> remap_pot_position_;
+		fs["only_do_probing_"] >> only_do_probing_;
+		fs["view_time_"] >> view_time_;
+		fs["multi_work_position_"] >> multi_work_position_;
 	}
 	fs.release();
 
@@ -954,7 +929,7 @@ void VisionArmCombo::calibrateGripperTip(int numPoseNeeded)
 */
 void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, float acceleration, float speed)
 {
-	if (acceleration == 0 || speed == 0)
+	if (acceleration < 1e-7 || speed < 1e-7)
 	{
 		std::cout << "acceleration or speed = 0\n";
 		return;
@@ -998,19 +973,19 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 	// register point cloud
 	cloud->clear();
 
-	int num_profiles = line_profiler_->m_vecProfileData.size();
+	const int num_profiles = line_profiler_->m_vecProfileData.size();
 
-	double sync_speed = sqrt(tcp_sync_speed[0] * tcp_sync_speed[0] + tcp_sync_speed[1] * tcp_sync_speed[1] + tcp_sync_speed[2] * tcp_sync_speed[2]);
+	const double sync_speed = sqrt(tcp_sync_speed[0] * tcp_sync_speed[0] + tcp_sync_speed[1] * tcp_sync_speed[1] + tcp_sync_speed[2] * tcp_sync_speed[2]);
 
 	std::cout <<"tcp sync speed: "<<sync_speed<< "\n";
 
 	std::cout << "num profiles: " << num_profiles << std::endl;
 
-	Eigen::Matrix4f startPose;
-	Eigen::Matrix4f endPose;
+	Eigen::Matrix4d startPose;
+	Eigen::Matrix4d endPose;
 
-	array6ToEigenMat4(curPoseD, startPose);
-	array6ToEigenMat4(endPoseD, endPose);
+	array6ToEigenMat4d(curPoseD, startPose);
+	array6ToEigenMat4d(endPoseD, endPose);
 
 	double sync_distance = robot_arm_client_->EuclideanDistance(curPoseD, sync_pose);
 
@@ -1027,7 +1002,7 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 
 
 	// express motion vector in base frame
-	Eigen::Vector3f motionVector( endPoseD[0] - curPoseD[0],
+	Eigen::Vector3d motionVector( endPoseD[0] - curPoseD[0],
 							      endPoseD[1] - curPoseD[1],
 								  endPoseD[2] - curPoseD[2] );
 
@@ -1040,21 +1015,21 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 	m = m*Eigen::AngleAxisf(0.5*M_PI, Eigen::Vector3f::UnitZ());
 	motionVector = m.transpose()*motionVector;*/
 
-	motionVector = (handToScanner_.block<3,3>(0,0)).transpose()*(startPose.block<3, 3>(0, 0)).transpose()*motionVector;
+	motionVector = (hand_to_scanner_.block<3,3>(0,0)).transpose()*(startPose.block<3, 3>(0, 0)).transpose()*motionVector;
 
 	//std::cout << "motion vector in sensor frame:" << motionVector << std::endl;
 
-	float magnitude = motionVector.norm();
+	const double magnitude = motionVector.norm();
 
-	Eigen::Vector3f motionDelta = motionVector / (num_profiles - 1);
+	Eigen::Vector3d motionDelta = motionVector / (num_profiles - 1);
 
 	//std::cout << "motion delta:" << motionDelta << std::endl;
 
 	//std::cout << "x start: " << line_profiler_->m_profileInfo.lXStart << " pitch: " << line_profiler_->m_profileInfo.lXPitch << "\n";
 
-	float distance = 0.f;
+	double distance = 0.f;
 
-	float time = 0.f;
+	double time = 0.f;
 
 	time = sync_speed / acceleration;
 
@@ -1064,15 +1039,15 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 
 	std::cout << "start time from dist: " << time << "\n";
 
-	const float start_cruise_time = speed/acceleration;
+	const double start_cruise_time = speed/acceleration;
 
-	const float stop_cruise_time = start_cruise_time + (magnitude -start_cruise_time*start_cruise_time*acceleration)/speed;
+	const double stop_cruise_time = start_cruise_time + (magnitude -start_cruise_time*start_cruise_time*acceleration)/speed;
 
-	const float cruise_time = stop_cruise_time - start_cruise_time;
+	const double cruise_time = stop_cruise_time - start_cruise_time;
 
-	const float total_time = start_cruise_time + stop_cruise_time;
+	const double total_time = start_cruise_time + stop_cruise_time;
 
-	const float acceleration_total_distance = 0.5f*acceleration*start_cruise_time*start_cruise_time;
+	const double acceleration_total_distance = 0.5f*acceleration*start_cruise_time*start_cruise_time;
 	
 	motionVector.normalize();
 
@@ -1088,7 +1063,7 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 		time += laser_scan_period_;
 
 		// the offset maybe be related to scan speed
-		Eigen::Vector3f displacement = motionVector*(distance + speed_correction_);
+		Eigen::Vector3d displacement = motionVector*(distance + speed_correction_);
 
 		for (int j = 10; j < 790; j++)
 		{
@@ -1096,7 +1071,7 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 
 			point.z = line_profiler_->m_vecProfileData[i].m_pnProfileData[j] * (-1e-8f);
 
-			if (abs(point.z) < 0.140f)
+			if (abs(point.z) < 0.148f)
 			{
 				point.y = displacement(1);
 				point.x = (float)(line_profiler_->m_profileInfo.lXStart + j*line_profiler_->m_profileInfo.lXPitch)*(1e-8f) + displacement(0);
@@ -1111,7 +1086,7 @@ void VisionArmCombo::scanTranslateOnly(double * vec3d, PointCloudT::Ptr  cloud, 
 		}
 	}
 
-	std::cout << "point cloud size: " << cloud->size() << std::endl;
+	std::cout << "laser cloud size: " << cloud->size() << std::endl;
 }
 
 // assuming already moved to the first pose
@@ -1364,13 +1339,8 @@ assume robot arm already at start pose
 vec3d: motion vector in base frame
 cloud: PCL point cloud to save the data
 */
-void VisionArmCombo::scanTranslateOnlyHyperspectral(double * vec3d, float acceleration, float speed)
+void VisionArmCombo::scanTranslateOnlyHyperspectral(double * vec3d, cv::Vec6d & start_scan_hand_pose, float acceleration, float speed)
 {
-	if (acceleration == 0 || speed == 0)
-	{
-		std::cout << "acceleration or speed = 0\n";
-		return;
-	}
 
 	if (robot_arm_client_ == NULL || hypercam_ == NULL)
 	{
@@ -1379,9 +1349,7 @@ void VisionArmCombo::scanTranslateOnlyHyperspectral(double * vec3d, float accele
 	}
 
 	//start imaging
-	hypercam_->frames_.clear();
-	hypercam_->frame_count_ = 0;
-	hypercam_->start();
+	hypercam_->start(CALIBRATION);
 
 
 	double curPoseD[6];
@@ -1398,26 +1366,42 @@ void VisionArmCombo::scanTranslateOnlyHyperspectral(double * vec3d, float accele
 	while (hypercam_->frame_count_ == 0) 
 		Sleep(2);
 
-	robot_arm_client_->setStartPoseXYZ();
 	robot_arm_client_->moveHandL(endPoseD, acceleration, speed, false);
-	robot_arm_client_->waitTillTCPMove();
+	const double final_speed = robot_arm_client_->waitTillTCPMove(speed*0.99);
 
-	unsigned int start_frame_count = hypercam_->frame_count_;
+//	robot_arm_client_->moveHandL(endPoseD, acceleration, speed, true); hypercam_->stop(); return;
+
+	unsigned int start_frame_count = hypercam_->frame_count_.load();
 
 	robot_arm_client_->getCartesianInfo(sync_pose);
 	robot_arm_client_->getTCPSpeed(tcp_sync_speed);
 
 	robot_arm_client_->waitTillHandReachDstPose(endPoseD);
 
-	unsigned int stop_frame_count = hypercam_->frame_count_;
+	unsigned int stop_frame_count = hypercam_->frame_count_.load();
 
 	hypercam_->stop();
 
-	int num_profiles = hypercam_->frames_.size();
+	for (int i = 0; i < 6; i++)
+		start_scan_hand_pose[i] = sync_pose[i];
+
+	int num_profiles = hypercam_->scanlines_.size();
 
 	std::cout << "num frames: " << num_profiles << std::endl;
 
+	std::cout << "final_speed " << final_speed << std::endl;
+
 	std::cout << "start frame count: " << start_frame_count << " stop frame count: "<<stop_frame_count<<std::endl;
+
+	// trim end
+	hypercam_->scanlines_.erase(hypercam_->scanlines_.begin() + stop_frame_count - 1, hypercam_->scanlines_.end());
+
+	// trim beginning
+	hypercam_->scanlines_.erase(hypercam_->scanlines_.begin(), hypercam_->scanlines_.begin() + start_frame_count - 1);
+
+	std::cout << "after erase num frames: " << hypercam_->scanlines_.size() << "\n";
+
+	return; 
 
 	// trim end
 	hypercam_->frames_.erase(hypercam_->frames_.begin() + stop_frame_count - 1, hypercam_->frames_.end());
@@ -1662,118 +1646,148 @@ std::string VisionArmCombo::getCurrentDateTimeStr()
 
 	char currentTime[84] = "";
 
-	std::sprintf(currentTime, "%d-%d-%d-%d-%d-%d-%d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+	std::sprintf(currentTime, "%d_%d_%d_%d_%d_%d_%d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
 
 	return std::string(currentTime);
 }
 
 
 
-
-/*
-	register point cloud in robot base frame in growth chamber
-*/
-
-int VisionArmCombo::mapWorkspace(int rover_position, int num_plants)
+int VisionArmCombo::mapWorkspace(int rover_position)
 {
 	growthChamberPointCloudVec_[rover_position]->clear();
 
-	tof_cam_->setPower(2600);
+	if(tof_cam_ != NULL)
+		tof_cam_->setPower(2600);
 
 #ifdef ENABLE_PP
 	pp_.resetOccupancyGrid();
 
-	#if 1
-	PointCloudT::Ptr window_side_panel(new PointCloudT);
+	if (rover_position != 1)
+	{
+		PointCloudT::Ptr window_side_panel(new PointCloudT);
 
-	if (rover_position == 2)
-		createBoxCloud(Eigen::Vector3f(0.44f, -0.3f, -0.44f), Eigen::Vector3f(0.85f, -0.21f, 1.14f), 0.01f, window_side_panel);
-	else if (rover_position == 0)
-		createBoxCloud(Eigen::Vector3f(-0.85f, -0.3f, -0.44f), Eigen::Vector3f(-0.44f, -0.21f, 1.14f), 0.01f, window_side_panel);
+		Eigen::Vector3f min_side_panel, max_side_panel, min_side_window, max_side_window;
 
-	if(rover_position != 1)
+		float sign;
+
+		if (rover_position == 2)
+			sign = 1.0f;
+		else if (rover_position == 0)
+			sign = -1.0f;
+
+		// window side 
+		min_side_window << sign*1.2f - 0.18f - work_pos_offset_map_.at(rover_position), -0.3f - 0.05f, 0.45f - 0.8f;
+		max_side_window << sign*1.2f + 0.18f - work_pos_offset_map_.at(rover_position), -0.3f + 0.05f, 0.45f + 0.8f;
+
+		// chamber side panel
+		min_side_panel << sign*1.2f - 0.05f - work_pos_offset_map_.at(rover_position), -0.7f - 0.4f, 0.17f - 1.4f;
+		max_side_panel << sign*1.2f + 0.05f - work_pos_offset_map_.at(rover_position), -0.7f + 0.4f, 0.17f + 1.4f;
+
+		// window side
+		createBoxCloud(min_side_window, max_side_window, 0.01f, window_side_panel);
+
+		// chamber side wall
+		createBoxCloud(min_side_panel, max_side_panel, 0.01f, window_side_panel);
+
 		pp_.addPointCloudToOccupancyGrid(window_side_panel);
+	}
+	
 	//showOccupancyGrid();
-	#endif
 #endif
 
 	tof_cloud_->clear();
 
-
 	// map growth chamber from airlock to see if the robot arm can go in
 	bool imaging_in_chamber_ok = true;
-	
+
+
+	if (rover_position == 1) // center
+	{
+
 #if 0
-	
-	std::cout << "map chamber front side\n";
-	moveToConfigGetPointCloud(map_chamber_front_config_, GET_POINT_CLOUD);
+		std::cout << "map chamber front side\n";
+		moveToConfigGetPointCloud(map_chamber_front_config_, GET_POINT_CLOUD);
 #endif 
 
-	//moveToConfigGetPointCloud(between_chamber_airlock_config_, TRY_DIRECT_PATH | MOVE | SMOOTH_PATH);
+		//moveToConfigGetPointCloud(between_chamber_airlock_config_, TRY_DIRECT_PATH | MOVE | SMOOTH_PATH);
 
-	if (!imaging_in_chamber_ok)
-	{
-		// image plants from airlock
+		if (!imaging_in_chamber_ok)
+		{
+			// image plants from airlock
 
-
-		return -1;
-	}
-
-	if (remap_pot_position_) 
-	{
-		PointCloudT::Ptr chamber_cloud(new PointCloudT);
-
-		ArmConfig mapping_config;
-
-		Eigen::Matrix4d tof_cam_pose;
-		
-		tof_cam_pose.col(0) << 1., 0., 0., 0.;
-		tof_cam_pose.col(1) << 0., -1., 0., 0.;
-		tof_cam_pose.col(2) << 0., 0., -1., 0.;
-		tof_cam_pose.col(3) << 0., -0.7, 0.7, 1.;
-
-		float step = 0.6f;
-
-		for (float x = -step; x <= step*1.1f; x += step) {
-
-			tof_cam_pose(0, 3) = x;
-
-			Eigen::Matrix4d hand_pose = tof_cam_pose*hand_to_depth_.inverse();
-
-			if (checkHandPoseReachable(hand_pose, mapping_config))
-			{
-				moveToConfigGetPointCloud(mapping_config, GET_POINT_CLOUD | VIEW_PATH);
-
-				*chamber_cloud += *tof_cloud_;
-			}
-
+			return -1;
 		}
 
-		viewer_->addPointCloud(chamber_cloud, "chamber_cloud");
+		if (remap_pot_position_)
+		{
+			PointCloudT::Ptr chamber_cloud(new PointCloudT);
+
+			ArmConfig mapping_config;
+
+			Eigen::Matrix4d tof_cam_pose;
+
+			tof_cam_pose.col(0) << 1., 0., 0., 0.;
+			tof_cam_pose.col(1) << 0., -1., 0., 0.;
+			tof_cam_pose.col(2) << 0., 0., -1., 0.;
+			tof_cam_pose.col(3) << 0., -0.7, 0.7, 1.;
+
+			float step = 0.6f;
+
+			for (float x = -step; x <= step*1.1f; x += step) {
+
+				tof_cam_pose(0, 3) = x;
+
+				Eigen::Matrix4d hand_pose = tof_cam_pose*hand_to_depth_.inverse();
+
+				if (checkHandPoseReachable(hand_pose, mapping_config))
+				{
+					moveToConfigGetPointCloud(mapping_config, GET_POINT_CLOUD | VIEW_PATH);
+
+					*chamber_cloud += *tof_cloud_;
+				}
+
+			}
+
+			viewer_->addPointCloud(chamber_cloud, "chamber_cloud");
 
 
 #if 0
-		std::cout << "map pot position..." << std::endl;
+			std::cout << "map pot position..." << std::endl;
 
-		for (int i = 0; i < imaging_config_vec_vec_[rover_position].size(); i++)
-		{
-			moveToConfigGetPointCloud(imaging_config_vec_vec_[rover_position][i], GET_POINT_CLOUD);
-		}
+			for (int i = 0; i < imaging_config_vec_vec_[rover_position].size(); i++)
+			{
+				moveToConfigGetPointCloud(imaging_config_vec_vec_[rover_position][i], GET_POINT_CLOUD);
+			}
 #endif
 
-		// no data
-		if (chamber_cloud->points.size() < 100) return EMPTY_POINT_CLOUD;
+			// no data
+			if (chamber_cloud->points.size() < 100) return EMPTY_POINT_CLOUD;
 
-		*growthChamberPointCloudVec_[rover_position] += *tof_cloud_;
+			*growthChamberPointCloudVec_[rover_position] += *tof_cloud_;
 
-		mapPotPosition(chamber_cloud);
+			mapPotPosition(chamber_cloud);
+		}
 	}
 
-	tof_cam_->setPower(600);
+	if (rover_position == 2)	//left
+	{
 
-	imagePotsTopView();
+	}
+	else if (rover_position == 0)	//right
+	{
 
-	tof_cam_->setPower(2600);
+
+	}
+
+
+	if(tof_cam_ != NULL)
+		tof_cam_->setPower(600);
+
+	imagePotsTopView(rover_position);
+
+	if (tof_cam_ != NULL)
+		tof_cam_->setPower(2600);
 
 #if 0
 	if (rover_position != 1)
@@ -1877,8 +1891,6 @@ int VisionArmCombo::mapWorkspace(int rover_position, int num_plants)
 	}
 	#endif
 #endif
-
-//	moveToConfigGetPointCloud(between_chamber_airlock_config_);
 
 }
 
@@ -2373,7 +2385,8 @@ void VisionArmCombo::addOBBArmModelToViewer(std::vector<PathPlanner::OBB> & arm_
 
 		std::string name = "cube" + std::to_string(j);
 		viewer_->addCube(cube_coeff,name);
-		if(j < 9) viewer_->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_OPACITY, 0.25, name);
+		//if(j < 12) 
+		viewer_->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_OPACITY, 0.2, name);
 
 		Eigen::Affine3f transform;
 		Eigen::Matrix4f temp_mat = Eigen::Matrix4f::Identity();
@@ -5726,7 +5739,11 @@ int VisionArmCombo::markerDetection(int rgb_or_ir, float & nearest_marker_dist, 
 
 		std::vector<cv::Vec3d> rvecs, tvecs;
 
-		cv::aruco::estimatePoseSingleMarkers(markerCorners, marker_length_, rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_, rvecs, tvecs);
+		if(rgb_or_ir == RGB)
+			cv::aruco::estimatePoseSingleMarkers(markerCorners, marker_length_, rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_, rvecs, tvecs);
+		else
+			cv::aruco::estimatePoseSingleMarkers(markerCorners, marker_length_, infrared_camera_matrix_cv_, infrared_dist_coeffs_cv_, rvecs, tvecs);
+
 
 		cv::aruco::drawDetectedMarkers(img_rgb, markerCorners, markerIds);
 
@@ -6358,431 +6375,107 @@ int VisionArmCombo::scanPlantCluster(cv::Vec3f &object_center, float max_z, floa
 // assumes rover is not inside any chamber
 int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 {
+	if (target_chamber_id < 0 || target_chamber_id > 8) {
+		std::cout << "invalid chamber id\n";
+		return -1;
+	}
+
 	int timeout_cnt = 0;
-	int cur_location_in_chamber = -1;
 	int cur_rover_status = -1;
 
 	float marker_dist = 1e10f;
 	int marker_id = -1;
 
+#define COLLECT_DATA
+
 	if (only_do_probing_ != 1)
-	{
-#if 1
-		if (target_chamber_id < 0 || target_chamber_id > 8) {
+	{		
+		controlChamber(target_chamber_id, CLOSE_DOOR);
+		
+		moveToConfigGetPointCloud(home_config_);
 
-			std::cout << "invalid chamber id\n";
-			return -1;
-		}
-
-		robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_arm_speed_, move_arm_acceleration_, true);
-
-	#if 0
 		cur_rover_status = -1;
-		motor_controller_.GetValue(_VAR, 4, cur_rover_status);
-
-		if (target_chamber_id == 0) {
-
-			sendRoboteqVar(1, target_chamber_id); //go to target chamber id
-
-			while (true)
-			{
-				//read current stop
-				motor_controller_.GetValue(_VAR, 4, cur_rover_status);
-
-				if (cur_rover_status == STOP_ON_MAIN) break;
-
-				Sleep(1000);
-			}
-
-			return SUCCESS;
-		}
-
-		std::cout << "current rover status: " << cur_rover_status << std::endl;
-
-		//std::getchar();
 
 		sendRoboteqVar(1, target_chamber_id); //go to target chamber id
 
-		while (true)
-		{
-			//read current stop
-			motor_controller_.GetValue(_VAR, 4, cur_rover_status);
+		waitTillReachRoverStatus(STOP_AT_DOOR);
 
-			//std::cout << "cur_rover_status: " << cur_rover_status << "\n";
-
-			if (cur_rover_status == STOP_AT_DOOR) break;
-
-			Sleep(1000);
-		}
-
-		std::cout << "stop at door"<<std::endl; //std::getchar();
-
-		//check if arrive at the target chamber
-		if (target_chamber_id % 2 == 0)	//right side chamber
-		{
-			robot_arm_client_->moveHandJ(home_config_right_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-
-			timeout_cnt = 0;
-
-			while (1) {
-
-				Sleep(1000);
-
-				marker_id = -1;
-				markerDetection(RGB, marker_dist, marker_id, 3.f);
-
-				if (marker_id == target_chamber_id)	break;
-
-				if (++timeout_cnt > 20) {
-					std::cout << "Stop at door timeout" << std::endl;
-					return STOP_AT_DOOR_TIMEOUT;
-				}
-			}
-
-			if (marker_id != target_chamber_id) {
-
-				robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-
-				timeout_cnt = 0;
-
-				while (1) {
-
-					Sleep(1000);
-
-					marker_id = -1;
-					markerDetection(RGB, marker_dist, marker_id, 3.f);
-
-					if (marker_id == target_chamber_id)	break;
-
-					if (++timeout_cnt > 20) {
-						std::cout << "Stop at door timeout\n";
-						return STOP_AT_DOOR_TIMEOUT;
-					}
-				}
-
-				if (marker_id != target_chamber_id) {
-
-					std::cout << "stop at wrong door\n";
-					return STOP_AT_WRONG_DOOR;
-				}
-			}
-		}
-		else // left side chamber
-		{
-			robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-
-			timeout_cnt = 0;
-
-			while (1) {
-
-				Sleep(1000);
-
-				marker_id = -1;
-				markerDetection(RGB, marker_dist, marker_id, 3.f);
-
-				if (marker_id == target_chamber_id)	break;
-
-				if (++timeout_cnt > 20) {
-					std::cout << "Stop at door timeout\n";
-					return STOP_AT_DOOR_TIMEOUT;
-				}
-			}
-
-			if (marker_id != target_chamber_id) {
-
-				robot_arm_client_->moveHandJ(home_config_right_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-
-				timeout_cnt = 0;
-
-				while (1) {
-
-					Sleep(1000);
-
-					marker_id = -1;
-					markerDetection(RGB, marker_dist, marker_id, 3.f);
-
-					if (marker_id == target_chamber_id)	break;
-
-					if (++timeout_cnt > 20) {
-						std::cout << "Stop at door timeout\n";
-						return STOP_AT_DOOR_TIMEOUT;
-					}
-				}
-
-				if (marker_id != target_chamber_id) {
-
-					std::cout << "stop at wrong door\n";
-					return STOP_AT_WRONG_DOOR;
-				}
-			}
-		}
-
-		//return 0;
-
-		//open door
-		controlChamber(target_chamber_id, OPEN_DOOR);
-
-		Sleep(5000);
-
-		//TODO validate door is open using marker
-		timeout_cnt = 0;
-
-		while (1) {
-
-			marker_dist = -1.f;
-			marker_id = -1;
-			markerDetection(RGB, marker_dist, marker_id);
-
-			if (marker_id % 2 != 0) {	//left side chambers
-
-				// door open
-				if (marker_dist > 1.1f && marker_dist < 2.5f)
-					break;
-			}
-			else {	// right side chambers
-
-				// door open
-				if (marker_dist > 0.f && marker_dist < 1.0f)
-					break;
-			}
-
-			if (++timeout_cnt > 10) {
-				std::cout << "Door failed to open."<<std::endl;
-				return DOOR_OPEN_FAIL;
-			}
-
-			Sleep(1000);
-		}
-
-		if (marker_id != target_chamber_id) {
-			std::cout << "See Chamber " << marker_id << " but target is " << target_chamber_id << std::endl;
-			return STOP_AT_WRONG_DOOR;
-		}
-	#endif
-
-		// update motor controller script
-		sendRoboteqVar(7, cur_chamber_id_);
-
-		Sleep(100);
-
-		sendRoboteqVar(2, 1); //enter chamber
-
-		while (true)
-		{
-			//read current stop
-			motor_controller_.GetValue(_VAR, 4, cur_rover_status);
-
-			//std::cout << "cur_location_in_chamber " << cur_location_in_chamber << "\n";
-
-			if (cur_rover_status == STOP_IN_CHAMBER) break;
-
-			Sleep(1000);
-		}
-
-		std::cout << "stop in chamber" << std::endl; //std::getchar();
-
-		//close door
-		//controlChamber(target_chamber_id, CLOSE_DOOR);
-
-		Sleep(4000);
-
-		sendRoboteqVar(3, 1); //go to chamber center
-
-		while (true)
-		{
-			//read current stop
-			motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
-
-			if (cur_location_in_chamber == 1) break;
-
-			Sleep(1000);
-		}
-
-		std::cout << "reach chamber center location" << std::endl;
-
-		//check if door is close
-	#if 0
-		robot_arm_client_->moveHandJ(check_door_inside_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-
-		timeout_cnt = 0;
-
-		while (1) {
-
-			float marker_dist;
-			int marker_id;
-			markerDetection(IR, marker_dist, marker_id);
-
-			if (marker_id == target_chamber_id + 8)	break;
-
-			if (++timeout_cnt > 20) {
-				std::cout << "Door failed to close!\n";
-
-				return DOOR_CLOSE_FAIL;
-			}
-
-			Sleep(1000);
-		}
-	#endif
+		enterOrExitChamber(target_chamber_id, ENTER_CHAMBER);
 
 		//open curtain
-		if (openOrCloseCurtain(cur_chamber_id_, CLOSE_CURTAIN) != SUCCESS)
-		{
+#ifdef COLLECT_DATA
+		if (openOrCloseCurtain(target_chamber_id, OPEN_CURTAIN) != SUCCESS)
 			return CURTAIN_OPEN_FAIL;
-		}
 #endif
+	}
+	else // assume already in chamber center position
+	{
+		sendRoboteqVar(7, cur_chamber_id_);
+		sendRoboteqVar(8, 1);
 	}
 
 
 	// assuming inside chamber, at center location, collect data
-#if 1
-	std::string folder_name = "C"+std::to_string(target_chamber_id) + "-" + getCurrentDateTimeStr();
+#ifdef COLLECT_DATA
+	std::string folder_name = "c"+std::to_string(target_chamber_id) + "_" + getCurrentDateTimeStr();
 
 	std::wstring folder_name_w(folder_name.begin(), folder_name.end());
 
-	data_saving_folder_ = L"Enviratron_Data\\Chamber_" + std::to_wstring(target_chamber_id) + L"\\" + folder_name_w + L"\\";
+	data_saving_folder_ = L"Enviratron_Data\\chamber_" + std::to_wstring(target_chamber_id) + L"\\" + folder_name_w + L"\\";
 
 	std::cout << CreateDirectory(data_saving_folder_.c_str(), NULL);
-
-	// Enter chamber and stop at middle position
-	pot_process_status_.clear();
-	pot_process_status_.resize(num_plants_);
-	for (auto & s : pot_process_status_) s = false;
 
 	plant_cluster_min_vec_.clear();
 	plant_cluster_min_vec_.resize(num_plants_);
 	plant_cluster_max_vec_.clear();
 	plant_cluster_max_vec_.resize(num_plants_);
+	
+	// this stores which pots are already processed in the current chamber
+	pot_processed_map_.create(pot_position_vec_[cur_chamber_id_ - 1].rows, pot_position_vec_[cur_chamber_id_ - 1].cols, CV_8U);
+	pot_processed_map_ = 0;
 
-	mapWorkspace(1, num_plants_);
+	mapWorkspace(1);
 
-	// plan path to check_curtain_config
-	moveToConfigGetPointCloud(check_curtain_config_);
+	if (multi_work_position_)
+	{
+		// move rover to the left working position
+		moveToConfigGetPointCloud(check_curtain_config_);
+		sendRoboteqVar(3, 2);
+		waitTillReachPositionInChamber(2);
+		mapWorkspace(2);
+
+		// move rover to the right working position
+		moveToConfigGetPointCloud(check_curtain_config_);
+		sendRoboteqVar(3, 0);
+		waitTillReachPositionInChamber(0);
+		mapWorkspace(0);
+	}
 
 	// upload data to server ASYNC
-	auto upload_thread = std::async(&ServerManager::uploadDirectory, &data_server_manager_, folder_name);
+	auto upload_thread = std::async(&ServerManager::uploadDirectory, &data_server_manager_, folder_name, "experiment");
+
+	
 #endif
 		
-#if 0
+#if 1
 	if (only_do_probing_ != 1)
 	{
-		// close curtain
-		controlChamber(target_chamber_id, CLOSE_CURTAIN);
-		
-		// go to chamber center location
-		sendRoboteqVar(3, 1); //go to chamber center
-
-		while (true)
-		{
-			Sleep(1000);
-
-			//read current stop
-			motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
-
-			if (cur_location_in_chamber == 1) break;	
-		}
-
-		std::cout << "reach chamber center location to check door open\n";
-
-		// wait for curtain close
-		Sleep(15000);
-
-		//check if door is OPEN
-		robot_arm_client_->moveHandJ(check_door_inside_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-
-		// open door
-		controlChamber(target_chamber_id, OPEN_DOOR);
-		Sleep(10);
-		controlChamber(target_chamber_id, OPEN_DOOR);
-
-		// wait for door open
-		Sleep(5000);
-
-		timeout_cnt = 0;
-
-		while (1) {
-
-			marker_id = -1;
-			markerDetection(RGB, marker_dist, marker_id, 10.f, true);
-			
-			if (marker_id == 0)	break;
-
-			if (++timeout_cnt > 20) {
-
-				std::cout << "Door failed to close for exit!"<<std::endl;
-
-				return DOOR_OPEN_FAIL;
-			}
-
-			Sleep(1000);
-		}
-
-		//move to chamber right position
-		sendRoboteqVar(3, 0);
-
-		if (target_chamber_id % 2 == 0) {	// right side chambers
-			robot_arm_client_->moveHandJ(home_config_right_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-		}
-		else {	// left side chambers
-			robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-		}
-
-		while (true)
-		{
-			//read current stop
-			motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
-
-			if (cur_location_in_chamber == 0) break;
-
-			Sleep(1000);
-		}
-
-		// by default go to home
-		sendRoboteqVar(1, 0);
-
-		// exit chamber
-		sendRoboteqVar(2, 2);
-
-		//confirm door close
-		timeout_cnt = 0;
-
-		while (1) {
-
-			marker_id = -1;
-			markerDetection(RGB, marker_dist, marker_id);
-
-			if (marker_id == target_chamber_id)	break;
-
-			if (++timeout_cnt > 30) {
-
-				std::cout << "Failed to see door when exiting!\n";
-
-				return FAIL_TO_SEE_DOOR_WHEN_EXITING;
-			}
-
-			Sleep(1000);
-		}
-
-		controlChamber(target_chamber_id, CLOSE_DOOR);
+#ifdef COLLECT_DATA
+		openOrCloseCurtain(target_chamber_id, CLOSE_CURTAIN);
+#endif
+		enterOrExitChamber(target_chamber_id, EXIT_CHAMBER);
 	}
 #endif
 
+#ifdef COLLECT_DATA
 	if (upload_thread.get() != SUCCESS) {
 
 		std::string msg = "upload data error for chamber " + std::to_string(target_chamber_id) + "\n";
 		Utilities::to_log_file(msg);
 	}
+#endif
 
 	return 0;
-
-
-#if 0
-	mapWorkspace(2, num_plants_);
-
-	if (!moveToConfigGetPointCloud(safe_config))
-	{
-		return;
-	}
-#endif
 }
 
 void VisionArmCombo::probePlateCenterTest()
@@ -7214,60 +6907,125 @@ void VisionArmCombo::controlChamber(int chamber_id, int action)
 	Sleep(100);
 }
 
-void VisionArmCombo::acquireHyperspectralCalibrationData()
+void VisionArmCombo::hyperspectralCameraCalibration()
 {
-	if (hypercam_ == NULL)
+
+	//if (hypercam_ == NULL)
+	//{
+	//	std::cout << "hyperspectral camera not initialized!";
+	//	return;
+	//}
+
+	//if (robot_arm_client_ == NULL)
+	//{
+	//	std::cout << "robot arm not initialized!";
+	//	return;
+	//}
+
+	//double step_size = 0.001;//mm
+
+	//int num_success_scan = 0;
+
+	std::vector<cv::Vec6d> hand_poses;
+	std::vector<std::vector<cv::Point2d>> image_points_vec;
+
+	cv::Size boardSize, imageSize;
+	double squareSize = 0.02;
+
+	//std::vector<std::vector<cv::Point2d>> imagePoints;
+
+	// IMPORTANT
+	cv::SimpleBlobDetector::Params params;
+	params.maxArea = 200 * 200;
+	params.minArea = 20 * 20;
+	cv::Ptr<cv::FeatureDetector> blobDetect = cv::SimpleBlobDetector::create(params);
+
+	boardSize.width = 4;
+	boardSize.height = 11;
+
+	std::vector<cv::Point3d> corners;
+
+	for (int i = 0; i < boardSize.height; i++)
+		for (int j = 0; j < boardSize.width; j++)
+			corners.push_back(cv::Point3d(((2 * j + i % 2)*squareSize), (i*squareSize), 0.));
+
+	const int num_points = boardSize.width*boardSize.height;
+
+	std::cout << "Alway scan from left to right\n";
+
+	std::string name = "hyperspectral_calibration_data\\hand_poses.yml";
+	cv::FileStorage fs0(name, cv::FileStorage::WRITE);
+	fs0 << "hand_poses" << "[";
+
+	const int num_frames = 20;
+
+	for (int frame_id = 0; frame_id < num_frames; )
 	{
-		std::cout << "hyperspectral camera not initialized!";
-		return;
-	}
-
-	if(robot_arm_client_ == NULL)
-	{
-		std::cout << "robot arm not initialized!";
-		return;
-	}
-	
-	double step_size = 0.001;//mm
-
-	int num_success_scan = 0;
-
-	hypercam_->start();
-
-
-	//while (1) 
-	{
-
-		std::cout << "Move to END scan pose, then press any key.\n"; std::getchar();
-
-		std::vector<double> end_pose(robot_arm_client_->cur_cartesian_info_array, robot_arm_client_->cur_cartesian_info_array+6);
+#if 1
+		double start_pose[] = {0.1, -0.6, 0.6, M_PI, 0., 0.};
+		robot_arm_client_->moveHandL(start_pose, 0.05, 0.1);
 		
+		std::cout << "Move to START scan pose " << std::to_string(frame_id)<<" then press any key.\n"; std::getchar();
 
-		std::cout << "Move START scan pose, then press any key.\n";	std::getchar();
+		Eigen::Matrix4d hand_pose;
+		getCurHandPoseD(hand_pose);
 
-		std::vector<double> start_pose(robot_arm_client_->cur_cartesian_info_array, robot_arm_client_->cur_cartesian_info_array + 6);
+		//std::vector<double> end_pose(robot_arm_client_->cur_cartesian_info_array, robot_arm_client_->cur_cartesian_info_array + 6);
 
-		std::vector<double> cur_pose(start_pose.data(), start_pose.data() +6);
+		//std::cout << "Move START scan pose, then press any key.\n";	std::getchar();
+		//std::vector<double> start_pose(robot_arm_client_->cur_cartesian_info_array, robot_arm_client_->cur_cartesian_info_array + 6);
+
+		//std::vector<double> cur_pose(start_pose.data(), start_pose.data() + 6);
 
 		//compute translation
-		Eigen::Vector3d translation(end_pose[0]-start_pose[0], end_pose[1] - start_pose[1], end_pose[2] - start_pose[2]);
+		Eigen::Vector3d translation = hand_pose.col(0).head(3);
 
-		//double vec3[3] = {translation(0), translation(1), translation(2)};
-		
-		//scanTranslateOnlyHyperspectral(vec3, 0.1, 0.02);
+		translation *= -0.35;
 
-		double distance = translation.norm();
-		
-		Eigen::Vector3d moving_dir = translation.normalized();
+		// negative x 
+		double vec3[3] = { translation(0), translation(1), translation(2)};
 
-		std::vector<cv::Mat> scanline_vec;
+		cv::Vec6d start_scan_hand_pose;
 
-		int step_count = 0;
+		scanTranslateOnlyHyperspectral(vec3, start_scan_hand_pose, 0.1, 0.01);
+
+		std::cout << "start_scan_hand_pose " << start_scan_hand_pose << std::endl;
+
+	//	double distance = translation.norm();
+
+//		Eigen::Vector3d moving_dir = translation.normalized();
+
+		//std::vector<cv::Mat> scanline_vec;
+
+//		int step_count = 0;
 
 		cv::Mat waterfall;
-		waterfall.create(900, hypercam_->spatial_size_, CV_8U);
+		waterfall.create(hypercam_->scanlines_.size(), hypercam_->spatial_size_, CV_64F);
 
-		while (1) 
+		for (int i = 0; i < hypercam_->scanlines_.size(); i++)
+			hypercam_->scanlines_.at(i).copyTo(waterfall.row(i));
+
+		double min_val, max_val;
+
+		cv::minMaxLoc(waterfall, &min_val, &max_val);
+
+		std::cout << "min " << min_val << "  max " << max_val << std::endl;
+		///(v - min)/(max-min)*255 = v*(255/(max-min)) - 255*min/(max-min)
+		//min_val = 170.;
+
+		cv::Mat waterfall_8u;
+		waterfall.convertTo(waterfall_8u, CV_8U, 255. / (max_val - min_val), -255 * min_val / (max_val - min_val));
+
+		cv::Mat img = waterfall_8u;
+#endif
+
+
+#if 0
+		return;
+
+
+
+		while (1)
 		{
 			double progress = (double)step_count*step_size;
 
@@ -7284,7 +7042,7 @@ void VisionArmCombo::acquireHyperspectralCalibrationData()
 
 			cv::Mat cur_image_64f;
 			cur_image.convertTo(cur_image_64f, CV_64F);
-			
+
 			cv::Mat cur_line;
 			cv::reduce(cur_image_64f, cur_line, 0, CV_REDUCE_AVG);
 
@@ -7305,7 +7063,7 @@ void VisionArmCombo::acquireHyperspectralCalibrationData()
 				std::cout << "exceed image\n";
 				break;
 			}
-			
+
 
 			//for (int y = 0; y < scanline_vec.size(); y++)
 				//scanline_vec[y].copyTo(waterfall.row(y));
@@ -7314,7 +7072,7 @@ void VisionArmCombo::acquireHyperspectralCalibrationData()
 			cv::imshow("scanline grayscale", waterfall);
 
 			cv::waitKey(4);
-			
+
 
 			//move a little
 			cur_pose[0] = start_pose[0] + progress*moving_dir[0];
@@ -7322,36 +7080,25 @@ void VisionArmCombo::acquireHyperspectralCalibrationData()
 			cur_pose[2] = start_pose[2] + progress*moving_dir[2];
 
 			robot_arm_client_->moveHandL(cur_pose.data(), 0.005, 0.005);
-			
+
 			step_count++;
 
-			
-			
+
+
 		}
 
-		cv::Mat img;
+
 		img.create(scanline_vec.size(), hypercam_->spatial_size_, CV_8U);
 
 		for (int y = 0; y < scanline_vec.size(); y++)
 			scanline_vec[y].copyTo(img.row(y));
+#endif
 
-		cv::Size boardSize, imageSize;
-		float squareSize, aspectRatio;
-
-		std::vector<std::vector<cv::Point2f>> imagePoints;
-
-		// IMPORTANT
-		cv::SimpleBlobDetector::Params params;
-		params.maxArea = 200 * 200;
-		params.minArea = 20 * 20;
-		cv::Ptr<cv::FeatureDetector> blobDetect = cv::SimpleBlobDetector::create(params);
-
-		boardSize.width = 4;
-		boardSize.height = 11;
-
-		squareSize = 0.02f;
-
+//		std::string filename = "hyperspectral_calibration_data\\" + std::to_string(frame_id) + ".png";
+//		cv::Mat img = cv::imread(filename, CV_LOAD_IMAGE_GRAYSCALE);
 		std::vector<cv::Point2f> pointbuf;
+
+		//cv::flip(img, img, 0);
 
 		// ASYMMETRIC CIRCLE GRID PATTERN
 		bool found = findCirclesGrid(img, boardSize, pointbuf, cv::CALIB_CB_ASYMMETRIC_GRID | cv::CALIB_CB_CLUSTERING, blobDetect);
@@ -7364,16 +7111,257 @@ void VisionArmCombo::acquireHyperspectralCalibrationData()
 			cv::drawChessboardCorners(color, boardSize, cv::Mat(pointbuf), found);
 			cv::circle(color, pointbuf[0], 30, cv::Scalar(0, 255, 0), 4);
 			cv::circle(color, pointbuf[1], 30, cv::Scalar(0, 0, 255), 4);
+
+			//for (int i = 0; i < pointbuf.size(); i++) std::cout << "u=" << pointbuf[i].x << "  v=" << pointbuf[i].y << "   a=" << corners[i].x << "  b=" << corners[i].y << std::endl;
+
+			//cv::Vec6d start_scan_hand_pose(0,0,0,0,0,0);
+			
+			hand_poses.push_back(start_scan_hand_pose);
+
+			std::vector<cv::Point2d> image_points;
+
+			for (auto & p : pointbuf)
+				image_points.push_back(cv::Point2d(p.x, p.y));
+
+			image_points_vec.push_back(image_points);
+
+			std::string filename = "hyperspectral_calibration_data\\" + std::to_string(frame_id) + ".png";
+			cv::imwrite(filename, img);
+
+			fs0 << start_scan_hand_pose;
+
+			solveLinearCameraCalibration(image_points_vec, corners);
+
+			frame_id++;
 		}
 
-		cv::waitKey(0);
+		cv::imshow("img", color);	cv::waitKey(100);
 	}
 
+	fs0 << "]";
+	fs0.release();
+
+		//	return;
+
+	std::vector<Eigen::VectorXd> homography_vec;
+
+	std::vector<Eigen::MatrixXd> M_vec;
+
+	Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_frames * 2, 3 + num_frames);
+
+	//solve homography
+	for (int frame_id = 0; frame_id < num_frames; frame_id++)
+	{
+		Eigen::MatrixXd lh = Eigen::MatrixXd::Zero(2 * num_points, 12);
+
+		for (int point_id = 0; point_id < num_points; point_id++)
+		{
+			const double a = corners[point_id].x;
+			const double b = corners[point_id].y;
+			const double u = image_points_vec[frame_id][point_id].x;
+			const double v = image_points_vec[frame_id][point_id].y;
+			const double aa = a*a;
+			const double bb = b*b;
+			const double ab = a*b;
+			const double au = a*u;
+			const double bu = b*u;
+			const double av = a*v;
+			const double bv = b*v;
+
+			lh(point_id * 2, 0) = a; lh(point_id * 2, 1) = b; lh(point_id * 2, 2) = 1.0; lh(point_id * 2, 9) = -au; lh(point_id * 2, 10) = -bu; lh(point_id * 2, 11) = -u;
+			lh(point_id * 2 + 1, 3) = a; lh(point_id * 2 + 1, 4) = b; lh(point_id * 2 + 1, 5) = 1.0; lh(point_id * 2 + 1, 6) = aa; lh(point_id * 2 + 1, 7) = bb; lh(point_id * 2 + 1, 8) = ab; lh(point_id * 2 + 1, 9) = -av; lh(point_id * 2 + 1, 10) = -bv; lh(point_id * 2 + 1, 11) = -v;
+
+			//std::cout << point_id << "  a=" << a << "  b=" << b << "  u=" << u << "  v=" << v << std::endl;
+		}
+
+		Eigen::JacobiSVD<Eigen::MatrixXd> svd(lh.transpose()*lh, Eigen::ComputeThinU | Eigen::ComputeThinV);
+
+	//	cout << "Its singular values are:" << endl << svd.singularValues() << endl;
+	//	cout << "Its left singular vectors are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
+	//	cout << "Its right singular vectors are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
+
+				//last column corresponds to the "zero" singular value, is the nontrivial solution to Ax=0
+		Eigen::VectorXd h = svd.matrixV().col(11);
+
+		h = h / h(11);	//important
+
+		homography_vec.push_back(h);
+
+		Eigen::MatrixXd H = Eigen::MatrixXd::Zero(3, 6);
+		H(0, 0) = h(0); H(0, 1) = h(1); H(0, 2) = h(2);
+		H(1, 0) = h(3); H(1, 1) = h(4); H(1, 2) = h(5); H(1, 3) = h(6); H(1, 4) = h(7); H(1, 5) = h(8);
+		H(2, 0) = h(9); H(2, 1) = h(10); H(2, 2) = h(11);
+
+		double homograph_error = 0.;
+
+		for (int point_id = 0; point_id < num_points; point_id++)
+		{
+			const double a = corners[point_id].x;
+			const double b = corners[point_id].y;
+			const double u = image_points_vec[frame_id][point_id].x;
+			const double v = image_points_vec[frame_id][point_id].y;
+			const double aa = a*a;
+			const double bb = b*b;
+			const double ab = a*b;
+			
+			Eigen::VectorXd r(6);
+			r << a, b, 1, aa, bb, ab;
+
+			Eigen::Vector3d p = (H*r);// .normalized().head(2);
+			Eigen::Vector2d uv; uv << u - p(0)/p(2), v-p(1)/p(2);
+			homograph_error += uv(0)*uv(0) + uv(1)*uv(1);
+
+			//std::cout << uv.transpose() << "  " << p.transpose()<<std::endl;
+			//std::cout<<u<<" "<<v<<"     "<<(H*r).transpose()<<std::endl;
+		}
+
+		homograph_error = std::sqrt(homograph_error/ num_points);
+
+		std::cout << "homograph_error "<<homograph_error << std::endl;
+
+		//std::cout << "h31=" << h(9) << "  h32=" << h(10) << std::endl;
+
+		Eigen::MatrixXd M(3, 2);
+		M.row(0) << h(0), h(1);
+		M.row(1) << h(3) - h(9)*h(5), h(4) - h(10)*h(5);
+		//M.row(1) << (h(11)*h(3) - h(9)*h(5))/(h(11)*h(11)), (h(11)*h(4) - h(10)*h(5)) / (h(11)*h(11));
+		//M.row(1) << h(6)/h(9), h(7)/h(10);	//2011
+		M.row(2) << h(9), h(10);
+
+		M_vec.push_back(M);
+
+		A(frame_id * 2, 0) = M(0, 0)*M(0,1);
+		A(frame_id * 2, 1) = M(0, 0)*M(2, 1) + M(0,1)*M(2,0);
+		A(frame_id * 2, 2) = M(2, 0)*M(2,1);
+		A(frame_id * 2, 3 + frame_id) = M(1, 0)*M(1, 1);
+		A(frame_id * 2 + 1, 0) = M(0, 0)*M(0, 0) - M(0, 1)*M(0, 1);
+		A(frame_id * 2 + 1, 1) = 2.*(M(0,0)*M(2,0) - M(0,1)*M(2,1));
+		A(frame_id * 2 + 1, 2) = M(2, 0)*M(2, 0) - M(2, 1)*M(2, 1);
+		A(frame_id * 2 + 1, 3 + frame_id) = M(1, 0)*M(1, 0) - M(1, 1)*M(1, 1);
+
+	}
+
+	// solve Ax = 0
+	Eigen::JacobiSVD<Eigen::MatrixXd> svd(A.transpose()*A, Eigen::ComputeThinU | Eigen::ComputeThinV);
+
+	//cout << "Its singular values are:" << endl << svd.singularValues() << endl;
+	//cout << "Its left singular vectors are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
+	//cout << "Its right singular vectors are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
+
+	Eigen::VectorXd x = svd.matrixV().col(2+num_frames);
+
+	//principal point
+	const double u0 = -x(1) / x(0);
+
+	// focal length
+	const double f = std::sqrt(x(2) / x(0) - u0*u0);
+
+	// solve 1/s^2 and ti3^2
+	Eigen::MatrixXd B = Eigen::MatrixXd::Zero(num_frames*2, 1+num_frames);
+	for (int frame_id = 0; frame_id < num_frames; frame_id++)
+	{
+		Eigen::MatrixXd M = M_vec[frame_id];
+		B(frame_id * 2, 0) = M(1, 0)*M(1, 0);
+		B(frame_id * 2 + 1, frame_id + 1) = (M(0,1)*M(0,1)-M(2,1)*M(0,1)*u0+M(2,1)*M(2,1)*(u0*u0+f*f)-M(0,1)*M(2,1)*u0) / (f*f);
+	}
+
+	Eigen::VectorXd b = Eigen::VectorXd::Ones(2 * num_frames);
+
+	Eigen::VectorXd st = B.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
+
+	st = st.cwiseSqrt();
+
+	std::cout << st << std::endl;
+
+	const double s = 1./ st(0);
+
+	// intrinsic matrix
+	Eigen::Matrix3d K = Eigen::Matrix3d::Zero();
+
+	K(0, 0) = f; 
+	K(0, 2) = u0;
+	K(1, 1) = s;
+	K(2, 2) = 1.;
+
+	Eigen::Matrix3d K_inverse = K.inverse();
+		
+	std::cout << "u0: " << u0 << "    f: " << f << "    s: "<<s<<std::endl; 
+
+	// camera poses in calibration pattern coordinate system
+	std::vector<Eigen::Matrix4d*> camera_pose_vec;
+	for (int frame_id = 0; frame_id < num_frames; frame_id++)
+	{
+		double t3 = st(frame_id + 1);
+		Eigen::VectorXd hi = homography_vec[frame_id]*t3;
+
+		Eigen::Vector3d t;
+		t << (hi(2) - u0*t3) / f, hi(5) / (t3*s), t3;
+
+		Eigen::Matrix3d R;
+		R(0, 0) = (hi(0) - u0*hi(9)) / f;
+		R(0, 1) = (hi(1) - u0*hi(10)) / f;
+		R(1, 0) = hi(6) / (hi(9)*s);
+		R(1, 1) = hi(7) / (hi(10)*s);
+		R(2, 0) = hi(9);
+		R(2, 1) = hi(10);
+
+		R.col(2) = R.col(0).cross(R.col(1));
+
+
+		Eigen::JacobiSVD<Eigen::Matrix3d> svd_R(R, Eigen::ComputeThinU | Eigen::ComputeThinV);
+		Eigen::Matrix3d U = svd_R.matrixU();
+		Eigen::Matrix3d V = svd_R.matrixV().transpose();
+		Eigen::Matrix3d tmp = Eigen::Matrix3d::Identity();
+		tmp(2, 2) = (U*V).determinant();
+		R = U*tmp*V;
+
+		//R = svd.matrixU() * svd.matrixV().transpose();
+
+		Eigen::Matrix4d *T = new Eigen::Matrix4d;
+		*T = Eigen::Matrix4d::Identity();
+		(*T).block<3, 3>(0, 0) = R;
+		(*T).col(3).head(3) = t ;
+
+		std::cout << "Frame " << frame_id << std::endl<<*T<<std::endl;
+
+		camera_pose_vec.push_back(T);
+	}
+
+	std::getchar();
+
+
+	std::vector<Eigen::Matrix4d*> tcp_pose_vec;
+
+	for (auto & p : hand_poses)
+	{
+		Eigen::Matrix4d * tcp_pose = new Eigen::Matrix4d;
+
+		array6ToEigenMat4d(p.val, *tcp_pose);
+
+		std::cout << "tcp_pose\n" << *tcp_pose<<std::endl;
+
+		tcp_pose_vec.push_back(tcp_pose);
+	}
+
+	Eigen::Matrix4d T;
+
+	solveHandEyeCalibration(camera_pose_vec, tcp_pose_vec, T);
+
+	cv::Mat hand_to_eye;
+
+	EigenTransformToCVTransform(T, hand_to_eye);
+		
+	cv::FileStorage fs("HyperspectralCalibration.yml", cv::FileStorage::WRITE);
+
+	fs << "hand_to_eye" << hand_to_eye;
+	fs << "principal_point" << u0;
+	fs << "focal_length" << f;
+
+	fs.release();
 }
 
 void VisionArmCombo::initTOFCamera()
 {
-
 	tof_cam_ = new TOF_Swift();
 }
 
@@ -7423,13 +7411,11 @@ void VisionArmCombo::readOrUpdateChamberPotConfigurationFile(int operation)
 	}
 }
 
-int VisionArmCombo::imagePotsTopView()
+int VisionArmCombo::imagePotsTopView(int rover_position)
 {
 	cv::Mat pot_pos = pot_position_vec_[cur_chamber_id_ - 1];
 
 	const float pot_diameter = pot_diameter_vec_[cur_chamber_id_ - 1];
-
-	const float pot_height = 0.22f;
 
 	ArmConfig imaging_config;
 
@@ -7441,7 +7427,26 @@ int VisionArmCombo::imagePotsTopView()
 		{
 			int y_snake = x % 2 == 0 ? y : pot_pos.rows - y - 1;
 
+			if (pot_processed_map_.at<unsigned char>(y_snake, x) > 0)
+				continue;
+
 			cv::Vec3f pot_xyz = pot_pos.at<cv::Vec3f>(y_snake, x);
+
+			if (multi_work_position_)
+			{
+				// shift pot x cooridinate
+				if (rover_position != 1)
+					pot_xyz[0] -= work_pos_offset_map_.at(rover_position);
+
+				//check pot position, skip if out of range
+				if (std::abs(pot_xyz[0]) > 0.6f)
+				{
+					std::cout << "pot_xyz[0]: " << pot_xyz[0] << std::endl;
+					continue;
+				}
+
+	
+			}
 
 			double distance_to_pot;
 
@@ -7451,7 +7456,6 @@ int VisionArmCombo::imagePotsTopView()
 			Eigen::Vector4f plant_centroid;
 
 			// first use depth camera to image pot and refine pot z
-#if 1
 			if (tof_cam_ != NULL && computeImageConfigforPot(pot_xyz, pot_diameter, infrared_camera_matrix_cv_, hand_to_depth_, imaging_config, distance_to_pot))
 			{
 				moveToConfigGetPointCloud(imaging_config, GET_POINT_CLOUD);
@@ -7463,7 +7467,6 @@ int VisionArmCombo::imagePotsTopView()
 				crop_box.setMax(Eigen::Vector4f(pot_xyz[0] + radius, pot_xyz[1] + radius, 2.0f, 1.f));
 				crop_box.filter(*plant_cloud);
 
-
 				//viewer_->removeAllPointClouds(); viewer_->addPointCloud(plant_cloud, "plant"); display();
 				
 				pcl::compute3DCentroid(*plant_cloud, plant_centroid);
@@ -7474,6 +7477,7 @@ int VisionArmCombo::imagePotsTopView()
 				if (max(2) > pot_xyz[2])
 				{
 					//std::cout << "updated plant centroid z" << plant_centroid(2)<<" original: "<<pot_xyz[2] << std::endl;
+					// update the plant height
 					pot_xyz[2] = max(2);
 					pot_position_vec_[cur_chamber_id_ - 1].at<cv::Vec3f>(y_snake, x)[2] = max(2);
 					readOrUpdateChamberPotConfigurationFile(UPDATE_POT_CONFIG);
@@ -7501,9 +7505,7 @@ int VisionArmCombo::imagePotsTopView()
 					cv::waitKey(view_time_);
 				}
 			}
-#endif 
 
-#if 1
 			if (rgb_cam_ != NULL && computeImageConfigforPot(pot_xyz, pot_diameter, rgb_camera_matrix_cv_, hand_to_rgb_, imaging_config, distance_to_pot))
 			{
 				moveToConfigGetPointCloud(imaging_config);
@@ -7521,16 +7523,15 @@ int VisionArmCombo::imagePotsTopView()
 
 				cv::imshow("rgb", tmp); cv::waitKey(view_time_);
 			}
-#endif
 
-#if 1
 			if (thermocam_ != NULL && computeImageConfigforPot(pot_xyz, pot_diameter, flir_thermal_camera_matrix_cv_, hand_to_thermal_d_, imaging_config, distance_to_pot))
 			{
 				moveToConfigGetPointCloud(imaging_config);
 				
 				cv::Mat color_map, temperature_map;
 
-				if (thermocam_->isConnected) {
+				if (thermocam_->isConnected) 
+				{
 
 					Eigen::Matrix4d camera_pose; getCurHandPoseD(camera_pose);
 
@@ -7546,14 +7547,36 @@ int VisionArmCombo::imagePotsTopView()
 					cv::waitKey(view_time_);
 				}
 			}
-#endif
+
+			pot_processed_map_.at<unsigned char>(y_snake, x) = 1;
+
+			std::cout << "pot_processed_map_:\n" << pot_processed_map_ << std::endl;
+		}
+	}
+
+	
 
 #if 0
-			if (plant_cloud->size() > 100)
-			{
-				// turn light off
+	// turn light off
+	controlChamber(cur_chamber_id_, PAUSE_LIGHT);
 
+	// image pots column by column
+	for (int x = pot_pos.cols-1; x >= 0; x--)
+	{
+		// traverse pots like a snake, faster
+		for (int y = pot_pos.rows-1; y>=0 ; y--)
+		{
+			int y_snake = x % 2 == 0 ? y : pot_pos.rows - y - 1;
+
+			cv::Vec3f pot_xyz = pot_pos.at<cv::Vec3f>(y_snake, x);
+
+			double distance_to_pot;
+
+			int plant_id = Utilities::gridID2PotID(x, y, pot_pos.rows);
+
+			{
 				double scan_angle;
+
 				if (pot_xyz[0] > 0.7f)
 					scan_angle = -30. / 180. * M_PI;
 				else if (pot_xyz[0] < -0.7f)
@@ -7562,28 +7585,25 @@ int VisionArmCombo::imagePotsTopView()
 					scan_angle = 0.;
 
 				double radius = pot_diameter*0.6f;
-			
-				Eigen::Vector4f min, max;
-				pcl::getMinMax3D(*plant_cloud, min, max);
 
-				std::cout << "plant min " << min.transpose() << "\nmax " << max.transpose() << "\n";
+				const double height = pot_xyz[2];
 
-				if (max(2) > chamber_floor_z_ + pot_height && max(2) < 0.5f)
+				if (height > chamber_floor_z_ + pot_height && height < 0.5f)
 				{
 					Eigen::Vector3d min(pot_xyz[0] - radius, pot_xyz[1] - radius, chamber_floor_z_);
-					Eigen::Vector3d max(pot_xyz[0] + radius, pot_xyz[1] + radius, max(2));
+					Eigen::Vector3d max(pot_xyz[0] + radius, pot_xyz[1] + radius, height);
 
 					PointCloudT::Ptr cloud(new PointCloudT);
 
 					computeLineScanConfigforPot(min, max, scan_angle, cloud);
 				}
 			}
-#endif	
 
 
 		}
 	}
 
+#endif	
 	
 
 	return SUCCESS;
@@ -7935,6 +7955,10 @@ bool VisionArmCombo::computeLineScanConfigforPot(Eigen::Vector3d & min, Eigen::V
 
 	scanner_start_pose = scanner_start_pose*hand_to_scanner_.inverse();
 
+	Eigen::Matrix4d tmp_hand_pose;
+	checkHandPoseReachableAlongAxis(scanner_start_pose, 0.01, 0.1, tmp_hand_pose);
+	scanner_start_pose = tmp_hand_pose;
+
 	std::cout << "scanner_start_pose\n" << scanner_start_pose << std::endl;
 	
 	start_pose_reachable = checkHandPoseReachable(scanner_start_pose, start_config);
@@ -7942,6 +7966,8 @@ bool VisionArmCombo::computeLineScanConfigforPot(Eigen::Vector3d & min, Eigen::V
 	Eigen::Matrix4d scanner_end_pose = scanner_start_pose;
 	scanner_end_pose(0, 3) += x_range;
 
+	checkHandPoseReachableAlongAxis(scanner_end_pose, 0.01, 0.1, tmp_hand_pose);
+	scanner_end_pose = tmp_hand_pose;
 	std::cout << "scanner_end_pose\n" << scanner_end_pose << std::endl;
 
 	end_pose_reachable = checkHandPoseReachable(scanner_end_pose, end_config);
@@ -7959,6 +7985,7 @@ bool VisionArmCombo::computeLineScanConfigforPot(Eigen::Vector3d & min, Eigen::V
 
 		pcl::transformPointCloud(*cloud, *cloud_in_base, (scanner_start_pose*hand_to_scanner_).cast<float>());
 
+		viewer_->removeAllPointClouds();
 		viewer_->addPointCloud(cloud_in_base, "laser");
 		display();
 	}
@@ -7995,32 +8022,520 @@ int VisionArmCombo::openOrCloseCurtain(int chamber_id, int option)
 {
 	if (option != OPEN_CURTAIN && option != CLOSE_CURTAIN)
 		return WRONG_OPTION;
-	
-	controlChamber(chamber_id, option);
 
 	moveToConfigGetPointCloud(check_curtain_config_);
 
 	tof_cam_->setPower(256);
 
-	cv::Mat ir;
+	controlChamber(chamber_id, option);
+
+	cv::Mat depth;
 
 	while (1)
 	{
-		ir = tof_cam_->getDepth16U();
+		depth = tof_cam_->getDepth16U();
 		
-		float screen_dist = cv::mean(ir).val[0];	// unit 0.1mm
+		float screen_dist = cv::mean(depth).val[0];	// unit 0.1mm
 
 		std::cout << screen_dist << std::endl;
 
 		if (option == OPEN_CURTAIN && screen_dist > 10000.f)
 			break;
-		else if (option == CLOSE_CURTAIN && screen_dist < 3000.f)
+		else if (option == CLOSE_CURTAIN && screen_dist < 3090.f)
 			break;
 
 		Sleep(5000);
 	}
 
-	//Sleep(5000);
+	return SUCCESS;
+}
+
+int VisionArmCombo::enterOrExitChamber(int chamber_id, int option)
+{
+	if(option != ENTER_CHAMBER && option != EXIT_CHAMBER)
+		return WRONG_OPTION;
+
+	cv::Mat depth, ir, good_pixels;
+
+	int time_out_cnt = 0;
+
+	if (option == ENTER_CHAMBER)
+	{
+		// move arm
+		if (chamber_id % 2 != 0)
+		{
+			robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_);
+			tof_cam_->setPower(256);
+		}
+		else
+		{
+			robot_arm_client_->moveHandJ(home_config_right_.joint_pos_d, move_joint_speed_, move_joint_acceleration_);
+			tof_cam_->setPower(1000);
+		}
+
+		float marker_dist;
+		int marker_id = -1;
+		time_out_cnt = 0;
+
+		//verify AR marker matches chamber id
+		while (chamber_id != marker_id)
+		{
+			ir = tof_cam_->getIR();
+			
+			marker_id = -1;
+
+			markerDetection(IR, marker_dist, marker_id);
+
+			if (marker_id > 0 && marker_id < 9 && marker_id != chamber_id)
+			{
+				sendRoboteqVar(7, marker_id);
+				Sleep(1000);
+				sendRoboteqVar(1, chamber_id);
+				Sleep(5000);
+				waitTillReachRoverStatus(STOP_AT_DOOR);
+			}
+
+			//TODO timeout
+			if (time_out_cnt > 60 * 5)
+			{
+
+			}
+			time_out_cnt++;
+			Sleep(1000);
+		}
+
+		// update motor controller script
+		sendRoboteqVar(7, chamber_id);
+
+		cur_chamber_id_ = chamber_id;
+		
+		controlChamber(chamber_id, OPEN_DOOR);
+
+		tof_cam_->setPower(3000);
+
+		//verify door open
+		while (1)
+		{
+			depth = tof_cam_->getDepth16U();
+			
+			cv::inRange(depth, 1000, 30000, good_pixels);
+
+			float mean_dist = cv::mean(depth, good_pixels).val[0];	// unit 0.1mm
+
+			std::cout << "mean dist: "<<mean_dist << std::endl;
+
+			if (mean_dist > 18000.f) break;
+
+			Sleep(2000);
+		}
+
+		//std::cout << "done\n";  std::getchar(); exit(0);
+
+		sendRoboteqVar(2, 1); //enter chamber
+		
+		waitTillReachRoverStatus(STOP_IN_CHAMBER);
+
+		//controlChamber(chamber_id, CLOSE_DOOR);
+
+		waitTillReachPositionInChamber(1); // go to center position in chamber
+	}
+	else if (option == EXIT_CHAMBER)
+	{
+		// go to chamber center location
+		sendRoboteqVar(3, 1);
+
+		waitTillReachPositionInChamber(1);
+
+		//check if door is OPEN
+		robot_arm_client_->moveHandJ(check_door_inside_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+
+		// open door
+		controlChamber(chamber_id, OPEN_DOOR);
+		
+		tof_cam_->setPower(3000);
+
+		time_out_cnt = 0;
+
+		//verify door open
+		while (1)
+		{
+			depth = tof_cam_->getDepth16U();
+			cv::inRange(depth, 1000, 40000, good_pixels);
+			float mean_dist = cv::mean(depth, good_pixels).val[0];	// unit 0.1mm
+
+			std::cout << "mean_dist: " << mean_dist << std::endl;
+
+			if (mean_dist > 20000.f)
+				break;
+
+			Sleep(1000);
+
+			if(time_out_cnt % 20)
+				controlChamber(chamber_id, OPEN_DOOR);
+		}
+
+		//move to chamber right position
+		sendRoboteqVar(3, 0);
+
+		if (chamber_id % 2 == 0) {	// right side chambers
+			robot_arm_client_->moveHandJ(home_config_right_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+		}
+		else {	// left side chambers
+			robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
+		}
+
+		waitTillReachPositionInChamber(0);
+
+		// by default go to home
+		sendRoboteqVar(1, 0);
+
+		// exit chamber
+		sendRoboteqVar(2, 2);
+
+		Sleep(10000);
+
+		waitTillReachRoverStatus(ON_MAIN | STOP_ON_MAIN);
+
+		Sleep(5000);
+
+		controlChamber(chamber_id, CLOSE_DOOR);
+	}
+}
+
+int VisionArmCombo::waitTillReachRoverStatus(int rover_status)
+{
+	if (rover_status != STOP_ON_MAIN && rover_status != ON_MAIN &&
+		rover_status != FORWARD_ON_BRANCH && rover_status != REVERSE_ON_BRANCH &&
+		rover_status != STOP_AT_DOOR && rover_status != STOP_IN_CHAMBER &&
+		rover_status != MOVING_ON_CHAMBER_TRACK)
+		return WRONG_OPTION;
+
+	int cur_rover_status = -1;
+	bool not_reached = true;
+
+	while (not_reached)
+	{
+		//read current stop
+		cur_rover_status = -1;
+		motor_controller_.GetValue(_VAR, 4, cur_rover_status);
+
+		if ( (rover_status & STOP_ON_MAIN) && (cur_rover_status == STOP_ON_MAIN) )
+			not_reached = false;
+
+		if ((rover_status & ON_MAIN) && (cur_rover_status == ON_MAIN))
+			not_reached = false;
+
+		if ((rover_status & FORWARD_ON_BRANCH) && (cur_rover_status == FORWARD_ON_BRANCH))
+			not_reached = false;
+
+		if ((rover_status & REVERSE_ON_BRANCH) && (cur_rover_status == REVERSE_ON_BRANCH))
+			not_reached = false;
+
+		if ((rover_status & STOP_AT_DOOR) && (cur_rover_status == STOP_AT_DOOR))
+			not_reached = false;
+
+		if ((rover_status & STOP_IN_CHAMBER) && (cur_rover_status == STOP_IN_CHAMBER))
+			not_reached = false;
+
+		if ((rover_status & MOVING_ON_CHAMBER_TRACK) && (cur_rover_status == MOVING_ON_CHAMBER_TRACK))
+			not_reached = false;
+
+		Sleep(1000);
+	}
 
 	return SUCCESS;
+}
+
+int VisionArmCombo::waitTillReachPositionInChamber(int target_position)
+{
+	if (target_position < 0 || target_position > 2)
+		return WRONG_OPTION;
+
+	sendRoboteqVar(3, target_position);
+
+	int cur_location_in_chamber = -1;
+
+	while (cur_location_in_chamber != target_position)
+	{
+		cur_location_in_chamber = -1;
+		motor_controller_.GetValue(_VAR, 5, cur_location_in_chamber);
+
+		Sleep(1000);
+	}
+
+	return SUCCESS;
+}
+
+int VisionArmCombo::getChamberConfig(int chamber_id)
+{
+	
+	return SUCCESS;
+}
+
+void VisionArmCombo::solveHandEyeCalibration(std::vector<Eigen::Matrix4d*> & camera_pose_vec, std::vector<Eigen::Matrix4d*> & tcp_pose_vec, Eigen::Matrix4d & T)
+{
+	if (camera_pose_vec.size() != tcp_pose_vec.size())
+	{
+		std::cerr << "camera_pose_vec.size() != tcp_pose_vec.size()" << std::endl;
+		return;
+	}
+
+
+	const int nframes = camera_pose_vec.size();
+	// hand eye calibration
+	Eigen::Matrix3d M = Eigen::Matrix3d::Zero();
+	Eigen::MatrixXd C(3 * nframes *(nframes - 1), 3);
+	Eigen::VectorXd d(3 * nframes * (nframes - 1));
+	Eigen::VectorXd bA(3 * nframes * (nframes - 1));
+	Eigen::VectorXd bB(3 * nframes * (nframes - 1));
+
+	int count = 0;
+
+	for (int i = 0; i < nframes; i++)
+	{
+		for (int j = 0; j < nframes; j++)
+		{
+			if (i == j) continue;
+
+			// TCP pose motion
+			Eigen::Matrix4d A;
+			A = (*tcp_pose_vec[i]).inverse() * (*tcp_pose_vec[j]);	//base to robot hand
+
+																	// camera pose motion
+			Eigen::Matrix4d B;
+			B = (*camera_pose_vec[i])*(*camera_pose_vec[j]).inverse();	//camera to calibration board
+
+																		//log Rotation
+			Eigen::Matrix3d alpha, beta;
+
+			double theta = acos(0.5*(A.block<3, 3>(0, 0).trace() - 1.));
+
+			alpha = theta*0.5 / sin(theta)*(A.block<3, 3>(0, 0) - A.block<3, 3>(0, 0).transpose());
+
+			theta = acos(0.5*(B.block<3, 3>(0, 0).trace() - 1.));
+
+			beta = theta*0.5 / sin(theta)*(B.block<3, 3>(0, 0) - B.block<3, 3>(0, 0).transpose());
+
+			M = M + beta*alpha.transpose();
+
+			C.block<3, 3>(count * 3, 0) = Eigen::Matrix3d::Identity() - A.block<3, 3>(0, 0);
+			bA.block<3, 1>(count * 3, 0) = A.block<3, 1>(0, 3);
+			bB.block<3, 1>(count * 3, 0) = B.block<3, 1>(0, 3);
+			count++;
+		}
+	}
+
+	Eigen::EigenSolver<Eigen::Matrix3d> es(M.transpose()*M);
+
+	Eigen::Matrix3d lambda;
+
+	lambda = es.eigenvalues().real().cwiseSqrt().cwiseInverse().asDiagonal();
+
+	Eigen::Matrix3d hand_to_eye_rotation = es.eigenvectors().real()*lambda*es.eigenvectors().real().inverse()*M.transpose();
+
+	for (int i = 0; i < nframes*(nframes - 1); i++)
+		bB.block<3, 1>(i * 3, 0) = hand_to_eye_rotation*bB.block<3, 1>(i * 3, 0);
+
+	d = bA - bB;
+
+	Eigen::Vector3d hand_to_eye_translation = (C.transpose()*C).inverse()*C.transpose()*d;
+
+	T = Eigen::Matrix4d::Identity();
+	T.block<3, 3>(0, 0) = hand_to_eye_rotation;
+	T.col(3).head(3) = hand_to_eye_translation;
+
+	std::cout << "hand to eye T:\n" << T << std::endl;
+}
+
+void VisionArmCombo::solveLinearCameraCalibration(std::vector<std::vector<cv::Point2d>> &image_points_vec, std::vector<cv::Point3d> &corners)
+{
+	const int num_frames = image_points_vec.size();
+
+	const int num_points = corners.size();
+
+	if (num_frames < 3) return;
+
+	std::vector<Eigen::VectorXd> homography_vec;
+
+	std::vector<Eigen::MatrixXd> M_vec;
+
+	Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_frames * 2, 3 + num_frames);
+
+	//solve homography
+	for (int frame_id = 0; frame_id < num_frames; frame_id++)
+	{
+		Eigen::MatrixXd lh = Eigen::MatrixXd::Zero(2 * num_points, 12);
+
+		for (int point_id = 0; point_id < num_points; point_id++)
+		{
+			const double a = corners[point_id].x;
+			const double b = corners[point_id].y;
+			const double u = image_points_vec[frame_id][point_id].x;
+			const double v = image_points_vec[frame_id][point_id].y;
+			const double aa = a*a;
+			const double bb = b*b;
+			const double ab = a*b;
+			const double au = a*u;
+			const double bu = b*u;
+			const double av = a*v;
+			const double bv = b*v;
+
+			lh(point_id * 2, 0) = a; lh(point_id * 2, 1) = b; lh(point_id * 2, 2) = 1.0; lh(point_id * 2, 9) = -au; lh(point_id * 2, 10) = -bu; lh(point_id * 2, 11) = -u;
+			lh(point_id * 2 + 1, 3) = a; lh(point_id * 2 + 1, 4) = b; lh(point_id * 2 + 1, 5) = 1.0; lh(point_id * 2 + 1, 6) = aa; lh(point_id * 2 + 1, 7) = bb; lh(point_id * 2 + 1, 8) = ab; lh(point_id * 2 + 1, 9) = -av; lh(point_id * 2 + 1, 10) = -bv; lh(point_id * 2 + 1, 11) = -v;
+
+			//std::cout << point_id << "  a=" << a << "  b=" << b << "  u=" << u << "  v=" << v << std::endl;
+		}
+
+		Eigen::JacobiSVD<Eigen::MatrixXd> svd(lh.transpose()*lh, Eigen::ComputeThinU | Eigen::ComputeThinV);
+
+		//	cout << "Its singular values are:" << endl << svd.singularValues() << endl;
+		//	cout << "Its left singular vectors are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
+		//	cout << "Its right singular vectors are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
+
+		//last column corresponds to the "zero" singular value, is the nontrivial solution to Ax=0
+		Eigen::VectorXd h = svd.matrixV().col(11);
+
+		h = h / h(11);	//important
+
+		homography_vec.push_back(h);
+
+		Eigen::MatrixXd H = Eigen::MatrixXd::Zero(3, 6);
+		H(0, 0) = h(0); H(0, 1) = h(1); H(0, 2) = h(2);
+		H(1, 0) = h(3); H(1, 1) = h(4); H(1, 2) = h(5); H(1, 3) = h(6); H(1, 4) = h(7); H(1, 5) = h(8);
+		H(2, 0) = h(9); H(2, 1) = h(10); H(2, 2) = h(11);
+
+		double homograph_error = 0.;
+
+		for (int point_id = 0; point_id < num_points; point_id++)
+		{
+			const double a = corners[point_id].x;
+			const double b = corners[point_id].y;
+			const double u = image_points_vec[frame_id][point_id].x;
+			const double v = image_points_vec[frame_id][point_id].y;
+			const double aa = a*a;
+			const double bb = b*b;
+			const double ab = a*b;
+
+			Eigen::VectorXd r(6);
+			r << a, b, 1, aa, bb, ab;
+
+			Eigen::Vector3d p = (H*r);// .normalized().head(2);
+			Eigen::Vector2d uv; uv << u - p(0) / p(2), v - p(1) / p(2);
+			homograph_error += uv(0)*uv(0) + uv(1)*uv(1);
+
+			//std::cout << uv.transpose() << "  " << p.transpose()<<std::endl;
+			//std::cout<<u<<" "<<v<<"     "<<(H*r).transpose()<<std::endl;
+		}
+
+		homograph_error = std::sqrt(homograph_error / num_points);
+
+		std::cout << "homograph_error "<<homograph_error << std::endl;
+
+		//std::cout << "h31=" << h(9) << "  h32=" << h(10) << std::endl;
+
+		Eigen::MatrixXd M(3, 2);
+		M.row(0) << h(0), h(1);
+		M.row(1) << h(3) - h(9)*h(5), h(4) - h(10)*h(5);
+		//M.row(1) << (h(11)*h(3) - h(9)*h(5))/(h(11)*h(11)), (h(11)*h(4) - h(10)*h(5)) / (h(11)*h(11));
+		//M.row(1) << h(6)/h(9), h(7)/h(10);	//2011
+		M.row(2) << h(9), h(10);
+
+		M_vec.push_back(M);
+
+		A(frame_id * 2, 0) = M(0, 0)*M(0, 1);
+		A(frame_id * 2, 1) = M(0, 0)*M(2, 1) + M(0, 1)*M(2, 0);
+		A(frame_id * 2, 2) = M(2, 0)*M(2, 1);
+		A(frame_id * 2, 3 + frame_id) = M(1, 0)*M(1, 1);
+		A(frame_id * 2 + 1, 0) = M(0, 0)*M(0, 0) - M(0, 1)*M(0, 1);
+		A(frame_id * 2 + 1, 1) = 2.*(M(0, 0)*M(2, 0) - M(0, 1)*M(2, 1));
+		A(frame_id * 2 + 1, 2) = M(2, 0)*M(2, 0) - M(2, 1)*M(2, 1);
+		A(frame_id * 2 + 1, 3 + frame_id) = M(1, 0)*M(1, 0) - M(1, 1)*M(1, 1);
+
+	}
+
+	// solve Ax = 0
+	Eigen::JacobiSVD<Eigen::MatrixXd> svd(A.transpose()*A, Eigen::ComputeThinU | Eigen::ComputeThinV);
+
+	//cout << "Its singular values are:" << endl << svd.singularValues() << endl;
+	//cout << "Its left singular vectors are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
+	//cout << "Its right singular vectors are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
+
+	Eigen::VectorXd x = svd.matrixV().col(2 + num_frames);
+
+	//principal point
+	const double u0 = -x(1) / x(0);
+
+	// focal length
+	const double f = std::sqrt(x(2) / x(0) - u0*u0);
+
+	// solve 1/s^2 and ti3^2
+	Eigen::MatrixXd B = Eigen::MatrixXd::Zero(num_frames * 2, 1 + num_frames);
+	for (int frame_id = 0; frame_id < num_frames; frame_id++)
+	{
+		Eigen::MatrixXd M = M_vec[frame_id];
+		B(frame_id * 2, 0) = M(1, 0)*M(1, 0);
+		B(frame_id * 2 + 1, frame_id + 1) = (M(0, 1)*M(0, 1) - M(2, 1)*M(0, 1)*u0 + M(2, 1)*M(2, 1)*(u0*u0 + f*f) - M(0, 1)*M(2, 1)*u0) / (f*f);
+	}
+
+	Eigen::VectorXd b = Eigen::VectorXd::Ones(2 * num_frames);
+
+	Eigen::VectorXd st = B.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
+
+	st = st.cwiseSqrt();
+
+	//std::cout << st << std::endl;
+
+	const double s = 1. / st(0);
+
+	// intrinsic matrix
+	Eigen::Matrix3d K = Eigen::Matrix3d::Zero();
+
+	K(0, 0) = f;
+	K(0, 2) = u0;
+	K(1, 1) = s;
+	K(2, 2) = 1.;
+
+	Eigen::Matrix3d K_inverse = K.inverse();
+
+	std::cout << "u0: " << u0 << "    f: " << f << "    s: " << s << std::endl;
+
+	// camera poses in calibration pattern coordinate system
+	std::vector<Eigen::Matrix4d*> camera_pose_vec;
+	for (int frame_id = 0; frame_id < num_frames; frame_id++)
+	{
+		double t3 = st(frame_id + 1);
+		Eigen::VectorXd hi = homography_vec[frame_id] * t3;
+
+		Eigen::Vector3d t;
+		t << (hi(2) - u0*t3) / f, hi(5) / (t3*s), t3;
+
+		Eigen::Matrix3d R;
+		R(0, 0) = (hi(0) - u0*hi(9)) / f;
+		R(0, 1) = (hi(1) - u0*hi(10)) / f;
+		R(1, 0) = hi(6) / (hi(9)*s);
+		R(1, 1) = hi(7) / (hi(10)*s);
+		R(2, 0) = hi(9);
+		R(2, 1) = hi(10);
+
+		R.col(2) = R.col(0).cross(R.col(1));
+
+
+		Eigen::JacobiSVD<Eigen::Matrix3d> svd_R(R, Eigen::ComputeThinU | Eigen::ComputeThinV);
+		Eigen::Matrix3d U = svd_R.matrixU();
+		Eigen::Matrix3d V = svd_R.matrixV().transpose();
+		Eigen::Matrix3d tmp = Eigen::Matrix3d::Identity();
+		tmp(2, 2) = (U*V).determinant();
+		R = U*tmp*V;
+
+		//R = svd.matrixU() * svd.matrixV().transpose();
+
+		Eigen::Matrix4d *T = new Eigen::Matrix4d;
+		*T = Eigen::Matrix4d::Identity();
+		(*T).block<3, 3>(0, 0) = R;
+		(*T).col(3).head(3) = t;
+
+		std::cout << "Frame " << frame_id << std::endl << *T << std::endl;
+
+		camera_pose_vec.push_back(T);
+	}
 }

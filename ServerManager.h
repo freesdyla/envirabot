@@ -31,9 +31,9 @@ struct ServerManager
 
 	int makeServerDirectory(std::string path);
 
-	int uploadDirectory(std::string folder_name);
+	int uploadDirectory(std::string folder_name, std::string experiment_name="experiment");
 
-	int createNewThreadToUploadDirectory(std::string folder_name, std::string chamber_name);
+	int createNewThreadToUploadDirectory(std::string folder_name, std::string chamber_name, std::string experiment_name);
 
 	int deleteOutdatedData();
 

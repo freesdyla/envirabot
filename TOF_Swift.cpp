@@ -13,6 +13,7 @@ TOF_Swift::TOF_Swift()
 	intensity_img_16u_.create(img_height_, img_width_, CV_16UC1);
 	intensity_img_.create(img_height_, img_width_, CV_8UC1);
 
+	// the first connection fails sometimes
 	for (int i = 0; i < 10; i++)
 	{
 		if (odos::Result::Success == cam_.open(ip_address))
@@ -31,18 +32,14 @@ TOF_Swift::TOF_Swift()
 	
 	setPower(2600);
 
-	cv_multiplier_x_.create(img_height_, img_width_, CV_32F);
-	cv_multiplier_y_.create(img_height_, img_width_, CV_32F);
-	cv_multiplier_z_.create(img_height_, img_width_, CV_32F);
-
 	setupStreaming();
 
 	thread_vec_.push_back(std::thread(&TOF_Swift::startStreaming, this));
-
 }
 
 TOF_Swift::~TOF_Swift()
 {
+	stop();
 	delete[] xMultiplier;
 	delete[] yMultiplier;
 	delete[] zMultiplier;
@@ -98,16 +95,14 @@ float* TOF_Swift::getImage(odos::Camera& camera, odos::ComponentType component)
 		if (image->component() == component)
 		{
 			// Multiplier size is always 640x480 32bit floats
-			const int multiplier_size = 640 * 480;
-
-			if (image->pixelBufferSize() < multiplier_size * sizeof(float))
+			if (image->pixelBufferSize() < img_size_ * sizeof(float))
 			{
 				std::cerr << "invalid multiplier image received" << std::endl;
 				exit(1);
 			}
 
-			buff = new float[multiplier_size];
-			memcpy(buff, image->pixelBuffer(), multiplier_size * sizeof(float));
+			buff = new float[img_size_];
+			memcpy(buff, image->pixelBuffer(), img_size_ * sizeof(float));
 		}
 		camera.releaseImage(image);
 	} while (buff == nullptr);
@@ -264,7 +259,7 @@ void TOF_Swift::startStreaming()
 					const float range = (*range_ptr);
 					const float z = range*(*zm_ptr);
 
-					if (z > 0.01f && z < 3.f) {
+					if (z > 0.005f && z < 4.f) {
 
 						PointT p;
 						p.z = z;
@@ -396,7 +391,7 @@ void TOF_Swift::setupStreaming()
 	if (componentSelector == nullptr || componentEnable == nullptr)
 	{
 		std::cerr << "could not access required nodes" << std::endl;
-		exit(1);
+		exit(-1);
 	}
 	componentSelector->set("Range");
 	componentEnable->set(true);
@@ -408,9 +403,7 @@ void TOF_Swift::setupStreaming()
 void TOF_Swift::getPointCloud(PointCloudT::Ptr cloud)
 {
 	update_mutex_.lock();
-
 	*cloud = *cloud_;
-
 	update_mutex_.unlock();
 }
 

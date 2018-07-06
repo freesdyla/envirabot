@@ -4,19 +4,42 @@ RobotArmClient::RobotArmClient()
 {
 	TCP_ALIVE = true;
 
+	recvbuf = new char[DEFAULT_BUFLEN];
+
 	//initial dst pose, no need for Inf
 	for (int i = 0; i < 6; i++)
 		dst_cartesian_info_array[i] = 0.0;
 
+	URMsgHandler.push_back(std::thread(&RobotArmClient::startRecvTCP, this));
+
+	Sleep(1000);
+
+	// turn off laser
+	laserScannerLightControl(false);
+}
+
+RobotArmClient::~RobotArmClient()
+{
+	stopRecvTCP();
+
+	delete[] recvbuf;
+}
+
+void RobotArmClient::startRecvTCP()
+{
 	result = NULL;
 
 	ptr = NULL;
 
 	// Initialize Winsock
 	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-	
-	if (iResult != 0) 
-		printf("WSAStartup failed with error: %d\n", iResult);
+
+	if (iResult != 0)
+	{
+		Utilities::to_log_file("WSAStartup failed with error\n");
+		TCP_ALIVE = false;
+		return;
+	}
 
 	ZeroMemory(&hints, sizeof(hints));
 	hints.ai_family = AF_INET;
@@ -25,21 +48,23 @@ RobotArmClient::RobotArmClient()
 
 	// Resolve the server address and port
 	iResult = getaddrinfo("192.168.0.2", DEFAULT_PORT, &hints, &result);
-	if (iResult != 0) 
+	if (iResult != 0)
 	{
-		printf("getaddrinfo failed with error: %d\n", iResult);
+		Utilities::to_log_file("getaddrinfo failed with error\n");
 		WSACleanup();
+		TCP_ALIVE = false;
+		return;
 	}
 
-	std::cout << "connecting to UR10...\n";
+	std::cout << "connecting to UR10..." << std::endl;
 
 	// Attempt to connect to an address until one succeeds
-	for (ptr = result; ptr != NULL; ptr = ptr->ai_next) 
+	for (ptr = result; ptr != NULL; ptr = ptr->ai_next)
 	{
 		// Create a SOCKET for connecting to server
 		ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
 
-		if (ConnectSocket == INVALID_SOCKET) 
+		if (ConnectSocket == INVALID_SOCKET)
 		{
 			printf("socket failed with error: %ld\n", WSAGetLastError());
 			WSACleanup();
@@ -49,13 +74,13 @@ RobotArmClient::RobotArmClient()
 		// Disable Nagle algorithm for low-latency send
 		char value = 1;
 
-		if(setsockopt(ConnectSocket, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(value)) != 0)
-			std::cout<<"robot arm socket connect fail"<<std::endl;
+		if (setsockopt(ConnectSocket, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(value)) != 0)
+			std::cout << "robot arm socket connect fail" << std::endl;
 
 		// Connect to server.
 		iResult = connect(ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen);
 
-		if (iResult == SOCKET_ERROR) 
+		if (iResult == SOCKET_ERROR)
 		{
 			closesocket(ConnectSocket);
 			ConnectSocket = INVALID_SOCKET;
@@ -72,16 +97,6 @@ RobotArmClient::RobotArmClient()
 		return;
 	}
 
-	URMsgHandler.push_back(std::thread(&RobotArmClient::startRecvTCP, this));
-
-	Sleep(1000);
-
-	// turn off laser
-	laserScannerLightControl(false);
-}
-
-void RobotArmClient::startRecvTCP()
-{
 	unsigned int cartesianStartID = 0x04650000;
 
 	// Receive until the peer closes the connection
@@ -103,9 +118,12 @@ void RobotArmClient::startRecvTCP()
 		printf("recv failed with error: %d\n", WSAGetLastError());*/
 
 		//if (iResult == 635) // 10Hz
-		if (iResult == 1060)	//125Hz
+		if (iResult == 1108)	//125Hz	, ur software version > 3.5
 		{
 			updateMutex.lock();
+
+		//	int package_size = *((int*)recvbuf);
+
 			// index 307 is the cartesion info x start
 			getCartesionInfoFromURPackage(recvbuf + 444);	// 125 Hz
 			//getCartesionInfoFromURPackage(recvbuf + 307);	// 10 Hz
@@ -118,7 +136,7 @@ void RobotArmClient::startRecvTCP()
 
 			if (safety_mode_ != 0xf03f) exit(EXIT_FAILURE);
 
-			tcp_speed_ = sqrt(cur_tcp_speed_array[0]* cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
+			tcp_speed_ = std::sqrt(cur_tcp_speed_array[0]* cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
 
 			distanceToDst_ = EuclideanDistance(cur_cartesian_info_array, dst_cartesian_info_array);
 
@@ -127,6 +145,8 @@ void RobotArmClient::startRecvTCP()
 			distanceToDstConfig_ = configLInfNorm(cur_joint_pos_array, dst_joint_pos_array);
 
 			updateMutex.unlock();
+
+			//std::cout << package_size << std::endl;
 
 			//std::cout << distanceToDst << std::endl;
 
@@ -164,7 +184,7 @@ void RobotArmClient::startRecvTCP()
 
 	// cleanup
 	closesocket(ConnectSocket);
-
+	TCP_ALIVE = false;
 	WSACleanup();
 }
 
@@ -184,9 +204,7 @@ void RobotArmClient::reverse8CharsToDouble(char* end, double* d)
 void RobotArmClient::getCartesionInfoFromURPackage(char* x_start_ptr)
 {
 	for (int i = 0; i < 6; i++)
-	{
 		reverse8CharsToDouble(x_start_ptr + 7 + i * 8, cur_cartesian_info_array + i);
-	}
 }
 
 void RobotArmClient::getActualJointPosFromURPackage()
@@ -194,9 +212,7 @@ void RobotArmClient::getActualJointPosFromURPackage()
 	char* start_ptr = recvbuf + 252;
 
 	for (int i = 0; i < 6; i++)
-	{
 		reverse8CharsToDouble(start_ptr + 7 + i * 8, cur_joint_pos_array + i);
-	}
 }
 
 void RobotArmClient::getActualTCPSpeedFromURPackage()
@@ -204,9 +220,7 @@ void RobotArmClient::getActualTCPSpeedFromURPackage()
 	char* start_ptr = recvbuf + 492;
 
 	for (int i = 0; i < 6; i++)
-	{
 		reverse8CharsToDouble(start_ptr + 7 + i * 8, cur_tcp_speed_array + i);
-	}
 }
 
 int RobotArmClient::moveHandL(double* dst_cartesian_info, float acceleration, float speed, bool wait2dst)
@@ -235,9 +249,9 @@ int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float accel
 {
 	char msg[128];
 
-	updateMutex.lock();
-	distanceToDstConfig_ = 1000000.;
-	updateMutex.unlock();
+	//updateMutex.lock();
+	distanceToDstConfig_.store(1e7);
+	//updateMutex.unlock();
 
 	sprintf(msg, "movej([%f,%f,%f,%f,%f,%f],a=%f,v=%f)\n",
 		dst_joint_config[0], dst_joint_config[1], dst_joint_config[2],
@@ -291,13 +305,13 @@ void RobotArmClient::getCurJointPose(double* array6)
 
 UINT64 RobotArmClient::getSafetyMode()
 {
-	updateMutex.lock();
+//	updateMutex.lock();
 
-	UINT64 safety_mode = safety_mode_;
+	//UINT64 safety_mode = safety_mode_;
 
-	updateMutex.unlock();
+	//updateMutex.unlock();
 
-	return safety_mode;
+	return safety_mode_.load();
 }
 
 void RobotArmClient::printCartesianInfo(double* array6)
@@ -332,7 +346,7 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 		if (distanceToDst_.load() < 0.0005)	break;
 
 		Sleep(1);
-		//std::cout << distanceToDst << std::endl;
+		//std::cout << distanceToDst_.load() << std::endl;
 	}
 
 	return 0;
@@ -342,17 +356,27 @@ int RobotArmClient::waitTillHandReachDstConfig(double* dst_joint_config)
 {
 	setDstConfigInfo(dst_joint_config);
 
+	int timeout_cnt = 0;
+
 	while (true)
 	{
-		if (distanceToDstConfig_ < 0.03) break;
+		if (distanceToDstConfig_.load() < 0.03) break;
 
 		if (getSafetyMode() != 0xf03f) {
-			std::cout << "UR10 stopped\n";
+			std::cerr << "UR10 stopped\n";
 			return -1;
 		}
 
 		Sleep(10);
-		//std::cout << distanceToDstConfig_ << std::endl;
+		//std::cout << distanceToDstConfig_.load() << std::endl;
+		if (timeout_cnt++ > 100*30)
+		{
+			std::cerr << "wait till reach config timeout - "<< distanceToDstConfig_.load() << std::endl;
+			stopRecvTCP();
+			URMsgHandler.push_back(std::thread(&RobotArmClient::startRecvTCP, this));
+			Sleep(1000);
+			break;
+		}
 	}
 
 	Sleep(1000);
@@ -364,7 +388,7 @@ void RobotArmClient::setDstCartesianInfo(double* array6)
 {
 	updateMutex.lock();
 	std::memcpy(dst_cartesian_info_array, array6, 48);
-	distanceToDst_.store(1000.);
+	distanceToDst_ = 1000.;
 	updateMutex.unlock();
 }
 
@@ -388,6 +412,7 @@ void RobotArmClient::stopRecvTCP(void)
 {
 	TCP_ALIVE = false;
 	URMsgHandler.back().join();
+	URMsgHandler.clear();
 }
 
 void RobotArmClient::setStartPoseXYZ()
@@ -398,17 +423,18 @@ void RobotArmClient::setStartPoseXYZ()
 	displacement_.store(0);
 }
 
-void RobotArmClient::waitTillTCPMove()
+double RobotArmClient::waitTillTCPMove(double target_speed)
 {
 	//int counter = 0;
 	while (true)
 	{
 		//counter++;
-		if (tcp_speed_.load() >= 0.01f) break;
+		if (tcp_speed_.load() >= target_speed) break;
 		//if (displacement_.load() >= 0.0001)	break;
 		Sleep(1);
 	}
 
+	return tcp_speed_.load();
 	//return counter;
 }
 

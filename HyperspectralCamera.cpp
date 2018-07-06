@@ -2,6 +2,8 @@
 
 std::vector<std::vector<unsigned char>> HyperspectralCamera::frames_;
 
+std::vector<cv::Mat> HyperspectralCamera::scanlines_;
+
 cv::Mat HyperspectralCamera::img_;
 
 cv::Mat HyperspectralCamera::img_8u_;
@@ -18,7 +20,7 @@ int HyperspectralCamera::spectral_size_ = 448 >> spectral_binning_;
 
 int HyperspectralCamera::img_size_ = spatial_size_*spectral_size_;
 
-unsigned int HyperspectralCamera::frame_count_ = 0;
+std::atomic<unsigned int> HyperspectralCamera::frame_count_ = 0;
 
 std::mutex HyperspectralCamera::update_mutex_;
 
@@ -30,6 +32,8 @@ HyperspectralCamera::HyperspectralCamera() {
 }
 
 HyperspectralCamera::~HyperspectralCamera() {
+
+	stop();
 	delete[] pWavelengths;
 }
 
@@ -55,9 +59,9 @@ void HyperspectralCamera::init() {
 	SI_CHK(SI_GetBool(g_hDevice_, L"Camera.CalibrationPack.IsLoaded", &bIsLoaded));	cout << "is calib loaded: " << bIsLoaded << "\n";
 	dFrameRate_ = 30.0;
 
-	SI_SetEnumIndex(g_hDevice_, L"Camera.Binning.Spatial", spatial_binning_); 
+	SI_CHK(SI_SetEnumIndex(g_hDevice_, L"Camera.Binning.Spatial", spatial_binning_));
 
-	SI_SetEnumIndex(g_hDevice_, L"Camera.Binning.Spectral", spectral_binning_);
+	SI_CHK(SI_SetEnumIndex(g_hDevice_, L"Camera.Binning.Spectral", spectral_binning_));
 
 	SI_CHK(SI_SetFloat(g_hDevice_, L"Camera.FrameRate", dFrameRate_));
 
@@ -104,7 +108,28 @@ Error:
 	SI_Unload();
 }
 
-void HyperspectralCamera::start() {
+void HyperspectralCamera::start(int options) {
+
+	if (options == CALIBRATION)
+	{
+		frame_count_ = 0;
+		scanlines_.clear();
+		img_.create(56, 1024, CV_16U);
+		SI_CHK(SI_SetFloat(g_hDevice_, L"Camera.ExposureTime", 30.));
+		SI_CHK(SI_SetFloat(g_hDevice_, L"Camera.FrameRate", 30.));
+		SI_CHK(SI_SetEnumIndex(g_hDevice_, L"Camera.Binning.Spatial", 0));
+		SI_CHK(SI_SetEnumIndex(g_hDevice_, L"Camera.Binning.Spectral", 3));	// 448/8=56
+		SI_CHK(SI_RegisterDataCallback(g_hDevice_, onDataCallbackAverageSpectral, 0));
+
+		SI_CHK(SI_GetFloat(g_hDevice_, L"Camera.FrameRate", &dFrameRate_));
+		SI_CHK(SI_GetFloat(g_hDevice_, L"Camera.ExposureTime", &dExposureTime_));
+		std::cout << "exposure time " << dExposureTime_ << "		frame rate " << dFrameRate_ << "\n";
+		//std::cout << "ready\n";	std::getchar();
+	}
+	else if(options == DATA_COLLECTION)
+	{
+		SI_CHK(SI_RegisterDataCallback(g_hDevice_, onDataCallback, 0));
+	}
 
 	SI_CHK(SI_Command(g_hDevice_, L"Acquisition.Start"));
 
@@ -182,6 +207,54 @@ int HyperspectralCamera::onDataCallback(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_6
 
 	cv::waitKey(10);
 #endif
+
+	return 0;
+}
+
+int HyperspectralCamera::onDataCallbackAverageSpectral(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_64 _nFrameNumber, void* _pContext)
+{
+	frame_count_.store(frame_count_.load() + _nFrameNumber);
+
+	//std::cout << _nFrameSize << std::endl;
+	//if (_nFrameNumber != 1) std::cout << "frame != 1\n";
+
+	//int64 tick = cv::getTickCount();
+
+	for (int i = 0; i < _nFrameNumber; i++)
+	{
+	//	update_mutex_.lock();
+	//	std::memcpy(img_.ptr<unsigned char>(), _pBuffer + i*_nFrameSize, _nFrameSize);
+	//	update_mutex_.unlock();
+
+		cv::Mat tmp(56, 1024, CV_16U, _pBuffer + i*_nFrameSize);
+		cv::Mat scan_line;
+		cv::reduce(tmp, scan_line, 0, CV_REDUCE_AVG, CV_64F);
+		scanlines_.push_back(scan_line);
+
+#if 0
+		//std::cout << _nFrameSize << " " << _nFrameNumber <<"\n";
+
+		//std::memcpy(img_.ptr<unsigned char>(), _pBuffer, _nFrameSize);
+
+		double min_val, max_val;
+
+		cv::minMaxLoc(scan_line, &min_val, &max_val);
+
+		///(v - min)/(max-min)*255 = v*(255/(max-min)) - 255*min/(max-min)
+
+		//min_val = 170.;
+
+		scan_line.convertTo(img_8u_, CV_8U, 255. / (max_val - min_val), -255.*min_val / (max_val - min_val));
+
+		//cout << min_val << " " << max_val << "\n";
+
+		cv::imshow("img", img_8u_);
+
+		cv::waitKey(5);
+#endif
+	}
+
+	//std::cout << (cv::getTickCount() - tick) / cv::getTickFrequency() << "\n";
 
 	return 0;
 }

@@ -13,8 +13,11 @@ FlirThermoCamClient::FlirThermoCamClient()
 int FlirThermoCamClient::connectToServer()
 {
 	// Try to open a named pipe; wait for it, if necessary. 
-	for (int i = 0; i < 100; i++)
+	std::cout << "connect to flir thermo\n";
+	while(1)
 	{
+		Sleep(2000);
+
 		hPipe = CreateFile(
 			lpszPipename,   // pipe name 
 			GENERIC_READ |  // read and write access 
@@ -32,11 +35,11 @@ int FlirThermoCamClient::connectToServer()
 			isConnected = true;
 			break;
 		}
-
-		Sleep(2000);
 	}
 
-	if (isConnected = false)
+	//isConnected = true;
+
+	if (isConnected == false)
 	{
 		Utilities::to_log_file("Failed to connect to FLIR\n");
 		exit(-1);
@@ -66,7 +69,8 @@ int FlirThermoCamClient::snapShot(cv::Mat & color_map, cv::Mat & temperature_map
 
 	if (!fSuccess)
 	{
-		_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
+		//_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
+		std::cout << "WriteFile to pipe failed\n";
 		isConnected = false;
 		return -1;
 	}
