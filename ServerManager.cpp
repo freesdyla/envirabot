@@ -6,7 +6,8 @@ ServerManager::ServerManager()
 
 	if (result != 0)
 	{
-		Utilities::to_log_file("Fail to connect to storage server\n");
+		Utilities::to_log_file("Fail to connect to storage server");
+		exit(0);
 	}
 }
 
@@ -25,6 +26,7 @@ ServerManager::~ServerManager()
 
 		libssh2_exit();
 	}
+
 }
 
 int ServerManager::init() {
@@ -135,7 +137,7 @@ int ServerManager::uploadDirectory(std::string folder_name, std::string experime
 
 	std::string linux_server_dir = experiment_name +"/" + chamber_name + "/" + folder_name;
 
-//	std::cout << linux_server_dir << std::endl;
+	std::cout << linux_server_dir << std::endl;
 
 	makeServerDirectory(linux_server_dir);
 

@@ -36,9 +36,6 @@
 #include <boost/serialization/version.hpp>
 #include <fstream>
 
-#define IMAGING 0
-#define PROBING 1
-
 struct PathPlanner
 {
 	typedef pcl::PointXYZRGB PointT;
@@ -194,8 +191,6 @@ struct PathPlanner
 
 	flann::Index<flann::L2<float>>* referen_point_index_; // first half for probing
 
-	flann::Index<flann::L2<float>>* referen_point_imaging_index_;	// second half for imaging
-
 	std::mt19937 rand_gen_;
 
 	std::vector<std::uniform_real_distribution<float>> distri_vec_;
@@ -208,8 +203,6 @@ struct PathPlanner
 	Eigen::Matrix4f DH_mat_vec_[6];
 	Eigen::Matrix4f fk_mat_;	//transformation of last frame
 
-	pcl::octree::OctreePointCloudSearch<PointT> octree_;
-	
 	std::vector<PointT> arm_joint_points_;
 
 	std::vector<std::vector<PointT>> collision_vec_;
@@ -225,8 +218,6 @@ struct PathPlanner
 	std::vector<int> connected_component_;
 
 	std::vector<prmcevertex_descriptor> shortest_path_index_vec_;
-
-	float arm_radius_;
 
 	// 3d occupancy grid, unit: cm
 	int grid_width_, grid_depth_, grid_height_, cell_size_, num_cells_;
@@ -258,7 +249,7 @@ struct PathPlanner
 	const int start_check_obb_idx_ = 10;	
 	const int end_check_obb_idx_ = 13;
 
-	float tcp_y_limit_ = -0.2f;
+	float tcp_y_limit_ = -0.3f;
 
 	double ik_sols_[8 * 6];
 
@@ -315,7 +306,7 @@ struct PathPlanner
 
 	bool selfCollisionBetweenTwoConfigs(float* config1, float* config2);
 
-	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec, int imaging_or_probing = IMAGING);
+	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec);
 	
 	void double2float(double* array6_d, float* array6_f);
 
@@ -323,9 +314,9 @@ struct PathPlanner
 
 	void addPointCloudToOccupancyGrid(PointCloudT::Ptr cloud);
 
-	void viewOccupancyGrid(boost::shared_ptr<pcl::visualization::PCLVisualizer> & viewer);
+	void viewOccupancyGrid();
 
-	bool planPath(float* start_joint_pos, float* end_joint_pos, bool smooth = false, bool try_direct_path = true, bool imaging_or_probing = IMAGING);
+	bool planPath(float* start_joint_pos, float* end_joint_pos, bool smooth = false, bool try_direct_path = true);
 
 	bool collisionCheckTwoConfigs(float* config1, float* config2);
 

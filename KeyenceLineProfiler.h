@@ -64,6 +64,8 @@ struct KeyenceLineProfiler
 
 	int nRc;
 
+	//static std::vector<LARGE_INTEGER> timestamps_;
+
 	void init();
 
 	void finalize();

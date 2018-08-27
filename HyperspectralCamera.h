@@ -1,5 +1,6 @@
 #ifndef HYPERSPECTRAL_CAMERA_H
 #define HYPERSPECTRAL_CAMERA_H
+#define _CRT_SECURE_NO_WARNINGS
 
 #include <windows.h>
 #include "SI_sensor.h"
@@ -17,12 +18,15 @@
 #include <iostream>
 #include <vector>
 #include <mutex>
+#include <thread>
 #include <atomic>
+#include <fstream>
+#include "utilities.h"
 
 #define LICENSE_PATH L"C:/Users/Public/Documents/Specim/SpecSensor.lic"
 
-#define CALIBRATION 0
-#define DATA_COLLECTION 1
+#define CONTINUOUS 0
+#define LAST_FRAME 1
 
 using namespace std;
 
@@ -54,7 +58,7 @@ struct HyperspectralCamera {
 	
 	static int img_size_;
 
-	static cv::Mat img_;
+	static cv::Mat last_img_;
 
 	static cv::Mat img_8u_;
 
@@ -65,6 +69,8 @@ struct HyperspectralCamera {
 	int frame_data_size_;
 
 	static std::mutex update_mutex_;
+
+	static std::vector<LARGE_INTEGER> timestamps_;
 
 //	PvResult lResult;
 
@@ -77,15 +83,23 @@ struct HyperspectralCamera {
 	
 	void init();
 
-	void start(int options = DATA_COLLECTION);
+	int start(int options, bool open_shutter = true);
 
 	void stop();
 
 	static int onDataCallback(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_64 _nFrameNumber, void* _pContext);
 
+	static int onDataCallbackLastFrame(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_64 _nFrameNumber, void* _pContext);
+
 	static int onDataCallbackAverageSpectral(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_64 _nFrameNumber, void* _pContext);
 
 	cv::Mat getLastestFrame();
+
+	static int saveData(std::string filename);
+
+	static std::string getCurrentDateTimeStr();
+
+	void dropBufferedFrames();
 
 };
 

@@ -18,6 +18,8 @@
 #include <mutex>
 #include <atomic>
 #include <cmath>
+#include <iomanip>
+#include <limits>
 #include "utilities.h"
 
 // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
@@ -26,7 +28,7 @@
 #pragma comment (lib, "AdvApi32.lib")
 
 
-#define DEFAULT_BUFLEN 1 << 14
+#define DEFAULT_BUFLEN 1 << 16
 //#define DEFAULT_PORT "30002"	//10HZ
 #define DEFAULT_PORT "30003" // real time client 125HZ
 
@@ -70,6 +72,18 @@ struct RobotArmClient
 
 	bool TCP_ALIVE;
 
+	std::atomic<bool> recv_normal_ = false;
+
+	struct timestamp_pose
+	{
+		LARGE_INTEGER timestamp;
+		double pose[6];
+	};
+
+	std::vector<timestamp_pose> timestamp_pose_vec_;
+
+	std::atomic<bool> record_poses_ = false;
+
 	RobotArmClient();
 
 	~RobotArmClient();
@@ -86,7 +100,7 @@ struct RobotArmClient
 
 	void reverse8CharsToDouble(char* end, double* d);
 	
-	void getCartesionInfoFromURPackage(char* x_start_ptr);
+	void getCartesionInfoFromURPackage();
 
 	void getActualJointPosFromURPackage();
 
@@ -129,6 +143,16 @@ struct RobotArmClient
 	void whiteBoardServoControl(bool extend);
 
 	void laserScannerLightControl(bool on);
+
+	void chargerControl(bool start_or_stop);
+
+	void startOrStopRecordPose(bool start);
+
+	std::vector<timestamp_pose> getTimestampPoses();
+
+	int saveTimeStampPoses(std::string filename);
+
+	int saveCurPose(std::string filename);
 };
 
 #endif

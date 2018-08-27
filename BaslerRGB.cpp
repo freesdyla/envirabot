@@ -12,8 +12,7 @@ BaslerRGB::BaslerRGB()
 
 BaslerRGB::~BaslerRGB()
 {
-
-
+	finishCamera();
 }
 
 void BaslerRGB::init()
@@ -22,8 +21,7 @@ void BaslerRGB::init()
 	info.SetDeviceClass(Pylon::CBaslerUsbInstantCamera::DeviceClass());
 	camera.Attach(CTlFactory::GetInstance().CreateFirstDevice(info));
 	camera.RegisterConfiguration(new CAcquireContinuousConfiguration, RegistrationMode_ReplaceAll, Cleanup_Delete); // Not sure if necesary.																												 // Print the model name of the camera.
-	std::cout << "Using device " << camera.GetDeviceInfo().GetModelName() << std::endl;
-	cameraON = true;
+	//std::cout << "Using device " << camera.GetDeviceInfo().GetModelName() << std::endl;
 
 	INodeMap& nodemap = camera.GetNodeMap();
 
@@ -92,29 +90,24 @@ void BaslerRGB::setBrightness(float val)
 	camera.AutoExposureTimeUpperLimit.SetValue(50000.0);
 	camera.AutoTargetBrightness.SetValue(val);
 	camera.ExposureAuto.SetValue(ExposureAuto_Continuous);
-
-
 }
 
 void BaslerRGB::internalStreaming()
 {
-	
-	if (cameraON) {
-		streaming_ = true;
-		setBrightness(0.40); //Set brightness to initial desired level
-		Sleep(100);
-		camera.StartGrabbing(GrabStrategy_LatestImageOnly);
-		while (streaming_) 
-		{ 
-			takePicture();
-			Sleep(20);
-		} //Refresh imageOut in BGR8-packed format
-		camera.StopGrabbing();
-	}
-	else {
-		std::cout << std::endl << "There's no camera attached to this object" << std::endl;
-	}
+	streaming_ = true;
+	setBrightness(0.40); //Set brightness to initial desired level
+	Sleep(100);
+	camera.StartGrabbing(GrabStrategy_LatestImageOnly);
+
+	while (streaming_) 
+	{ 
+		takePicture();
+		Sleep(20);
+	} //Refresh imageOut in BGR8-packed format
+
+	camera.StopGrabbing();
 }
+
 void BaslerRGB::takePicture()
 {
 	try {

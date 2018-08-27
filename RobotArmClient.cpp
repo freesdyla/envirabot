@@ -31,6 +31,8 @@ void RobotArmClient::startRecvTCP()
 
 	ptr = NULL;
 
+	TCP_ALIVE = true;
+
 	// Initialize Winsock
 	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
 
@@ -108,25 +110,34 @@ void RobotArmClient::startRecvTCP()
 	{
 		//clock_t tic = clock();
 
+		//  reset first four bytes
+		recvbuf[0] = recvbuf[1] = recvbuf[2] = recvbuf[3] = 0;
+
 		iResult = recv(ConnectSocket, recvbuf, recvbuflen, 0);
 
-		/*if (iResult > 0)
-		printf("Bytes received: %d\n", iResult);
-		else if (iResult == 0)
-		printf("Connection closed\n");
-		else
-		printf("recv failed with error: %d\n", WSAGetLastError());*/
+		if (iResult == 0)
+		{
+			continue;
+		}
+		else if (iResult < 0)
+		{
+			std::cout << "recv error" << std::endl;
+			continue;
+		}
 
-		//if (iResult == 635) // 10Hz
-		if (iResult == 1108)	//125Hz	, ur software version > 3.5
+		std::uint32_t packageLength;
+		// Byteswap package length
+		char *p = (char *)(&packageLength);
+
+		p[0] = recvbuf[3]; p[1] = recvbuf[2]; p[2] = recvbuf[1]; p[3] = recvbuf[0];
+
+		if ((packageLength == 1108) && (iResult == 1108)) //125Hz	, ur software version > 3.5
 		{
 			updateMutex.lock();
 
-		//	int package_size = *((int*)recvbuf);
+			//	int package_size = *((int*)recvbuf);
 
-			// index 307 is the cartesion info x start
-			getCartesionInfoFromURPackage(recvbuf + 444);	// 125 Hz
-			//getCartesionInfoFromURPackage(recvbuf + 307);	// 10 Hz
+			getCartesionInfoFromURPackage();	// 125 Hz
 
 			getActualJointPosFromURPackage();
 
@@ -136,7 +147,7 @@ void RobotArmClient::startRecvTCP()
 
 			if (safety_mode_ != 0xf03f) exit(EXIT_FAILURE);
 
-			tcp_speed_ = std::sqrt(cur_tcp_speed_array[0]* cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
+			tcp_speed_ = std::sqrt(cur_tcp_speed_array[0] * cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
 
 			distanceToDst_ = EuclideanDistance(cur_cartesian_info_array, dst_cartesian_info_array);
 
@@ -144,35 +155,28 @@ void RobotArmClient::startRecvTCP()
 
 			distanceToDstConfig_ = configLInfNorm(cur_joint_pos_array, dst_joint_pos_array);
 
+			if (record_poses_)
+			{
+				timestamp_pose ts_p;
+				QueryPerformanceCounter(&ts_p.timestamp);
+				std::memcpy(ts_p.pose, cur_cartesian_info_array, 48);
+				timestamp_pose_vec_.push_back(ts_p);
+			}
+
 			updateMutex.unlock();
 
+
+			recv_normal_.store(true);
 			//std::cout << package_size << std::endl;
 
 			//std::cout << distanceToDst << std::endl;
 
 			//printCartesianInfo(cur_cartesian_info_array);
-
-
-			/*unsigned char* tmp_buffer = (unsigned char*)recvbuf;
-
-			for (int j = 0; j < iResult - 4; j++)
-			{
-			std::cout << (unsigned int)tmp_buffer[j]<<" ";
-
-			if (std::memcmp(recvbuf + j, &cartesianStartID, 4) == 0)
-			{
-			std::cout << "found" << j <<" "<< (unsigned int)tmp_buffer[j+4] << std::endl;
-			}
-
-			if (tmp_buffer[j] == 4)
-			std::cout << std::endl;
-			}*/
-
-			//break;
 		}
 		else
+			recv_normal_.store(false);
 			//std::cout << "UR msg size wrong:" << iResult << std::endl;
-			std::cerr << "UR" << iResult << std::endl;
+			//std::cerr << "UR" << iResult << std::endl;
 
 		//clock_t toc = clock();
 		//printf("Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
@@ -201,8 +205,9 @@ void RobotArmClient::reverse8CharsToDouble(char* end, double* d)
 	}
 }
 
-void RobotArmClient::getCartesionInfoFromURPackage(char* x_start_ptr)
+void RobotArmClient::getCartesionInfoFromURPackage()
 {
+	char* x_start_ptr = recvbuf + 444;
 	for (int i = 0; i < 6; i++)
 		reverse8CharsToDouble(x_start_ptr + 7 + i * 8, cur_cartesian_info_array + i);
 }
@@ -249,9 +254,7 @@ int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float accel
 {
 	char msg[128];
 
-	//updateMutex.lock();
 	distanceToDstConfig_.store(1e7);
-	//updateMutex.unlock();
 
 	sprintf(msg, "movej([%f,%f,%f,%f,%f,%f],a=%f,v=%f)\n",
 		dst_joint_config[0], dst_joint_config[1], dst_joint_config[2],
@@ -343,10 +346,10 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 
 	while (true)
 	{
+		//std::cout << distanceToDst_.load() << std::endl;
 		if (distanceToDst_.load() < 0.0005)	break;
 
 		Sleep(1);
-		//std::cout << distanceToDst_.load() << std::endl;
 	}
 
 	return 0;
@@ -354,6 +357,8 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 
 int RobotArmClient::waitTillHandReachDstConfig(double* dst_joint_config)
 {
+	std::thread::id this_id = std::this_thread::get_id();
+
 	setDstConfigInfo(dst_joint_config);
 
 	int timeout_cnt = 0;
@@ -367,14 +372,12 @@ int RobotArmClient::waitTillHandReachDstConfig(double* dst_joint_config)
 			return -1;
 		}
 
-		Sleep(10);
+		Sleep(200);
 		//std::cout << distanceToDstConfig_.load() << std::endl;
-		if (timeout_cnt++ > 100*30)
+		if (timeout_cnt++ > 2*20)
 		{
-			std::cerr << "wait till reach config timeout - "<< distanceToDstConfig_.load() << std::endl;
-			stopRecvTCP();
-			URMsgHandler.push_back(std::thread(&RobotArmClient::startRecvTCP, this));
-			Sleep(1000);
+			std::string txt = "wait till reach config timeout - " + std::to_string(distanceToDstConfig_.load()) + " - " + std::to_string(recv_normal_.load());
+			Utilities::to_log_file(txt);
 			break;
 		}
 	}
@@ -430,7 +433,6 @@ double RobotArmClient::waitTillTCPMove(double target_speed)
 	{
 		//counter++;
 		if (tcp_speed_.load() >= target_speed) break;
-		//if (displacement_.load() >= 0.0001)	break;
 		Sleep(1);
 	}
 
@@ -496,35 +498,63 @@ void RobotArmClient::lineLightControl(bool turn_on) {
 
 	if (turn_on) {
 
-		char msg[128];
+		char msg[64];
 
-		sprintf(msg, "set_analog_outputdomain(1, 1)\n");
+		sprintf(msg, "set_analog_outputdomain(0, 0)\n");	//port 0, current
 
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 		Sleep(100);
 
-		char msg1[128];
+		char msg1[64];
 
-		sprintf(msg1, "set_standard_analog_out(1, 0.5)\n");
+		sprintf(msg1, "set_standard_analog_out(0, 0.1)\n");
 
 		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+
+		char msg2[64];
+
+		sprintf(msg2, "set_analog_outputdomain(0, 0)\n");	//port 0, current
+
+		num_byte = send(ConnectSocket, msg2, strlen(msg2), 0);
+
+		Sleep(100);
+
+		char msg3[64];
+
+		sprintf(msg3, "set_standard_analog_out(0, 0.1)\n");
+
+		num_byte = send(ConnectSocket, msg3, strlen(msg3), 0);
 	}
 	else {
 
-		char msg[128];
+		char msg[64];
 
-		sprintf(msg, "set_analog_outputdomain(1, 1)\n");
+		sprintf(msg, "set_analog_outputdomain(0, 0)\n");
 
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 		Sleep(100);
 
-		char msg1[128];
+		char msg1[64];
 
-		sprintf(msg1, "set_standard_analog_out(1, 0.0)\n");
+		sprintf(msg1, "set_standard_analog_out(0, 0.0)\n");
 
 		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+
+		char msg2[64];
+
+		sprintf(msg2, "set_analog_outputdomain(0, 0)\n");
+
+		num_byte = send(ConnectSocket, msg2, strlen(msg2), 0);
+
+		Sleep(100);
+
+		char msg3[64];
+
+		sprintf(msg3, "set_standard_analog_out(0, 0.0)\n");
+
+		num_byte = send(ConnectSocket, msg3, strlen(msg3), 0);
 	}
 }
 
@@ -559,7 +589,7 @@ void RobotArmClient::whiteBoardServoControl(bool extend) {
 
 		char msg[128];
 
-		sprintf(msg, "set_analog_outputdomain(1, 1)\n");
+		sprintf(msg, "set_analog_outputdomain(1, 1)\n");	//port 1, voltage
 
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
@@ -587,6 +617,8 @@ void RobotArmClient::whiteBoardServoControl(bool extend) {
 
 		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
 	}
+
+	Sleep(2000);
 }
 
 void RobotArmClient::laserScannerLightControl(bool on) {
@@ -623,4 +655,106 @@ void RobotArmClient::laserScannerLightControl(bool on) {
 
 		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
 	}
+}
+
+void RobotArmClient::chargerControl(bool start_or_stop)
+{
+	if (start_or_stop) {
+
+		char msg[128];
+
+		sprintf(msg, "set_digital_out(1,True)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(200);
+
+		char msg1[128];
+
+		sprintf(msg1, "set_digital_out(1,True)\n");
+
+		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+	}
+	else {
+
+		char msg[128];
+
+		sprintf(msg, "set_digital_out(1,False)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(200);
+
+		char msg1[128];
+
+		sprintf(msg1, "set_digital_out(1,False)\n");
+
+		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
+	}
+
+}
+
+void RobotArmClient::startOrStopRecordPose(bool start)
+{
+	if (start)
+	{
+		record_poses_.store(false);
+		updateMutex.lock();
+		timestamp_pose_vec_.clear();
+		updateMutex.unlock();
+		record_poses_.store(true);
+	}
+	else
+		record_poses_.store(false);
+}
+
+
+std::vector<RobotArmClient::timestamp_pose> RobotArmClient::getTimestampPoses()
+{
+	updateMutex.lock();
+	std::vector<RobotArmClient::timestamp_pose> ts_ps(timestamp_pose_vec_);
+	updateMutex.unlock();
+
+	return ts_ps;
+}
+
+int RobotArmClient::saveTimeStampPoses(std::string filename)
+{
+	filename += "_timestamp_hand_pose.csv";
+	std::ofstream out(filename, std::ios::out);
+
+	if (!out.is_open())
+		return -1;
+
+	int cnt = 0;
+	for (auto & ts_p : timestamp_pose_vec_)
+	{
+		out << ts_p.timestamp.QuadPart;
+		for (int i = 0; i < 6; i++)
+			out << "," << std::setprecision(std::numeric_limits<long double>::digits10 + 1) << ts_p.pose[i];
+		
+		if(cnt++ != timestamp_pose_vec_.size()-1 ) out << std::endl;
+	}
+	
+	out.close();
+	return 0;
+}
+
+int RobotArmClient::saveCurPose(std::string filename)
+{
+	filename += "_tcp_pose.csv";
+	std::ofstream out(filename, std::ios::out);
+
+	if (!out.is_open())
+		return -1;
+
+	double cur_pose[6];
+
+	getCartesianInfo(cur_pose);
+	
+	for (int i = 0; i < 6; i++)
+		out << "," << std::setprecision(std::numeric_limits<long double>::digits10 + 1) << cur_pose[i];
+
+	out.close();
+	return 0;
 }

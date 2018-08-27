@@ -1,7 +1,22 @@
 #ifndef RoboteqDevice_H_
 #define RoboteqDevice_H_
+#include <iostream>
+#include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <time.h>
+#include <sstream>
+#include <Windows.h>
+
+#include "RoboteqDevice.h"
+#include "ErrorCodes.h"
+#include "utilities.h"
 
 using namespace std;
+
+#define BUFFER_SIZE 1024
+#define MISSING_VALUE -1024
 
 #define STOP_ON_MAIN			1 << 0
 #define ON_MAIN					1 << 1	//moving on the main straight tape

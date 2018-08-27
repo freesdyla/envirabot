@@ -21,6 +21,8 @@
 #include <future>
 #include "utilities.h"
 
+#define UPLOAD_BUFFER_SIZE 1 << 15
+
 struct ServerManager 
 {
 
@@ -46,7 +48,7 @@ struct ServerManager
 	const char *username = "rover";
 	const char *password = "R$DR0v$r";
 
-	char mem[65535];
+	char mem[UPLOAD_BUFFER_SIZE];
 
 	std::string data_root_dir_ = "C:\\Users\\lietang123\\Documents\\RoAdFiles\\LineProfilerRobotArmTest\\LineProfilerRobotArmTest\\Enviratron_Data\\";
 

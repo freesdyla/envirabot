@@ -1,19 +1,4 @@
-#include <iostream>
-#include <stdio.h>
-#include <string.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <time.h>
-#include <sstream>
-#include <Windows.h>
-
 #include "RoboteqDevice.h"
-#include "ErrorCodes.h"
-
-using namespace std;
-
-#define BUFFER_SIZE 1024
-#define MISSING_VALUE -1024
 
 RoboteqDevice::RoboteqDevice()
 {
@@ -37,41 +22,37 @@ int RoboteqDevice::Connect(string port)
 	}
 
 	//Open port.
-	cout<<"Opening port: '"<<port<<"'...";
 	HANDLE h = CreateFileA(port.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	handle = (int) h;
 	if(h == INVALID_HANDLE_VALUE)
 	{
 		handle = RQ_INVALID_HANDLE;
-		cout<<"failed."<<endl;
+		Utilities::to_log_file("failed to open COM port for roboteq");
+		exit(0);
 		return RQ_ERR_OPEN_PORT;
 	}
 
-	cout<<"succeeded."<<endl;
-
-	cout<<"Initializing port...";
 	InitPort();
-	cout<<"...done."<<endl;
 
 	int status;
 	string response;
-	cout<<"Detecting device version...";
 	status = IssueCommand("?", "$1E", 10, response);
 	if(status != RQ_SUCCESS)
 	{
-		cout<<"failed (issue ?$1E response: "<<status<<")."<<endl;
+		Utilities::to_log_file("failed to issue command roboteq");
+		exit(0);
 		Disconnect();
 		return RQ_UNRECOGNIZED_DEVICE;
 	}
 
 	if(response.length() < 12)
 	{
-		cout<<"failed (unrecognized version)."<<endl;
 		Disconnect();
+		Utilities::to_log_file("failed (unrecognized version).");
+		exit(0);
 		return RQ_UNRECOGNIZED_VERSION;
 	}
 
-	cout<<response.substr(8, 4)<<"."<<endl;
 	return RQ_SUCCESS;
 }
 void RoboteqDevice::Disconnect()
