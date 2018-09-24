@@ -428,24 +428,27 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 	arm_obbs.push_back(obb);
 
 	// 3. add chamber window left wall
-	obb.C << 1.2f, -0.3f, 0.45f;
-	obb.a << 0.18f, 0.05f, 0.8f;
-	arm_obbs.push_back(obb);
+//	obb.C << 1.2f, -0.3f, 0.45f;
+//	obb.a << 0.18f, 0.05f, 0.8f;
+//	arm_obbs.push_back(obb);
 
 	// 4. add chamber window right wall
-	obb.C << -1.2f, -0.3f, 0.45f;
-	obb.a << 0.18f, 0.05f, 0.8f;
+//	obb.C << -1.2f, -0.3f, 0.45f;
+//	obb.a << 0.18f, 0.05f, 0.8f;
+	// change it to window top wall in side-view mode
+	obb.C << 0.f, 0.76f, 1.07f + 0.2f;
+	obb.a << 1.3f, 0.05f, 0.2f;
 	arm_obbs.push_back(obb);
 
 	// 5. add chamber left panel
-	obb.C << 1.2f, -0.7f, 0.17f;
-	obb.a << 0.05, 0.4f, 1.4f;
-	arm_obbs.push_back(obb);
+//	obb.C << 1.2f, -0.7f, 0.17f;
+//	obb.a << 0.05, 0.4f, 1.4f;
+//	arm_obbs.push_back(obb);
 
 	// 6. add chamber right panel
-	obb.C << -1.2f, -0.7f, 0.17f;
-	obb.a << 0.05f, 0.4f, 1.4f;
-	arm_obbs.push_back(obb);
+//	obb.C << -1.2f, -0.7f, 0.17f;
+//	obb.a << 0.05f, 0.4f, 1.4f;
+//	arm_obbs.push_back(obb);
 
 	// 7. add chamber inside wall
 	obb.C << 0.f, -1.13f, 0.17f;
@@ -470,8 +473,8 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 
 	// 11. 2nd long arm, frame 3
 	for (int i = 0; i < 3; i++) ref_points[4].coordinates[i] += rot_mats[2](i, 0)*0.06f;
-	for (int i = 0; i < 3; i++) ref_points[5].coordinates[i] -= rot_mats[2](i, 0)*0.03f;
-	constructOBB(ref_points[4], ref_points[5], rot_mats[2], 0.045f, 0, obb);
+	for (int i = 0; i < 3; i++) ref_points[5].coordinates[i] -= rot_mats[2](i, 0)*0.0f;	//0.03 original
+	constructOBB(ref_points[4], ref_points[5], rot_mats[2], 0.055f, 0, obb);
 	arm_obbs.push_back(obb);
 
 	// 12. frame 4
@@ -500,7 +503,7 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 	// 16. probe cylinder
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*cylinder_back_position[0] + rot_mats[5](i, 1)*cylinder_back_position[1] /*+ rot_mats[5](i, 2)*0.0f*/;
 	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*cylinder_back_position[0] + rot_mats[5](i, 1)*cylinder_back_position[1] + rot_mats[5](i, 2)*cylinder_back_position[2];
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.03f, 2, obb);
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.04f, 2, obb);
 	arm_obbs.push_back(obb);
 }
 
@@ -524,14 +527,14 @@ bool PathPlanner::selfCollision(float* joint_pos, bool pre_processing_stage)
 			return true;
 		}
 	}
-	else
-	{
-		if (reference_points.back().coordinates[1] > 0.9f)
-		{
-			//std::cout << "hand in the back too far\n";
-			return true;
-		}
-	}
+	//else
+	//{
+	//	if (reference_points.back().coordinates[1] > 0.9f)
+	//	{
+	//		//std::cout << "hand in the back too far\n";
+	//		return true;
+	//	}
+	//}
 
 	getArmOBBModel(reference_points, rot_mats, arm_obbs);
 
@@ -543,7 +546,7 @@ bool PathPlanner::selfCollision(float* joint_pos, bool pre_processing_stage)
 		{
 			if (collisionOBB(arm_obbs[i], arm_obbs[j]))
 			{
-				//std::cout << i <<" collide with " << j << "\n";
+			//	std::cout << i <<" collide with " << j << "\n";
 				return true;
 			}
 		}

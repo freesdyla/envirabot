@@ -4,9 +4,16 @@ LJV7IF_PROFILE_INFO KeyenceLineProfiler::m_profileInfo;
 
 std::vector<PROFILE_DATA> KeyenceLineProfiler::m_vecProfileData;
 
-//std::vector<LARGE_INTEGER> timestamps_;
+LONGLONG KeyenceLineProfiler::start_time_;
+
+int KeyenceLineProfiler::start_profile_idx_;
 
 clock_t KeyenceLineProfiler::tic;
+
+KeyenceLineProfiler::KeyenceLineProfiler()
+{
+	init();
+}
 
 void KeyenceLineProfiler::init()
 {
@@ -71,8 +78,6 @@ void KeyenceLineProfiler::finalize()
 
 void KeyenceLineProfiler::start(DWORD dwProfileCnt)
 {
-//	timestamps_.clear();
-
 	//m_vecProfileData.clear();
 
 	//nRc = LJV7IF_RC_OK;
@@ -138,9 +143,7 @@ void KeyenceLineProfiler::ReceiveHighSpeedData(BYTE* pBuffer, DWORD dwSize, DWOR
 	printf("Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 	tic = toc;*/
 
-	//LARGE_INTEGER timestamp; QueryPerformanceCounter(&timestamp);
-
-	int nProfDataCnt = (dwSize - sizeof(LJV7IF_PROFILE_HEADER)-sizeof(LJV7IF_PROFILE_FOOTER)) / sizeof(DWORD);
+	//int nProfDataCnt = (dwSize - sizeof(LJV7IF_PROFILE_HEADER)-sizeof(LJV7IF_PROFILE_FOOTER)) / sizeof(DWORD);
 
 	for (DWORD i = 0; i < dwCount; i++)
 	{
@@ -151,7 +154,6 @@ void KeyenceLineProfiler::ReceiveHighSpeedData(BYTE* pBuffer, DWORD dwSize, DWOR
 		LJV7IF_PROFILE_FOOTER* pFooter = (LJV7IF_PROFILE_FOOTER*)(pbyBlock + dwSize - sizeof(LJV7IF_PROFILE_FOOTER));
 
 		m_vecProfileData.push_back(PROFILE_DATA(m_profileInfo, pHeader, pnProfileData, pFooter));
-		//timestamps_.push_back(timestamp);
 	}
 
 	//std::cout << "dwCount: " << dwCount << " ";// << " size: " << m_vecProfileData.size() << std::endl;

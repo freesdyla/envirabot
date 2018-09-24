@@ -134,14 +134,18 @@
 //tilting linear scan
 #define DIRECT_IMAGING 0
 #define ONLY_PERFORM_COLLISION_CHECK 1
-#define REACHABLE 2
-#define NOT_REACHABLE 3
+#define IMAGING_IGNORE_COLLISION 2
+#define REACHABLE 3
+#define NOT_REACHABLE 4
 
 #define LOAD_OCCUPANCY 0
 #define UPDATE_OCCUPANCY 1
 
 #define IMAGING 0
 #define PROBING 1
+
+#define TOP_VIEW 0
+#define SIDE_VIEW 1
 
  
 struct VisionArmCombo
@@ -200,6 +204,11 @@ struct VisionArmCombo
 			pot_count = rows = cols = max_num_leaves_to_scan = -1;
 			light_status = hyperspectral = thermal = fluorometer = -1;
 			pot_height = pot_width = -1.f;
+		}
+
+		void print()
+		{
+			std::cout << "rows: " << rows << "  cols: " << cols << "  light_status: " << light_status << "  pot_height: " << pot_height<<std::endl;
 		}
 	};
 
@@ -397,7 +406,15 @@ struct VisionArmCombo
 
 	std::vector<cv::Mat> pot_position_vec_;
 
-	static bool probing_rank_comparator(pcl::PointXYZRGBNormal & a, pcl::PointXYZRGBNormal & b) { return a.z > b.z; }
+	static bool probing_rank_comparator(pcl::PointXYZRGBNormal & a, pcl::PointXYZRGBNormal & b) 
+	{ 
+		if (a.r > b.r)
+			return true;
+		else if (a.r == b.r)
+			return std::abs(a.normal_z) > std::abs(b.normal_z);
+		else
+			return false;
+	}
 
 	struct LeafIDnX
 	{
@@ -411,6 +428,8 @@ struct VisionArmCombo
 
 	static bool pot_center_y_comparator(cv::Vec3f & a, cv::Vec3f & b) { return a[1] < b[1]; }
 
+	static bool curvature_comparator(pcl::PointXYZRGBNormal & a, pcl::PointXYZRGBNormal & b) { return a.curvature < b.curvature; }
+
 	std::vector<LeafIDnX> leaf_cluster_order_;
 
 	std::vector<PointCloudT::Ptr> plant_laser_pc_vec_;
@@ -423,6 +442,8 @@ struct VisionArmCombo
 	int only_do_probing_ = 0;
 
 	int cur_chamber_id_ = 1;
+
+	int cur_plant_id_ = 1;
 
 	int cur_pot_coordinate_x_ = 0;
 
@@ -480,6 +501,10 @@ struct VisionArmCombo
 
 	std::string start_time_;
 
+	bool in_charging_mode_ = false;
+
+	float probe_patch_max_curvature_ = 0.05;
+
 	VisionArmCombo();
 
 	~VisionArmCombo();
@@ -518,6 +543,8 @@ struct VisionArmCombo
 
 	void scanTranslateOnly(double * vec3d, PointCloudT::Ptr cloud, float acceleration, float speed);
 
+	void scanMoveL(Eigen::Matrix4d & dst_scanner_pose, PointCloudT::Ptr cloud, float acceleration, float speed);
+
 	void scanTranslateOnlyHyperspectral(double * vec3d, cv::Vec6d & start_scan_hand_pose, float acceleration, float speed, int option);
 
 	void scanLine(PointCloudT::Ptr & cloud);
@@ -534,7 +561,7 @@ struct VisionArmCombo
 
 	void pp_callback(const pcl::visualization::PointPickingEvent& event, void*);
 
-	int mapWorkspace(int rover_position, int option = IMAGING);
+	int mapWorkspace(int rover_position, int option = IMAGING, int data_collection_mode = TOP_VIEW);
 
 	void addArmModelToViewer(std::vector<PathPlanner::RefPoint> & ref_points);
 
@@ -542,7 +569,7 @@ struct VisionArmCombo
 
 	void showOccupancyGrid(bool spin=true);
 
-	void viewPlannedPath(float* start_pose, float* goal_pose);
+	void viewPlannedPath(float* start_pose, float* goal_pose, bool only_display_start = false);
 
 	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec);
 
@@ -570,11 +597,11 @@ struct VisionArmCombo
 
 	void smallClusterRemoval(PointCloudT::Ptr cloud_in, double clusterTolerance, int minClusterSize, PointCloudT::Ptr cloud_out);
 
-	void extractLeafProbingPointsAndHyperspectralScanPoses(PointCloudT::Ptr cloud_in, std::vector<pcl::PointXYZRGBNormal> & probe_pn_vec,
-									std::vector<pcl::PointIndices> & leaf_cluster_indices_vec,
-									std::vector<std::vector<Eigen::Matrix4d*>> & hyperscan_hand_pose_sequence_vec,
-									std::vector<std::vector<ArmConfig>> & hyperscan_arm_config_sequence_vec,
-									std::vector<int> & hyperscan_leaf_id_vec, int plant_id);
+	void extractLeafProbingPointsAndHyperspectralScanPoses(PointCloudT::Ptr cloud_in, 
+															std::vector<pcl::PointIndices> & leaf_cluster_indices_vec,
+															std::vector<std::vector<Eigen::Matrix4d*>> & hyperscan_hand_pose_sequence_vec,
+															std::vector<std::vector<ArmConfig>> & hyperscan_arm_config_sequence_vec,
+															std::vector<int> & hyperscan_leaf_id_vec, int plant_id =-1, int imaging_mode = TOP_VIEW);
 
 	bool probeLeaf(PointT & probe_point, pcl::Normal & normal, int probe_id=PAM, int plant_id = -1);
 
@@ -607,7 +634,7 @@ struct VisionArmCombo
 	void acquireRGBStereoPair();
 
 	void scanLeafWithHyperspectral(std::vector<Eigen::Matrix4d*> & valid_scan_hand_pose_sequence, 
-									std::vector<ArmConfig> & valid_arm_config_sequence, int plant_id = -1);
+									std::vector<ArmConfig> & valid_arm_config_sequence, int plant_id = -1, int imaging_mode = TOP_VIEW);
 
 	//communications with chamber
 	void controlChamber(int chamber_id, int action);
@@ -622,21 +649,21 @@ struct VisionArmCombo
 
 	void readOrUpdateChamberPotConfigurationFile(int operation = UPDATE_POT_CONFIG);
 
-	int imagePotsTopView(int rover_position = 1, int option = IMAGING);
+	int imagePots(int rover_position = 1, int option = IMAGING, int data_collection_mode = TOP_VIEW);
 
 	void createBoxCloud(Eigen::Vector3f min, Eigen::Vector3f max, float resolution, PointCloudT::Ptr cloud);
 
 	bool computeImageConfigforPot(cv::Vec3f & pot_xyz, float pot_diameter, cv::Mat & camera_intrinsic, 
 									Eigen::Matrix4d & hand_to_camera, ArmConfig & imaging_config, 
-									double & dist_to_pot, Eigen::Matrix4d & target_hand_pose);
+									double & dist_to_pot, Eigen::Matrix4d & target_hand_pose, int data_collection_mode = TOP_VIEW);
 
 	int mapPotPosition(PointCloudT::Ptr cloud_in_arm_base);
 
-	int saveThermalImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & color_map, cv::Mat & temperature_map);
+	int saveThermalImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & color_map, cv::Mat & temperature_map, int image_id = 0);
 
-	int saveRGBImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & rgb_img);
+	int saveRGBImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & rgb_img, int image_id = 0);
 
-	int saveTOFImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & ir_img_16u, cv::Mat & depth_img_16u);
+	int saveTOFImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & ir_img_16u, cv::Mat & depth_img_16u, int image_id = 0);
 
 	bool checkHandPoseReachable(Eigen::Matrix4d & hand_pose, ArmConfig & target_config, int option = CHECK_PATH);
 
@@ -674,12 +701,23 @@ struct VisionArmCombo
 
 	void printTime(std::string msg);
 
-	int addProbePoints(std::vector<pcl::PointXYZRGBNormal> & probe_pn_vec, int rover_position);
-
 	int manualMapPotPositions(int x_start = 0 , int y_start = 0);
 
 	void waitForChamberTimeOffset(int target_chamber_id, double time_offset_min = 50.);
 
+	void simpleSideViewDataCollectionRoutine(double pot_x_wrt_rover = 0., int rover_pos = 1);
+
+	void collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pose, int plant_id, int image_id, int rover_pos);
+
+	void preprocessTOFCloud(PointCloudT::Ptr cloud, Eigen::Vector4f & box_min, Eigen::Vector4f & box_max);
+
+	bool computeSideViewProbingPose(PointT & probe_point, pcl::Normal & normal, Eigen::Matrix4d & final_probe_pose, ArmConfig & final_config, int probe_id = PAM, int plant_id = -1);
+
+	int sideViewVerticalLaserScan(PointCloudT::Ptr cloud, Eigen::Vector3d & start_pos, Eigen::Vector3d & dst_pos, double start_tilt_down_angle, double dst_tilt_down_angle);
+
+	int enterChargingMode();
+
+	int saveProbingData(PointT & probe_point, pcl::Normal & normal, int probe_id, int plant_id);
 };
 
 

@@ -225,7 +225,7 @@ struct PathPlanner
 	int grid_offset_x_, grid_offset_y_, grid_offset_z_;	// UR10 base frame, local to world translation
 	std::vector<Cell> grid_;
 
-	float arm_radius_lookup[8] = {0.08f, 0.08f, 0.06f, 0.06f, 0.045f, 0.045f, 0.045f, 0.045f};
+	float arm_radius_lookup[8] = { 0.08f, 0.08f, 0.06f, 0.06f, 0.045f, 0.045f, 0.045f, 0.045f };
 
 	// UR10 joint range
 	double joint_range_[12] = { -200./180.*M_PI, 20./180.*M_PI,	// base
@@ -233,7 +233,8 @@ struct PathPlanner
 								-160./180.f*M_PI, -10./180.f*M_PI,	// elbow
 								-170./180.*M_PI, 10./180.* M_PI,	// wrist 1
 								10.f/180.f*M_PI, 170.f/180.f*M_PI,	// wrist 2
-								-240./180.f*M_PI, -100./180.f*M_PI // wrist 3
+								//-250. / 180.f*M_PI, -90. / 180.f*M_PI // wrist 3
+								-270. / 180.f*M_PI, -70. / 180.f*M_PI // wrist 3
 								};
 
 	double probing_joint_range_wrist_2_[2] = {-130./180.*M_PI, -50./180.*M_PI};	// when probing, wrist 2 needs to be rotated by -180 first
@@ -246,8 +247,8 @@ struct PathPlanner
 
 	bool path_planner_ready_;
 
-	const int start_check_obb_idx_ = 10;	
-	const int end_check_obb_idx_ = 13;
+	const int start_check_obb_idx_ = 7;
+	const int end_check_obb_idx_ = 10;
 
 	float tcp_y_limit_ = -0.3f;
 

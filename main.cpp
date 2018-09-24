@@ -10,6 +10,10 @@ int main(int argc, char**argv)
 {
 	VisionArmCombo vac;
 
+	vac.enterChargingMode();
+
+	//vac.simpleSideViewDataCollectionRoutine(0.0);
+
 	//vac.waitForChamberTimeOffset(1);
 
 	//std::getchar();
@@ -18,7 +22,7 @@ int main(int argc, char**argv)
 	//for (int i = vac.cur_chamber_id_; i <= 8; i++)
 		//vac.sendRoverToChamber(i);
 	
-	vac.sendRoverToChamber(vac.cur_chamber_id_);
+	//vac.sendRoverToChamber(vac.cur_chamber_id_);
 	
 	//vac.manualMapPotPositions(0, 0);
 

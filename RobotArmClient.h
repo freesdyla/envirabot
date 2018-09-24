@@ -56,6 +56,10 @@ struct RobotArmClient
 
 	double start_xyz_[3];
 
+	double cur_ur_time_;
+
+	std::vector<double> ur_timestamp_vec_;
+
 	std::atomic<float> displacement_;
 
 	std::atomic<double> distanceToDst_;
@@ -63,6 +67,8 @@ struct RobotArmClient
 	std::atomic<UINT64> safety_mode_;
 
 	std::atomic<double> tcp_speed_;
+
+	std::atomic<double> rot_speed_;
 
 	std::atomic<double> distanceToDstConfig_;
 
@@ -83,6 +89,7 @@ struct RobotArmClient
 	std::vector<timestamp_pose> timestamp_pose_vec_;
 
 	std::atomic<bool> record_poses_ = false;
+
 
 	RobotArmClient();
 
@@ -106,6 +113,8 @@ struct RobotArmClient
 
 	void getActualTCPSpeedFromURPackage();
 
+	void getTimeFromURPackage();
+
 	int moveHandL(double* dst_cartesian_info, float acceleration, float speed, bool wait2dst = true);
 
 	int moveHandJ(double* dst_joint_config, float speed, float acceleration, bool wait2dst = true);
@@ -113,6 +122,8 @@ struct RobotArmClient
 	void printCartesianInfo(double* array6);
 
 	int waitTillHandReachDstPose(double* dst_pose6);
+
+	double waitTillRotationSpeedDropDownTo(double target_speed);
 
 	int waitTillHandReachDstConfig(double* dst_joint_config);
 
@@ -129,6 +140,8 @@ struct RobotArmClient
 	void setStartPoseXYZ();
 
 	double waitTillTCPMove(double target_speed = 0.01);
+
+	double waitTillRotate(double target_speed = 0.01);
 
 	void rotateJointRelative(int id, double deg, float acceleration, float speed);
 

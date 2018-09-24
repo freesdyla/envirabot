@@ -125,6 +125,9 @@ void RobotArmClient::startRecvTCP()
 			continue;
 		}
 
+		timestamp_pose ts_p;
+		QueryPerformanceCounter(&ts_p.timestamp);
+
 		std::uint32_t packageLength;
 		// Byteswap package length
 		char *p = (char *)(&packageLength);
@@ -137,7 +140,16 @@ void RobotArmClient::startRecvTCP()
 
 			//	int package_size = *((int*)recvbuf);
 
+			getTimeFromURPackage();
+
 			getCartesionInfoFromURPackage();	// 125 Hz
+
+			if (record_poses_)
+			{
+				std::memcpy(ts_p.pose, cur_cartesian_info_array, 48);
+				timestamp_pose_vec_.push_back(ts_p);
+				ur_timestamp_vec_.push_back(cur_ur_time_);
+			}
 
 			getActualJointPosFromURPackage();
 
@@ -145,28 +157,22 @@ void RobotArmClient::startRecvTCP()
 
 			std::memcpy((char*)&safety_mode_, recvbuf + 812, 8);
 
-			if (safety_mode_ != 0xf03f) exit(EXIT_FAILURE);
+			if (safety_mode_ != 0xf03f) exit(0);
 
 			tcp_speed_ = std::sqrt(cur_tcp_speed_array[0] * cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
 
+			rot_speed_ = std::sqrt(cur_tcp_speed_array[3] * cur_tcp_speed_array[3] + cur_tcp_speed_array[4] * cur_tcp_speed_array[4] + cur_tcp_speed_array[5] * cur_tcp_speed_array[5]);
+
 			distanceToDst_ = EuclideanDistance(cur_cartesian_info_array, dst_cartesian_info_array);
 
-			displacement_ = EuclideanDistance(cur_cartesian_info_array, start_xyz_);
+			//displacement_ = EuclideanDistance(cur_cartesian_info_array, start_xyz_);
 
 			distanceToDstConfig_ = configLInfNorm(cur_joint_pos_array, dst_joint_pos_array);
 
-			if (record_poses_)
-			{
-				timestamp_pose ts_p;
-				QueryPerformanceCounter(&ts_p.timestamp);
-				std::memcpy(ts_p.pose, cur_cartesian_info_array, 48);
-				timestamp_pose_vec_.push_back(ts_p);
-			}
-
 			updateMutex.unlock();
 
-
 			recv_normal_.store(true);
+
 			//std::cout << package_size << std::endl;
 
 			//std::cout << distanceToDst << std::endl;
@@ -228,6 +234,13 @@ void RobotArmClient::getActualTCPSpeedFromURPackage()
 		reverse8CharsToDouble(start_ptr + 7 + i * 8, cur_tcp_speed_array + i);
 }
 
+void RobotArmClient::getTimeFromURPackage()
+{
+	char* start_ptr = recvbuf + 4;
+
+	reverse8CharsToDouble(start_ptr + 7, &cur_ur_time_);
+}
+
 int RobotArmClient::moveHandL(double* dst_cartesian_info, float acceleration, float speed, bool wait2dst)
 {
 	char msg[128];
@@ -236,7 +249,7 @@ int RobotArmClient::moveHandL(double* dst_cartesian_info, float acceleration, fl
 	distanceToDst_.store(1000.);
 	//updateMutex.unlock();
 
-	sprintf(msg, "movel(p[%f,%f,%f,%f,%f,%f],a=%f,v=%f)\n", 
+	sprintf(msg, "movel(p[%.10f,%.10f,%.10f,%.10f,%.10f,%.10f],a=%.10f,v=%.10f)\n", 
 		dst_cartesian_info[0], dst_cartesian_info[1], dst_cartesian_info[2], 
 		dst_cartesian_info[3], dst_cartesian_info[4], dst_cartesian_info[5], acceleration, speed);
 
@@ -256,7 +269,7 @@ int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float accel
 
 	distanceToDstConfig_.store(1e7);
 
-	sprintf(msg, "movej([%f,%f,%f,%f,%f,%f],a=%f,v=%f)\n",
+	sprintf(msg, "movej(p[%.10f,%.10f,%.10f,%.10f,%.10f,%.10f],a=%.10f,v=%.10f)\n",
 		dst_joint_config[0], dst_joint_config[1], dst_joint_config[2],
 		dst_joint_config[3], dst_joint_config[4], dst_joint_config[5], acceleration, speed);
 
@@ -266,15 +279,7 @@ int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float accel
 
 	if (num_byte == SOCKET_ERROR) return SOCKET_ERROR;
 
-	if (wait2dst) {
-
-		int result = waitTillHandReachDstConfig(dst_joint_config);
-
-		if (result == -1) {
-			exit(EXIT_FAILURE);
-			return -1;
-		}
-	}
+	if (wait2dst) waitTillHandReachDstConfig(dst_joint_config);
 
 	return num_byte;
 }
@@ -347,12 +352,26 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 	while (true)
 	{
 		//std::cout << distanceToDst_.load() << std::endl;
-		if (distanceToDst_.load() < 0.0005)	break;
+		if (distanceToDst_.load() < 0.001)	break;
 
 		Sleep(1);
 	}
 
 	return 0;
+}
+
+double RobotArmClient::waitTillRotationSpeedDropDownTo(double target_speed)
+{
+	double cur_speed = 0.;
+
+	while (true)
+	{
+		cur_speed = rot_speed_.load();
+		Sleep(1);
+		if ( cur_speed < target_speed)	break;
+	}
+
+	return cur_speed;
 }
 
 int RobotArmClient::waitTillHandReachDstConfig(double* dst_joint_config)
@@ -366,11 +385,6 @@ int RobotArmClient::waitTillHandReachDstConfig(double* dst_joint_config)
 	while (true)
 	{
 		if (distanceToDstConfig_.load() < 0.03) break;
-
-		if (getSafetyMode() != 0xf03f) {
-			std::cerr << "UR10 stopped\n";
-			return -1;
-		}
 
 		Sleep(200);
 		//std::cout << distanceToDstConfig_.load() << std::endl;
@@ -440,6 +454,20 @@ double RobotArmClient::waitTillTCPMove(double target_speed)
 	//return counter;
 }
 
+double RobotArmClient::waitTillRotate(double target_speed)
+{
+	//int counter = 0;
+	while (true)
+	{
+		//counter++;
+		if (rot_speed_.load() >= target_speed) break;
+		Sleep(1);
+	}
+
+	return rot_speed_.load();
+	//return counter;
+}
+
 void RobotArmClient::rotateJointRelative(int id, double deg, float acceleration, float speed)
 {
 	if (id < 0 || id > 5)
@@ -500,9 +528,15 @@ void RobotArmClient::lineLightControl(bool turn_on) {
 
 		char msg[64];
 
-		sprintf(msg, "set_analog_outputdomain(0, 0)\n");	//port 0, current
+		sprintf(msg, "set_digital_out(3,True)\n");
 
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(1000);
+
+		sprintf(msg, "set_analog_outputdomain(0, 0)\n");	//port 0, current
+
+		num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 		Sleep(100);
 
@@ -530,9 +564,15 @@ void RobotArmClient::lineLightControl(bool turn_on) {
 
 		char msg[64];
 
-		sprintf(msg, "set_analog_outputdomain(0, 0)\n");
+		sprintf(msg, "set_digital_out(3,Flase)\n");
 
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(100);
+
+		/*sprintf(msg, "set_analog_outputdomain(0, 0)\n");
+
+		num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 		Sleep(100);
 
@@ -554,7 +594,7 @@ void RobotArmClient::lineLightControl(bool turn_on) {
 
 		sprintf(msg3, "set_standard_analog_out(0, 0.0)\n");
 
-		num_byte = send(ConnectSocket, msg3, strlen(msg3), 0);
+		num_byte = send(ConnectSocket, msg3, strlen(msg3), 0);*/
 	}
 }
 
@@ -731,7 +771,7 @@ int RobotArmClient::saveTimeStampPoses(std::string filename)
 	{
 		out << ts_p.timestamp.QuadPart;
 		for (int i = 0; i < 6; i++)
-			out << "," << std::setprecision(std::numeric_limits<long double>::digits10 + 1) << ts_p.pose[i];
+			out << "," << std::setprecision(std::numeric_limits<long double>::digits10 + 1) << ts_p.pose[i] << "," << ur_timestamp_vec_[cnt];
 		
 		if(cnt++ != timestamp_pose_vec_.size()-1 ) out << std::endl;
 	}
