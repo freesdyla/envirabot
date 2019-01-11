@@ -16,6 +16,8 @@ RobotArmClient::RobotArmClient()
 
 	// turn off laser
 	laserScannerLightControl(false);
+
+	BMSCharger(true);
 }
 
 RobotArmClient::~RobotArmClient()
@@ -249,6 +251,7 @@ int RobotArmClient::moveHandL(double* dst_cartesian_info, float acceleration, fl
 	distanceToDst_.store(1000.);
 	//updateMutex.unlock();
 
+	// "p" means pose, without "p" means joint configuration
 	sprintf(msg, "movel(p[%.10f,%.10f,%.10f,%.10f,%.10f,%.10f],a=%.10f,v=%.10f)\n", 
 		dst_cartesian_info[0], dst_cartesian_info[1], dst_cartesian_info[2], 
 		dst_cartesian_info[3], dst_cartesian_info[4], dst_cartesian_info[5], acceleration, speed);
@@ -269,10 +272,12 @@ int RobotArmClient::moveHandJ(double* dst_joint_config, float speed, float accel
 
 	distanceToDstConfig_.store(1e7);
 
-	sprintf(msg, "movej(p[%.10f,%.10f,%.10f,%.10f,%.10f,%.10f],a=%.10f,v=%.10f)\n",
+	// "p" means pose, without "p" means joint configuration
+	sprintf(msg, "movej([%.10f,%.10f,%.10f,%.10f,%.10f,%.10f],a=%.10f,v=%.10f,t=0,r=0)\n",
 		dst_joint_config[0], dst_joint_config[1], dst_joint_config[2],
 		dst_joint_config[3], dst_joint_config[4], dst_joint_config[5], acceleration, speed);
 
+	//std::cout << msg << std::endl;
 	//std::cout << "len" << strlen(msg)<<std::endl;
 	
 	int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
@@ -313,12 +318,6 @@ void RobotArmClient::getCurJointPose(double* array6)
 
 UINT64 RobotArmClient::getSafetyMode()
 {
-//	updateMutex.lock();
-
-	//UINT64 safety_mode = safety_mode_;
-
-	//updateMutex.unlock();
-
 	return safety_mode_.load();
 }
 
@@ -528,7 +527,7 @@ void RobotArmClient::lineLightControl(bool turn_on) {
 
 		char msg[64];
 
-		sprintf(msg, "set_digital_out(3,True)\n");
+		sprintf(msg, "set_digital_out(1,True)\n");
 
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
@@ -545,56 +544,16 @@ void RobotArmClient::lineLightControl(bool turn_on) {
 		sprintf(msg1, "set_standard_analog_out(0, 0.1)\n");
 
 		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
-
-		char msg2[64];
-
-		sprintf(msg2, "set_analog_outputdomain(0, 0)\n");	//port 0, current
-
-		num_byte = send(ConnectSocket, msg2, strlen(msg2), 0);
-
-		Sleep(100);
-
-		char msg3[64];
-
-		sprintf(msg3, "set_standard_analog_out(0, 0.1)\n");
-
-		num_byte = send(ConnectSocket, msg3, strlen(msg3), 0);
 	}
 	else {
 
 		char msg[64];
 
-		sprintf(msg, "set_digital_out(3,Flase)\n");
+		sprintf(msg, "set_digital_out(1,False)\n");
 
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
-		Sleep(100);
-
-		/*sprintf(msg, "set_analog_outputdomain(0, 0)\n");
-
-		num_byte = send(ConnectSocket, msg, strlen(msg), 0);
-
-		Sleep(100);
-
-		char msg1[64];
-
-		sprintf(msg1, "set_standard_analog_out(0, 0.0)\n");
-
-		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
-
-		char msg2[64];
-
-		sprintf(msg2, "set_analog_outputdomain(0, 0)\n");
-
-		num_byte = send(ConnectSocket, msg2, strlen(msg2), 0);
-
-		Sleep(100);
-
-		char msg3[64];
-
-		sprintf(msg3, "set_standard_analog_out(0, 0.0)\n");
-
-		num_byte = send(ConnectSocket, msg3, strlen(msg3), 0);*/
+		Sleep(200);
 	}
 }
 
@@ -672,12 +631,6 @@ void RobotArmClient::laserScannerLightControl(bool on) {
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 		Sleep(200);
-
-		char msg1[128];
-
-		sprintf(msg1, "set_digital_out(2,False)\n");
-
-		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
 	}
 	else {
 
@@ -688,12 +641,6 @@ void RobotArmClient::laserScannerLightControl(bool on) {
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 		Sleep(200);
-
-		char msg1[128];
-
-		sprintf(msg1, "set_digital_out(2,True)\n");
-
-		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
 	}
 }
 
@@ -708,12 +655,6 @@ void RobotArmClient::chargerControl(bool start_or_stop)
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 		Sleep(200);
-
-		char msg1[128];
-
-		sprintf(msg1, "set_digital_out(1,True)\n");
-
-		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
 	}
 	else {
 
@@ -724,14 +665,31 @@ void RobotArmClient::chargerControl(bool start_or_stop)
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 		Sleep(200);
-
-		char msg1[128];
-
-		sprintf(msg1, "set_digital_out(1,False)\n");
-
-		num_byte = send(ConnectSocket, msg1, strlen(msg1), 0);
 	}
+}
 
+void RobotArmClient::BMSCharger(bool on)
+{
+	if (on) {
+
+		char msg[128];
+
+		sprintf(msg, "set_digital_out(4,True)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(200);
+	}
+	else {
+
+		char msg[128];
+
+		sprintf(msg, "set_digital_out(4,False)\n");
+
+		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
+
+		Sleep(200);
+	}
 }
 
 void RobotArmClient::startOrStopRecordPose(bool start)

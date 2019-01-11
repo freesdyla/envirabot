@@ -59,6 +59,7 @@ public:
 	void startStreaming();
 	void setPower(int power);
 
+	int start();
 	int stop();
 
 	void listNodes();

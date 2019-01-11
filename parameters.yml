@@ -12,7 +12,7 @@ region_grow_max_cluster_size_:100000
 laser_scan_frequency_: 2000.0
 scan_speed_: 0.1
 scan_acceleration_: 0.5
-move_arm_speed_: 0.05
+move_arm_speed_: 0.1
 move_arm_acceleration_: 0.05
 move_joint_speed_: 0.5
 move_joint_acceleration_: 0.2
@@ -24,28 +24,28 @@ sor_std_: 1.0
 ror_radius_: 0.005
 ror_num_: 10
 hyperspectral_imaging_dist_: 0.265
-max_samples_per_leaf_: 4
-max_samples_per_plant_: 4
+max_samples_per_leaf_: 2
+max_samples_per_plant_: 2
 probe_patch_max_curvature_: 0.01
 probing_patch_rmse_: 0.1
 hyperscan_slice_thickness_: 0.01
 enable_path_planning_: 1
 vis_z_range_: 1.5
-enable_thermo_: 0
-enable_tof_: 0
-enable_rgb_ : 0
-enable_hyperspectral_: 0
+enable_thermo_: 1
+enable_tof_: 1
+enable_rgb_ : 1
+enable_hyperspectral_: 1
 enable_scanner_: 1
 enable_probing_: 1
 remap_pot_position_: 0
 cur_chamber_id_: 1
 cur_plant_id_: 1
 only_do_probing_ : 1
-view_time_: 50000000
+view_time_: 50
 multi_work_position_: 1
-hyperspectral_topview_: 0
-leaf_tracing_hyperspectral_: 1
+hyperspectral_topview_: 1
+leaf_tracing_hyperspectral_: 0
 init_rover_position_in_chamber_: 1
 enable_imaging_: 1
 upload_data_: 0
-start_time_: "9:30"
+start_time_: "9:45"

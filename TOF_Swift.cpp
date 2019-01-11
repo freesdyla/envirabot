@@ -28,13 +28,9 @@ TOF_Swift::TOF_Swift()
 		Sleep(200);
 	}
 		
-	getAsImage(cam_, xMultiplier, yMultiplier, zMultiplier);
+	getAsImage(cam_, xMultiplier, yMultiplier, zMultiplier); //does not work after firmware update
 	
-	setPower(2600);
-
-	setupStreaming();
-
-	thread_vec_.push_back(std::thread(&TOF_Swift::startStreaming, this));
+	start();
 }
 
 TOF_Swift::~TOF_Swift()
@@ -45,11 +41,23 @@ TOF_Swift::~TOF_Swift()
 	delete[] zMultiplier;
 }
 
+int TOF_Swift::start()
+{
+	thread_vec_.push_back(std::thread(&TOF_Swift::startStreaming, this));
+}
+
 void TOF_Swift::getAsImage(odos::Camera& camera, const float*& xMultiplier, const float*& yMultiplier, const float*& zMultiplier)
 {
-	xMultiplier = getImage(camera, odos::ComponentType::PointCloudMultiplierX);
+	if (odos::Result::Success != camera.getPointCloudMultipliers(xMultiplier, yMultiplier, zMultiplier))
+	{
+		Utilities::to_log_file("getPointCloudMultipliers failed");
+		exit(0);
+	}
+
+	// this method does not work anymore
+	/*xMultiplier = getImage(camera, odos::ComponentType::PointCloudMultiplierX);
 	yMultiplier = getImage(camera, odos::ComponentType::PointCloudMultiplierY);
-	zMultiplier = getImage(camera, odos::ComponentType::PointCloudMultiplierZ);
+	zMultiplier = getImage(camera, odos::ComponentType::PointCloudMultiplierZ);*/
 }
 
 float* TOF_Swift::getImage(odos::Camera& camera, odos::ComponentType component)
@@ -116,6 +124,10 @@ float* TOF_Swift::getImage(odos::Camera& camera, odos::ComponentType component)
 
 void TOF_Swift::startStreaming()
 {
+	setPower(2600);
+
+	setupStreaming();
+
 	odos::Result res;
 
 	// Multiplier size is always 640x480 32bit floats
@@ -127,7 +139,7 @@ void TOF_Swift::startStreaming()
 	cv::Mat ya(size, CV_32FC1, const_cast<float*>(yMultiplier));
 	cv::Mat za(size, CV_32FC1, const_cast<float*>(zMultiplier));
 
-#if 0
+#if 1
 	std::ofstream out("odos_x_multiplier_32f.bin", std::ios::out | std::ios::binary);
 
 	if (out.is_open())
@@ -166,7 +178,7 @@ void TOF_Swift::startStreaming()
 	// 4. Start the acquisition and streaming using the "AcquisitionStart" odos::CommandNode.
 	if ((res = cam_.getCommandNode("AcquisitionStart")->execute()) != odos::Result::Success)
 	{
-		std::cerr << "AcquisitionStart failed" << std::endl;
+		Utilities::to_log_file("AcquisitionStart failed");
 		exit(1);
 	}
 
@@ -176,17 +188,17 @@ void TOF_Swift::startStreaming()
 
 		odos::IImage* odos_image_ = nullptr;
 
-		// Wait for images with odos::Camera::waitForImage
-		if ((res = cam_.waitForImage(&odos_image_, std::chrono::seconds(1))) != odos::Result::Success)
+		// Wait for images with odos::Camera::waitForImage, if timeout is 1s, it will time out
+		if ((res = cam_.waitForImage(&odos_image_, std::chrono::seconds(15))) != odos::Result::Success)
 		{
 			if (res == odos::Result::Timeout)
 			{
-				std::cerr << "waitForImage timed out" << std::endl;
+				Utilities::to_log_file("wait for odos image time out");
 				exit(1);
 			}
 			else
 			{
-				std::cerr << "waitForImage failed" << std::endl;
+				Utilities::to_log_file("wait for odos image fail");
 				exit(1);
 			}
 		}
@@ -297,6 +309,8 @@ int TOF_Swift::stop()
 
 	thread_vec_[0].join();
 
+	thread_vec_.clear();
+
 	return 0;
 }
 
@@ -397,7 +411,6 @@ void TOF_Swift::setupStreaming()
 	componentEnable->set(true);
 	componentSelector->set("Intensity");
 	componentEnable->set(true);
-
 }
 
 void TOF_Swift::getPointCloud(PointCloudT::Ptr cloud)

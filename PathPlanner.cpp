@@ -427,80 +427,62 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 	obb.a << 1.3f, 0.05f, 0.3f;
 	arm_obbs.push_back(obb);
 
-	// 3. add chamber window left wall
-//	obb.C << 1.2f, -0.3f, 0.45f;
-//	obb.a << 0.18f, 0.05f, 0.8f;
-//	arm_obbs.push_back(obb);
-
-	// 4. add chamber window right wall
-//	obb.C << -1.2f, -0.3f, 0.45f;
-//	obb.a << 0.18f, 0.05f, 0.8f;
-	// change it to window top wall in side-view mode
-	obb.C << 0.f, 0.76f, 1.07f + 0.2f;
+	// 3. window top wall in top-view mode y = -0.3, change it to window top wall in side-view mode, use y = 0.76
+	obb.C << 0.f, -0.3f, 1.07f + 0.2f;
 	obb.a << 1.3f, 0.05f, 0.2f;
 	arm_obbs.push_back(obb);
 
-	// 5. add chamber left panel
-//	obb.C << 1.2f, -0.7f, 0.17f;
-//	obb.a << 0.05, 0.4f, 1.4f;
-//	arm_obbs.push_back(obb);
-
-	// 6. add chamber right panel
-//	obb.C << -1.2f, -0.7f, 0.17f;
-//	obb.a << 0.05f, 0.4f, 1.4f;
-//	arm_obbs.push_back(obb);
-
-	// 7. add chamber inside wall
+	// 4. add chamber inside wall
 	obb.C << 0.f, -1.13f, 0.17f;
 	obb.a << 1.3f, 0.04f, 1.4f;
 	arm_obbs.push_back(obb);
 
-	// 8. add chamber table
+	// 5. add chamber table
 	obb.C << 0.f, -0.7f, -0.732f;
 	obb.a << 1.3f, 0.35f, 0.01f;
 	arm_obbs.push_back(obb);
 
-	// 9. add frame 1 arm, UR10 DH figure, y axis
+	// 6. add frame 1 arm, UR10 DH figure, y axis
 	ref_points[1].coordinates[2] = 0.21f;
 	constructOBB(ref_points[0], ref_points[1], rot_mats[0], 0.11f, 1, obb);
 	arm_obbs.push_back(obb);
 
-	// 10. 1st long arm, frame 2
+	// 7. 1st long arm, frame 2
 	for (int i = 0; i < 3; i++) ref_points[2].coordinates[i] += rot_mats[1](i, 0)*0.06f;
 	for (int i = 0; i < 3; i++) ref_points[3].coordinates[i] -= rot_mats[1](i, 0)*0.06f;
 	constructOBB(ref_points[2], ref_points[3], rot_mats[1], 0.089f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 11. 2nd long arm, frame 3
+	// 8. 2nd long arm, frame 3
 	for (int i = 0; i < 3; i++) ref_points[4].coordinates[i] += rot_mats[2](i, 0)*0.06f;
 	for (int i = 0; i < 3; i++) ref_points[5].coordinates[i] -= rot_mats[2](i, 0)*0.0f;	//0.03 original
 	constructOBB(ref_points[4], ref_points[5], rot_mats[2], 0.055f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 12. frame 4
+	// 9. frame 4
 	for (int i = 0; i < 3; i++) ref_points[6].coordinates[i] -= rot_mats[3](i, 2)*0.06f;
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[3](i, 2)*0.051f;
 	constructOBB(ref_points[6], tmp_rp, rot_mats[3], 0.047f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// 13. frame 5
+	// 10. frame 5
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[4](i, 2)*0.045f;
 	constructOBB(tmp_rp, ref_points[8], rot_mats[4], 0.045f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// 14. sensor block
+	// 11. sensor block
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 2)*0.09f + rot_mats[5](i, 1)*0.07f;
 	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 2)*0.09f + rot_mats[5](i, 1)*0.07f;
 	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.11f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 15. thermal camera (the part above the tool flange)
+	// 12. thermal camera (the part above the tool flange)
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.0313f + rot_mats[5](i, 2)*0.0f + rot_mats[5](i, 1)*0.1434f;
 	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.0313f - rot_mats[5](i, 2)*0.12f + rot_mats[5](i, 1)*0.1434f;
 	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.045f, 2, obb);	
 	arm_obbs.push_back(obb);
 
-	// 16. probe cylinder
+	// 13. probe cylinder
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*cylinder_back_position[0] + rot_mats[5](i, 1)*cylinder_back_position[1] /*+ rot_mats[5](i, 2)*0.0f*/;
 	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*cylinder_back_position[0] + rot_mats[5](i, 1)*cylinder_back_position[1] + rot_mats[5](i, 2)*cylinder_back_position[2];
 	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.04f, 2, obb);
@@ -546,7 +528,7 @@ bool PathPlanner::selfCollision(float* joint_pos, bool pre_processing_stage)
 		{
 			if (collisionOBB(arm_obbs[i], arm_obbs[j]))
 			{
-			//	std::cout << i <<" collide with " << j << "\n";
+				//std::cout << i <<" collide with " << j << "\n";
 				return true;
 			}
 		}

@@ -4,7 +4,7 @@ BaslerRGB::BaslerRGB()
 {
 	imageOutMat.create(img_height_, img_width_, CV_8UC3);
 	converter.OutputPixelFormat = PixelType_BGR8packed;
-
+	PylonTerminate();
 	PylonInitialize();
 
 	init();
@@ -87,15 +87,18 @@ void BaslerRGB::setBrightness(float val)
 	camera.AutoFunctionROIWidth.SetValue(camera.AutoFunctionROIWidth.GetMax());
 	camera.AutoFunctionROIHeight.SetValue(camera.AutoFunctionROIHeight.GetMax());
 	camera.AutoExposureTimeLowerLimit.SetValue(1000.0);
-	camera.AutoExposureTimeUpperLimit.SetValue(50000.0);
+	camera.AutoExposureTimeUpperLimit.SetValue(20000.0);
+	camera.AutoFunctionProfile.SetValue(AutoFunctionProfile_MinimizeExposureTime);
 	camera.AutoTargetBrightness.SetValue(val);
 	camera.ExposureAuto.SetValue(ExposureAuto_Continuous);
+	camera.BalanceWhiteAuto.SetValue(BalanceWhiteAuto_Continuous);
+	camera.LightSourcePreset.SetValue(LightSourcePreset_Off);
 }
 
 void BaslerRGB::internalStreaming()
 {
 	streaming_ = true;
-	setBrightness(0.40); //Set brightness to initial desired level
+	setBrightness(0.35f); //Set brightness to initial desired level
 	Sleep(100);
 	camera.StartGrabbing(GrabStrategy_LatestImageOnly);
 

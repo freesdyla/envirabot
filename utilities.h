@@ -230,7 +230,7 @@ struct Utilities
 
 		int width, height, num_frames;
 		
-		for (int i = 0; i < str_vec.size(); i++)
+		for (unsigned int i = 0; i < str_vec.size(); i++)
 		{
 			if (str_vec[i] == "f")
 				num_frames = std::stoi(str_vec[i + 1]);

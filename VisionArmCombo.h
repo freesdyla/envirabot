@@ -583,8 +583,6 @@ struct VisionArmCombo
 
 	double L2Norm(double* array6_1, double* array6_2);
 
-	void processGrowthChamberEnviroment(PointCloudT::Ptr cloud, float shelf_z_value, int num_plants, int rover_position=1, bool update_pot_position = true);
-
 	void extractProbeSurfacePatchFromPointCloud(PointCloudT::Ptr cloud, std::vector<pcl::Supervoxel<PointT>::Ptr> & potential_probe_supervoxels,
 												std::vector<pcl::PointXYZRGBNormal>& probing_point_normal_vec);
 
@@ -667,6 +665,8 @@ struct VisionArmCombo
 
 	bool checkHandPoseReachable(Eigen::Matrix4d & hand_pose, ArmConfig & target_config, int option = CHECK_PATH);
 
+	bool rotateLaserScanPot(cv::Vec3f& pot_xyz, double angular_fov, PointCloudT::Ptr cloud, std::string filename, int rover_position);
+
 	bool lineScanPot(Eigen::Vector3d & min, Eigen::Vector3d & max, double scan_angle, float pot_diameter, PointCloudT::Ptr cloud, int option =LASER_SCANNER, std::string filename = "", int rover_position = 1);
 
 	bool checkHandPoseReachableAlongAxis(Eigen::Matrix4d & start_hand_pose, double step, double range, Eigen::Matrix4d & result_hand_pose, std::string axis="x", int option = CHECK_PATH);
@@ -703,7 +703,7 @@ struct VisionArmCombo
 
 	int manualMapPotPositions(int x_start = 0 , int y_start = 0);
 
-	void waitForChamberTimeOffset(int target_chamber_id, double time_offset_min = 50.);
+	void waitForChamberTimeOffset(int target_chamber_id, double time_offset_min = 40.);
 
 	void simpleSideViewDataCollectionRoutine(double pot_x_wrt_rover = 0., int rover_pos = 1);
 

@@ -233,11 +233,9 @@ struct PathPlanner
 								-160./180.f*M_PI, -10./180.f*M_PI,	// elbow
 								-170./180.*M_PI, 10./180.* M_PI,	// wrist 1
 								10.f/180.f*M_PI, 170.f/180.f*M_PI,	// wrist 2
-								//-250. / 180.f*M_PI, -90. / 180.f*M_PI // wrist 3
-								-270. / 180.f*M_PI, -70. / 180.f*M_PI // wrist 3
+								-250. / 180.f*M_PI, -90. / 180.f*M_PI // wrist 3, topview
+								//-270. / 180.f*M_PI, -70. / 180.f*M_PI // wrist 3
 								};
-
-	double probing_joint_range_wrist_2_[2] = {-130./180.*M_PI, -50./180.*M_PI};	// when probing, wrist 2 needs to be rotated by -180 first
 
 	int prmce_round_counter_;
 
