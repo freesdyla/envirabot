@@ -2,7 +2,9 @@
 
 ServerManager::ServerManager()
 {
-	int result = init();
+	int result = 0;
+	
+	//result = init();
 
 	if (result != 0)
 	{
@@ -58,10 +60,6 @@ int ServerManager::init() {
 
 	if (connect(sock, (struct sockaddr*)(&sin),	sizeof(struct sockaddr_in)) != 0) {
 		
-		Utilities::to_log_file("failed to connect to storage server!");
-
-		exit(-1);
-
 		return 3;
 	}
 

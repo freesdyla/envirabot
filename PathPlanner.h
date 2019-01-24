@@ -191,9 +191,7 @@ struct PathPlanner
 
 	flann::Index<flann::L2<float>>* referen_point_index_; // first half for probing
 
-	std::mt19937 rand_gen_;
-
-	std::vector<std::uniform_real_distribution<float>> distri_vec_;
+	
 
 	// DH parameters for UR10
 	float a_[6];
@@ -228,7 +226,7 @@ struct PathPlanner
 	float arm_radius_lookup[8] = { 0.08f, 0.08f, 0.06f, 0.06f, 0.045f, 0.045f, 0.045f, 0.045f };
 
 	// UR10 joint range
-	double joint_range_[12] = { -200./180.*M_PI, 20./180.*M_PI,	// base
+	double joint_range_[12] = { -270./180.*M_PI, -90./180.*M_PI,	// base mir rover
 								-180./180.*M_PI, 0./180.*M_PI,	// shoulder
 								-160./180.f*M_PI, -10./180.f*M_PI,	// elbow
 								-170./180.*M_PI, 10./180.* M_PI,	// wrist 1
@@ -245,10 +243,10 @@ struct PathPlanner
 
 	bool path_planner_ready_;
 
-	const int start_check_obb_idx_ = 7;
-	const int end_check_obb_idx_ = 10;
+	const int start_check_obb_idx_ = 9;
+	const int end_check_obb_idx_ = 12;
 
-	float tcp_y_limit_ = -0.3f;
+	float tcp_x_limit_ = -0.3f;
 
 	double ik_sols_[8 * 6];
 
@@ -265,7 +263,7 @@ struct PathPlanner
 	const double PI = M_PI;
 
 	double probe_position[3] = { 0.0215, 0.1275, -0.3}; // in robot hand pose
-	double cylinder_back_position[3] = { 0.025, 0.13, -0.33 }; // in robot hand pose
+	double cylinder_back_position[3] = { 0.025, 0.12, -0.31 }; // in robot hand pose
 
 	PathPlanner();
 
@@ -287,7 +285,7 @@ struct PathPlanner
 	// oriented bounding box collision
 	bool collisionOBB(OBB & obb0, OBB & obb1);
 
-	void constructOBB(RefPoint & p0, RefPoint & p1, Eigen::Matrix3f rot, float radius, int axis, OBB & obb);
+	void constructOBB(RefPoint & p0, RefPoint & p1, Eigen::Matrix3f rot, float radius_1, float radius_2, int axis, OBB & obb);
 
 	void getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<Eigen::Matrix3f> & rot_mats, std::vector<OBB> & arm_obbs);
 

@@ -157,10 +157,6 @@ struct RobotArmClient
 
 	void laserScannerLightControl(bool on);
 
-	void chargerControl(bool start_or_stop);
-
-	void BMSCharger(bool on);
-
 	void startOrStopRecordPose(bool start);
 
 	std::vector<timestamp_pose> getTimestampPoses();

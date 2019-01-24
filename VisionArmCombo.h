@@ -52,12 +52,7 @@
 #include "KeyenceLineProfiler.h"
 #include "TOF_Swift.h"
 #include "BaslerRGB.h"
-//#include "KinectThread.h"
 #include "PathPlanner.h"
-//roboteq
-#include "Constants.h"	
-#include "ErrorCodes.h"	
-#include "RoboteqDevice.h"
 
 #include "HyperspectralCamera.h"
 #include "FlirThermoCamClient.h"
@@ -71,6 +66,7 @@
 #include "boost/asio.hpp"
 
 #include "time.h"
+#include "mir_client.h"
 
 
 //probes
@@ -296,10 +292,7 @@ struct VisionArmCombo
 
 	pcl::RadiusOutlierRemoval<PointT> ror_;
 
-
 	PathPlanner pp_;
-
-	double ik_sols_[8 * 6];
 
 	Eigen::Affine3f pre_viewer_pose_;
 
@@ -343,8 +336,6 @@ struct VisionArmCombo
 	Eigen::Matrix4d cur_rgb_to_marker_, hand_to_rgb_, gripper_to_hand_, hand_to_depth_, hand_to_thermal_d_, hand_to_scanner_, hand_to_hyperspectral_d_;
 		
 	Eigen::Matrix4d probe_to_hand_pam_, probe_to_hand_raman_532_, probe_to_hand_raman_1064_;
-
-	RoboteqDevice motor_controller_;
 
 	int region_grow_min_cluster_size_ = 1000;
 	int region_grow_max_cluster_size_ = 10000;
@@ -392,7 +383,7 @@ struct VisionArmCombo
 
 	std::vector<std::vector<pcl::PointXYZRGBNormal>> leaf_probing_pn_vector_;
 
-	ArmConfig home_config_, home_config_right_, check_door_inside_config_, check_door_open_outside_left_config_, check_door_open_outside_right_config_;
+	ArmConfig home_config_, check_door_inside_config_, check_door_open_outside_left_config_, check_door_open_outside_right_config_;
 	ArmConfig check_curtain_config_, map_chamber_front_config_, chamber_safe_birdseye_config_;
 
 	int num_plants_ = 1;
@@ -463,11 +454,11 @@ struct VisionArmCombo
 
 	float pot_height_ = 0.22f;
 
-	std::map<int, float> work_pos_offset_map_ = { {0, -0.61f}, {2, 0.5f} };
+	std::map<int, float> work_pos_offset_map_ = { {0, 0.5f}, {2, -0.5f} };
 
 	cv::Vec6d start_scan_pose_;
 
-	const float chamber_center_y_ = -0.7f;
+	const float chamber_center_x_ = -0.7f;
 
 	double hyperspectral_tilt_angle_ = 40.;
 
@@ -504,6 +495,8 @@ struct VisionArmCombo
 	bool in_charging_mode_ = false;
 
 	float probe_patch_max_curvature_ = 0.05;
+
+	MirClient mir_;
 
 	VisionArmCombo();
 
@@ -571,8 +564,6 @@ struct VisionArmCombo
 
 	void viewPlannedPath(float* start_pose, float* goal_pose, bool only_display_start = false);
 
-	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec);
-
 	void forward(const double* q, double* T);
 
 	void float2double(float* array6_f, double* array6_d);
@@ -582,9 +573,6 @@ struct VisionArmCombo
 	bool moveToConfigGetPointCloud(ArmConfig & config, int options = 0);
 
 	double L2Norm(double* array6_1, double* array6_2);
-
-	void extractProbeSurfacePatchFromPointCloud(PointCloudT::Ptr cloud, std::vector<pcl::Supervoxel<PointT>::Ptr> & potential_probe_supervoxels,
-												std::vector<pcl::PointXYZRGBNormal>& probing_point_normal_vec);
 
 	bool computeCollisionFreeProbeOrScanPose(PointT & point, pcl::Normal & normal, int sensor_type, std::vector<ArmConfig> & solution_config_vec, 
 												Eigen::Matrix4d & scan_start_or_probe_hand_pose, Eigen::Vector3d & hand_translation);
@@ -637,8 +625,6 @@ struct VisionArmCombo
 	//communications with chamber
 	void controlChamber(int chamber_id, int action);
 
-	int sendRoboteqVar(int id, int value);
-
 	void hyperspectralCameraCalibration();
 
 	void initTOFCamera();
@@ -674,10 +660,6 @@ struct VisionArmCombo
 	int openOrCloseCurtain(int chamber_id, int option);
 
 	int enterOrExitChamber(int chamber_id, int option);
-
-	int waitTillReachRoverStatus(int rover_status);
-
-	int waitTillReachPositionInChamber(int target_position);
 
 	int getChamberConfig(int chamber_id, ChamberConfig & chamber_config);
 
@@ -715,10 +697,6 @@ struct VisionArmCombo
 
 	int sideViewVerticalLaserScan(PointCloudT::Ptr cloud, Eigen::Vector3d & start_pos, Eigen::Vector3d & dst_pos, double start_tilt_down_angle, double dst_tilt_down_angle);
 
-	int enterChargingMode();
-
 	int saveProbingData(PointT & probe_point, pcl::Normal & normal, int probe_id, int plant_id);
 };
-
-
 #endif

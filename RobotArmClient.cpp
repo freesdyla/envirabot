@@ -16,8 +16,6 @@ RobotArmClient::RobotArmClient()
 
 	// turn off laser
 	laserScannerLightControl(false);
-
-	BMSCharger(true);
 }
 
 RobotArmClient::~RobotArmClient()
@@ -644,54 +642,6 @@ void RobotArmClient::laserScannerLightControl(bool on) {
 	}
 }
 
-void RobotArmClient::chargerControl(bool start_or_stop)
-{
-	if (start_or_stop) {
-
-		char msg[128];
-
-		sprintf(msg, "set_digital_out(1,True)\n");
-
-		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
-
-		Sleep(200);
-	}
-	else {
-
-		char msg[128];
-
-		sprintf(msg, "set_digital_out(1,False)\n");
-
-		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
-
-		Sleep(200);
-	}
-}
-
-void RobotArmClient::BMSCharger(bool on)
-{
-	if (on) {
-
-		char msg[128];
-
-		sprintf(msg, "set_digital_out(4,True)\n");
-
-		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
-
-		Sleep(200);
-	}
-	else {
-
-		char msg[128];
-
-		sprintf(msg, "set_digital_out(4,False)\n");
-
-		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
-
-		Sleep(200);
-	}
-}
-
 void RobotArmClient::startOrStopRecordPose(bool start)
 {
 	if (start)
@@ -705,7 +655,6 @@ void RobotArmClient::startOrStopRecordPose(bool start)
 	else
 		record_poses_.store(false);
 }
-
 
 std::vector<RobotArmClient::timestamp_pose> RobotArmClient::getTimestampPoses()
 {

@@ -1,12 +1,12 @@
 #include "PathPlanner.h"
 
 PathPlanner::PathPlanner() :
-	num_nodes_(800),	//must be even
+	num_nodes_(800),	//must be even 800/10
 	ref_p_nn_(10),
 	prmcegraph_(num_nodes_),
 	num_joints_(6),
 	//rand_gen_(time(0))
-	rand_gen_(1),
+	//rand_gen_(1),
 	num_ref_points_(9),
 	prmce_round_counter_(1),
 	prmce_swept_volume_counter_(1),
@@ -388,7 +388,8 @@ bool PathPlanner::collisionOBB(OBB & obb0, OBB & obb1)
 	rot is rotation matrix
 	axis: align with p0-p1 line segment x-0 y-1 z-2
 */
-void PathPlanner::constructOBB(RefPoint & p0, RefPoint & p1, Eigen::Matrix3f rot, float radius, int axis, OBB & obb)
+
+void PathPlanner::constructOBB(RefPoint & p0, RefPoint & p1, Eigen::Matrix3f rot, float radius_1, float radius_2, int axis, OBB & obb)
 {
 	Eigen::Vector3f point0(p0.coordinates[0], p0.coordinates[1], p0.coordinates[2]);
 	Eigen::Vector3f point1(p1.coordinates[0], p1.coordinates[1], p1.coordinates[2]);
@@ -399,8 +400,22 @@ void PathPlanner::constructOBB(RefPoint & p0, RefPoint & p1, Eigen::Matrix3f rot
 	obb.A = rot;
 
 	// extents
-	obb.a << radius, radius, radius;
 	obb.a(axis) = (point0 - point1).norm()*0.5f;
+	if (axis == 0)
+	{
+		obb.a(1) = radius_1;
+		obb.a(2) = radius_2;
+	}
+	else if (axis == 1)
+	{
+		obb.a(2) = radius_1;
+		obb.a(0) = radius_2;
+	}
+	else if (axis == 2)
+	{
+		obb.a(0) = radius_1;
+		obb.a(1) = radius_2;
+	}
 }
 
 void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<Eigen::Matrix3f> & rot_mats, std::vector<OBB> & arm_obbs)
@@ -411,81 +426,101 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 
 	// 0. add rover base
 	OBB obb;
-	obb.C << 0.f, 0.2f, -0.48f;
+	obb.C << 0.0635f, 0.f, -0.48f;
 	obb.A = Eigen::Matrix3f::Identity();
-	obb.a << 0.37f, 0.40f, 0.47f;
+	obb.a << 0.1397f, 0.254f, 0.48f;
 	arm_obbs.push_back(obb);
 
-	// 1. add chamber window top wall, robot arm base center to front edge 16.5cm, robot-to-window 20cm, wall thickness 5cm
+	// 1. add rover base 1
+	obb.C << 0.508, 0.f, -0.5969f;
+	obb.A = Eigen::Matrix3f::Identity();
+	obb.a << 0.3048f, 0.254f, 0.3683f;
+	arm_obbs.push_back(obb);
+
+	// 2. add rover base 2
+	tmp_rp.coordinates[0] = 0.2032f; tmp_rp.coordinates[1] = 0.f; tmp_rp.coordinates[2] = 0.f;
+	tmp_rp1.coordinates[0] = 0.3556f; tmp_rp1.coordinates[1] = 0.f; tmp_rp1.coordinates[2] = -0.2286f;
+	Eigen::Matrix3f rot = Eigen::AngleAxisf(M_PI_4, Eigen::Vector3f::UnitY()).matrix();
+	constructOBB(tmp_rp, tmp_rp1, rot, 0.254f, 0.01f, 0, obb);
+	arm_obbs.push_back(obb);
+
+	// 3. add chamber window top wall, robot arm base center to front edge 16.5cm, robot-to-window 20cm, wall thickness 5cm
 	// floor-to-base height 0.964m, 
-	obb.C << 0.f, -0.3f, 1.07f + 0.2f;
-	obb.a << 1.3f, 0.05f, 0.2f;
+	obb.C << -0.3f, 0.f,  1.07f + 0.2f;
+	obb.A = Eigen::Matrix3f::Identity();
+	obb.a << 0.05f, 1.3f, 0.2f;
 	arm_obbs.push_back(obb);
 
-	// 2. add chamber window bottom wall
-	obb.C << 0.f, -0.3f, -0.34f - 0.3f;
-	obb.a << 1.3f, 0.05f, 0.3f;
+	// 4. add chamber window bottom wall
+	obb.C << -0.3f, 0.f, -0.34f - 0.3f;
+	obb.a << 0.05f, 1.3f,  0.3f;
 	arm_obbs.push_back(obb);
 
-	// 3. window top wall in top-view mode y = -0.3, change it to window top wall in side-view mode, use y = 0.76
-	obb.C << 0.f, -0.3f, 1.07f + 0.2f;
-	obb.a << 1.3f, 0.05f, 0.2f;
+	// 5. window top wall in top-view mode y = -0.3, change it to window top wall in side-view mode, use y = 0.76
+	obb.C << -0.3f, 0.f, 1.07f + 0.2f;
+	obb.a << 0.05f, 1.3f,  0.2f;
 	arm_obbs.push_back(obb);
 
-	// 4. add chamber inside wall
-	obb.C << 0.f, -1.13f, 0.17f;
-	obb.a << 1.3f, 0.04f, 1.4f;
+	// 6. add chamber inside wall
+	obb.C << -1.13f, 0.f,  0.17f;
+	obb.a << 0.04f, 1.3f, 1.4f;
 	arm_obbs.push_back(obb);
 
-	// 5. add chamber table
-	obb.C << 0.f, -0.7f, -0.732f;
-	obb.a << 1.3f, 0.35f, 0.01f;
+	// 7. add chamber table
+	obb.C << -0.7f, 0.f, -0.732f;
+	obb.a << 0.35f, 1.3f, 0.01f;
 	arm_obbs.push_back(obb);
 
-	// 6. add frame 1 arm, UR10 DH figure, y axis
+	// 8. add frame 1 arm, UR10 DH figure, y axis
 	ref_points[1].coordinates[2] = 0.21f;
-	constructOBB(ref_points[0], ref_points[1], rot_mats[0], 0.11f, 1, obb);
+	constructOBB(ref_points[0], ref_points[1], rot_mats[0], 0.11f, 0.11f, 1, obb);
 	arm_obbs.push_back(obb);
 
-	// 7. 1st long arm, frame 2
+	// 9. 1st long arm, frame 2
 	for (int i = 0; i < 3; i++) ref_points[2].coordinates[i] += rot_mats[1](i, 0)*0.06f;
 	for (int i = 0; i < 3; i++) ref_points[3].coordinates[i] -= rot_mats[1](i, 0)*0.06f;
-	constructOBB(ref_points[2], ref_points[3], rot_mats[1], 0.089f, 0, obb);
+	constructOBB(ref_points[2], ref_points[3], rot_mats[1], 0.089f, 0.089f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 8. 2nd long arm, frame 3
+	// 10. 2nd long arm, frame 3
 	for (int i = 0; i < 3; i++) ref_points[4].coordinates[i] += rot_mats[2](i, 0)*0.06f;
-	for (int i = 0; i < 3; i++) ref_points[5].coordinates[i] -= rot_mats[2](i, 0)*0.0f;	//0.03 original
-	constructOBB(ref_points[4], ref_points[5], rot_mats[2], 0.055f, 0, obb);
+	for (int i = 0; i < 3; i++) ref_points[5].coordinates[i] -= rot_mats[2](i, 0)*0.03f;	//0.03 original
+	constructOBB(ref_points[4], ref_points[5], rot_mats[2], 0.055f, 0.055f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 9. frame 4
+	// 11. frame 4
 	for (int i = 0; i < 3; i++) ref_points[6].coordinates[i] -= rot_mats[3](i, 2)*0.06f;
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[3](i, 2)*0.051f;
-	constructOBB(ref_points[6], tmp_rp, rot_mats[3], 0.047f, 2, obb);
+	constructOBB(ref_points[6], tmp_rp, rot_mats[3], 0.047f, 0.047f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// 10. frame 5
+	// 12. frame 5
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[7].coordinates[i] - rot_mats[4](i, 2)*0.045f;
-	constructOBB(tmp_rp, ref_points[8], rot_mats[4], 0.045f, 2, obb);
+	constructOBB(tmp_rp, ref_points[8], rot_mats[4], 0.045f, 0.045f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// 11. sensor block
-	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 2)*0.09f + rot_mats[5](i, 1)*0.07f;
-	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 2)*0.09f + rot_mats[5](i, 1)*0.07f;
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.11f, 0, obb);
+	// 13. sensor block
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.10f + rot_mats[5](i, 1)*0.07f + rot_mats[5](i, 2)*0.1f;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 1)*0.07f + rot_mats[5](i, 2)*0.1f;
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.11f, 0.1f, 0, obb);
 	arm_obbs.push_back(obb);
 
-	// 12. thermal camera (the part above the tool flange)
+	// 14. thermal camera (the part above the tool flange)
 	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.0313f + rot_mats[5](i, 2)*0.0f + rot_mats[5](i, 1)*0.1434f;
 	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] - rot_mats[5](i, 0)*0.0313f - rot_mats[5](i, 2)*0.12f + rot_mats[5](i, 1)*0.1434f;
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.045f, 2, obb);	
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.045f, 0.045f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	// 13. probe cylinder
-	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*cylinder_back_position[0] + rot_mats[5](i, 1)*cylinder_back_position[1] /*+ rot_mats[5](i, 2)*0.0f*/;
+	// 15. probe cylinder
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*cylinder_back_position[0] + rot_mats[5](i, 1)*cylinder_back_position[1];
 	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*cylinder_back_position[0] + rot_mats[5](i, 1)*cylinder_back_position[1] + rot_mats[5](i, 2)*cylinder_back_position[2];
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.04f, 2, obb);
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.03f, 0.04f, 2, obb);
+	arm_obbs.push_back(obb);
+
+	//16. line light
+	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 1)*0.07f + rot_mats[5](i, 2)*0.13f;
+	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.10f + rot_mats[5](i, 1)*0.07f + rot_mats[5](i, 2)*0.13f;
+	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.11f, 0.07f, 0, obb);
 	arm_obbs.push_back(obb);
 }
 
@@ -497,12 +532,12 @@ bool PathPlanner::selfCollision(float* joint_pos, bool pre_processing_stage)
 
 	computeReferencePointsOnArm(joint_pos, reference_points, rot_mats);
 
-	//prevent hand hit the back wall
+	//prevent hand hit the back and side walls
 	if (pre_processing_stage)
 	{
-		if (reference_points.back().coordinates[1] > tcp_y_limit_
-			|| abs(reference_points.back().coordinates[0]) > 1.0	// camera
-			|| abs(reference_points[reference_points.size()-2].coordinates[0]) > 1.0 //probe
+		if (reference_points.back().coordinates[0] > tcp_x_limit_
+			|| std::abs(reference_points.back().coordinates[1]) > 1.0	// camera
+			|| std::abs(reference_points[reference_points.size()-2].coordinates[1]) > 1.0 //probe
 			)
 		{
 			//std::cout << "hand in the back too far\n";
@@ -1118,6 +1153,7 @@ int PathPlanner::inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_so
 		}
 	}
 
+#if 1
 	// the solution joint angle may not be in the range we want
 	for (int i = 0; i < num_sols; i++)
 	{
@@ -1152,6 +1188,7 @@ int PathPlanner::inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_so
 			std::cout << "\n";*/
 		}
 	}
+#endif
 
 	return num_sols;
 }
@@ -1173,21 +1210,25 @@ void PathPlanner::PRMCEPreprocessing()
 
 	start_end_ref_points_ = new float[2*3*num_ref_points_];
 
-	initGrid(264, 128, 200, 4, 132, 0, -80);	//growth chamber 
+	// initGrid, z shift sign is different from those of x and y
+	initGrid(128, 264, 200, 4, 0, 132, -80);	//growth chamber
 	//initGrid(304, 128, 200, 4, 152, 0, -80);	//offset, base to grid
 	clock_t toc = clock();
 	printf("Init Grid Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 
 	tic = clock();
 	// GENERATE RANDOM SELF-COLLISION-FREE CONFIGURATIONS
+	// this random configuration generation is not uniform due to non-independent randon numbers
+	std::mt19937 rand_gen_;
+	std::vector<std::uniform_real_distribution<float>> distri_vec_;
 	distri_vec_.resize(6);
-	// unit: rad
-	std::uniform_real_distribution<float> d1((float)joint_range_[0], (float)joint_range_[1]);	// Base
-	std::uniform_real_distribution<float> d2((float)joint_range_[2], (float)joint_range_[3]);	// Shoulder
-	std::uniform_real_distribution<float> d3((float)joint_range_[4], (float)joint_range_[5]);	// Elbow
-	std::uniform_real_distribution<float> d4((float)joint_range_[6], (float)joint_range_[7]);	// Wrist 1
-	std::uniform_real_distribution<float> d5((float)joint_range_[8], (float)joint_range_[9]);	// Wrist 2
-	std::uniform_real_distribution<float> d6((float)joint_range_[10], (float)joint_range_[11]);		// Wrist3
+	// unit: rad, the joint range is different from the joint limit defined in the header file to reduce useless randon configurations
+	std::uniform_real_distribution<float> d1(-220./180.*M_PI, -140./180.*M_PI);	// Base
+	std::uniform_real_distribution<float> d2(-130./180.*M_PI, -80./180.*M_PI);	// Shoulder
+	std::uniform_real_distribution<float> d3(-140./180.*M_PI, -40./180.*M_PI);	// Elbow
+	std::uniform_real_distribution<float> d4(-70. / 180.*M_PI, 0. / 180.*M_PI);	// Wrist 1
+	std::uniform_real_distribution<float> d5(80./180.*M_PI, 100./180.*M_PI);	// Wrist 2
+	std::uniform_real_distribution<float> d6(-200./ 180.*M_PI, -160./ 180.*M_PI); // Wrist3
 
 	distri_vec_[0] = d1;
 	distri_vec_[1] = d2;
@@ -1226,15 +1267,17 @@ void PathPlanner::PRMCEPreprocessing()
 
 	// for imaging
 	config_idx = 0;
-	tmp_hand_pose(0, 0) = 1.;
-	tmp_hand_pose(1, 1) = -1.;
+	tmp_hand_pose(0, 0) = 0.;
+	tmp_hand_pose(1, 0) = -1.;
+	tmp_hand_pose(1, 1) = 0.;
+	tmp_hand_pose(0, 1) = -1.;
 	tmp_hand_pose(2, 2) = -1.;
 
-	for (float z = 0.2f; z <= 0.81f && !overflow; z += 0.1f)  //4
+	for (float z = 0.2f; z <= 0.81f && !overflow; z += 0.1f)  //7
 	{	
-		for (float x = -0.6f; x <= 0.61f && !overflow; x += 0.1f)	// 7
+		for (float x = -0.85f; x <= -0.3f && !overflow; x += 0.1f) // 5
 		{	
-			for (float y = -0.85f; y <= -0.35f && !overflow; y += 0.1f) // 3
+			for (float y = -0.6f; y <= 0.61f && !overflow; y += 0.1f)	// 13	
 			{
 				tmp_hand_pose(0, 3) = x;
 				tmp_hand_pose(1, 3) = y;
@@ -1249,9 +1292,6 @@ void PathPlanner::PRMCEPreprocessing()
 					float sol_f[6];
 
 					double2float(ik_sols_ + idx * num_joints_, sol_f);
-
-					// wrist 3 make it -180, no rotation, other wise self-collision (sensor and arm)
-					//sol_f[5] = -M_PI;
 
 					if (!selfCollision(sol_f)) {
 
@@ -1271,6 +1311,37 @@ void PathPlanner::PRMCEPreprocessing()
 	}
 
 	std::cout << "successful manual configs for imaging: " << config_idx<< "\n";
+
+	//manual poses that can bring the sensor head in and out of the chamber, do not clear config_idx
+	if (config_idx < num_nodes_)
+	{
+		joint_array6[0] = -M_PI; joint_array6[4] = M_PI_2;	joint_array6[5] = -M_PI;
+		joint_array6[1] = -67. / 180 * M_PI; joint_array6[2] = -121. / 180 * M_PI; joint_array6[3] = -5.4 / 180 * M_PI;
+		
+		memcpy(random_nodes_buffer_ + config_idx * num_joints_, joint_array6, num_joints_ * sizeof(float));
+		++config_idx;
+	}
+
+	if (config_idx < num_nodes_)
+	{
+		joint_array6[1] = -52. / 180 * M_PI; joint_array6[2] = -130. / 180 * M_PI; joint_array6[3] = -3./ 180 * M_PI;
+		memcpy(random_nodes_buffer_ + config_idx * num_joints_, joint_array6, num_joints_ * sizeof(float));
+		++config_idx;
+	}
+
+	if (config_idx < num_nodes_)
+	{
+		joint_array6[1] = -10. / 180 * M_PI; joint_array6[2] = -138. / 180 * M_PI; joint_array6[3] = -28. / 180 * M_PI;
+		memcpy(random_nodes_buffer_ + config_idx * num_joints_, joint_array6, num_joints_ * sizeof(float));
+		++config_idx;
+	}
+
+	if (config_idx < num_nodes_)
+	{
+		joint_array6[1] = -1. / 180 * M_PI; joint_array6[2] = -141. / 180 * M_PI; joint_array6[3] = -36. / 180 * M_PI;
+		memcpy(random_nodes_buffer_ + config_idx * num_joints_, joint_array6, num_joints_ * sizeof(float));
+		++config_idx;
+	}
 
 	toc = clock();
 	printf("random configs Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
@@ -1381,34 +1452,6 @@ void PathPlanner::PRMCEPreprocessing()
 	int counter = 0;
 	tic = clock();
 	// WORKSPACE MAPPING
-
-#if 0
-	// map each vertex
-	for (int node_id = 0; node_id < num_nodes_; node_id++)
-	{
-		float* config = random_nodes_buffer_ + node_id * num_joints_;
-
-		// add all edges connected to this vertice to the cell 
-		prmcegraph_t::out_edge_iterator estart, eend;
-		std::tie(estart, eend) = boost::out_edges(node_id, prmcegraph_);
-		std::vector<prmceedge_descriptor> edge_vec;
-
-		// get all out edge descriptors
-		for (prmcegraph_t::out_edge_iterator eit = estart; eit != eend; eit++) edge_vec.push_back(*eit);
-
-		std::vector<OBB> arm_obbs;
-
-		getArmOBBModel(ref_points_vec[node_id], rot_mats_vec[node_id], arm_obbs);
-
-		voxelizeArmConfig(arm_obbs, edge_vec, false);
-
-		//viewOccupancyGrid(viewer);
-
-		prmce_round_counter_++;
-	}
-	toc = clock();
-	printf("map vertices Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
-#endif
 
 	counter = 0;
 	tic = clock();
