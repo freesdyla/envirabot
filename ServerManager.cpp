@@ -4,7 +4,7 @@ ServerManager::ServerManager()
 {
 	int result = 0;
 	
-	//result = init();
+	result = init();
 
 	if (result != 0)
 	{
@@ -110,7 +110,7 @@ int ServerManager::makeServerDirectory(std::string path)
 		LIBSSH2_SFTP_S_IROTH | LIBSSH2_SFTP_S_IXOTH);
 
 	if (rc) {
-		std::cout << "libssh2_sftp_mkdir failed: " << rc << "\n";
+		//std::cout << "libssh2_sftp_mkdir failed: " << rc << "\n";
 		return -1;
 	}
 
@@ -133,21 +133,19 @@ int ServerManager::uploadDirectory(std::string folder_name, std::string experime
 
 	std::string absolute_path = data_root_dir_  + chamber_name + "\\" + folder_name;
 
-	std::string linux_server_dir = experiment_name +"/" + chamber_name + "/" + folder_name;
+	int result = makeServerDirectory(experiment_name);
 
-	std::cout << linux_server_dir << std::endl;
+	//std::cout << "make server dir " << result << std::endl;
+
+	std::string linux_server_dir = experiment_name + "/" + chamber_name;
 
 	makeServerDirectory(linux_server_dir);
 
-//	linux_server_dir += "/" + chamber_name;
-//	std::cout << linux_server_dir << std::endl;
+	linux_server_dir += "/" + folder_name;
 
-//	makeServerDirectory(linux_server_dir);
+	std::cout << linux_server_dir << std::endl;
 
-//	linux_server_dir += "/" + folder_name;
-//	std::cout << linux_server_dir << std::endl;
-
-//	makeServerDirectory(linux_server_dir);
+	std::cout<<"create server directory: "<<makeServerDirectory(linux_server_dir)<<std::endl;
 
 	for (auto & p : boost::filesystem::recursive_directory_iterator(absolute_path)) 
 	{
@@ -174,7 +172,7 @@ int ServerManager::uploadDirectory(std::string folder_name, std::string experime
 		}
 		else {	//this is a file
 
-			std::string dest = "/home/rover/" + experiment_name + "/" + chamber_name + "/"+ folder_name + "/"+ strs.back();
+			std::string dest = "/home/rover/" + linux_server_dir + "/"+ strs.back();
 
 			FILE *file;
 
@@ -276,5 +274,52 @@ int ServerManager::deleteOutdatedData() {
 		}
 	}
 
+	return 0;
+}
+
+int ServerManager::uploadOneDataFolderFromTheSavedFile()
+{
+	//read all lines
+	std::ifstream file;
+
+	file.open("data_folders_to_upload.txt");
+	std::vector<std::string> lines_to_write;
+	bool first_line_processed = false;
+
+	if (file.is_open())
+	{
+		std::string line;
+
+		while (std::getline(file, line))
+		{
+			std::vector<std::string> str_vec;
+			boost::split(str_vec, line, boost::is_any_of(","));
+
+			if (str_vec.size() == 2)
+			{
+				//std::cout << str_vec[0] << "		" << str_vec[1] << std::endl;
+				//data folder name, experiment name
+				if (!first_line_processed)
+				{
+					if (uploadDirectory(str_vec[0], str_vec[1]) != 0)
+						lines_to_write.push_back(line);
+					else
+						std::cout << "upload successful\n";
+
+					first_line_processed = true;
+				}
+				else
+					lines_to_write.push_back(line);
+			}
+		}
+
+		file.close();
+		std::ofstream out("data_folders_to_upload.txt", std::ios::trunc);
+
+		for (auto line : lines_to_write)
+			out << line << std::endl;
+
+		out.close();
+	}
 	return 0;
 }

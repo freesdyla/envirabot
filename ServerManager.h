@@ -39,6 +39,8 @@ struct ServerManager
 
 	int deleteOutdatedData();
 
+	int uploadOneDataFolderFromTheSavedFile();
+
 
 	unsigned long hostaddr;
 	int sock, i, auth_pw = 1;

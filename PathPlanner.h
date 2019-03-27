@@ -235,6 +235,15 @@ struct PathPlanner
 								//-270. / 180.f*M_PI, -70. / 180.f*M_PI // wrist 3
 								};
 
+	//sideview joint range
+	double joint_range_sideview_[12] = { -90. / 180.*M_PI, 90. / 180.*M_PI,	// base mir rover
+										-140. / 180.*M_PI, -70. / 180.*M_PI,	// shoulder
+										-160. / 180.f*M_PI, -50. / 180.f*M_PI,	// elbow
+										-100. / 180.*M_PI, 80./ 180.* M_PI,	// wrist 1
+										10.f / 180.f*M_PI, 170.f / 180.f*M_PI,	// wrist 2
+										-250. / 180.f*M_PI, -90. / 180.f*M_PI // wrist 3, topview
+										};
+
 	int prmce_round_counter_;
 
 	int prmce_swept_volume_counter_;
@@ -303,7 +312,7 @@ struct PathPlanner
 
 	bool selfCollisionBetweenTwoConfigs(float* config1, float* config2);
 
-	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec);
+	int inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec, int data_collection_mode = 0);
 	
 	void double2float(double* array6_d, float* array6_f);
 

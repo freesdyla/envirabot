@@ -22,13 +22,13 @@ TOF_Swift::TOF_Swift()
 		if(i == 9)
 		{
 			Utilities::to_log_file("Fail to connect to odos");
-			exit(-1);
+			exit(0);
 		}
 
-		Sleep(200);
+		Sleep(500);
 	}
 		
-	getAsImage(cam_, xMultiplier, yMultiplier, zMultiplier); //does not work after firmware update
+	getAsImage(cam_, xMultiplier, yMultiplier, zMultiplier); //getImage() function does not work after firmware update
 	
 	start();
 }
@@ -139,7 +139,7 @@ void TOF_Swift::startStreaming()
 	cv::Mat ya(size, CV_32FC1, const_cast<float*>(yMultiplier));
 	cv::Mat za(size, CV_32FC1, const_cast<float*>(zMultiplier));
 
-#if 1
+#if 0
 	std::ofstream out("odos_x_multiplier_32f.bin", std::ios::out | std::ios::binary);
 
 	if (out.is_open())
@@ -184,8 +184,8 @@ void TOF_Swift::startStreaming()
 
 	streaming_ = true;
 
-	while (streaming_) {
-
+	while (streaming_)
+	{
 		odos::IImage* odos_image_ = nullptr;
 
 		// Wait for images with odos::Camera::waitForImage, if timeout is 1s, it will time out
@@ -194,13 +194,15 @@ void TOF_Swift::startStreaming()
 			if (res == odos::Result::Timeout)
 			{
 				Utilities::to_log_file("wait for odos image time out");
-				exit(1);
+				exit(0);
 			}
 			else
 			{
 				Utilities::to_log_file("wait for odos image fail");
-				exit(1);
+				exit(0);
 			}
+
+			break;
 		}
 		else 
 		{
@@ -271,8 +273,8 @@ void TOF_Swift::startStreaming()
 					const float range = (*range_ptr);
 					const float z = range*(*zm_ptr);
 
-					if (z > 0.005f && z < 4.f) {
-
+					if (z > 0.005f && z < 4.f) 
+					{
 						PointT p;
 						p.z = z;
 						p.x = -(*xm_ptr)*range;
@@ -298,7 +300,7 @@ void TOF_Swift::startStreaming()
 	if (cam_.acquisitionStop() != odos::Result::Success)
 	{
 		Utilities::to_log_file("stop tof camera fail\n");
-		exit(-1);
+		exit(0);
 	}
 }
 

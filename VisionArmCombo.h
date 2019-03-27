@@ -79,7 +79,6 @@
 #define SCANNER 1
 #define THERMAL 2
 
-
 //chamber interaction
 #define OPEN_DOOR 0
 #define CLOSE_DOOR 1
@@ -143,7 +142,6 @@
 #define TOP_VIEW 0
 #define SIDE_VIEW 1
 
- 
 struct VisionArmCombo
 {
 	typedef pcl::PointXYZRGB PointT;
@@ -383,7 +381,7 @@ struct VisionArmCombo
 
 	std::vector<std::vector<pcl::PointXYZRGBNormal>> leaf_probing_pn_vector_;
 
-	ArmConfig home_config_, check_door_inside_config_, check_door_open_outside_left_config_, check_door_open_outside_right_config_;
+	ArmConfig home_config_, sideview_home_config_;
 	ArmConfig check_curtain_config_, map_chamber_front_config_, chamber_safe_birdseye_config_;
 
 	int num_plants_ = 1;
@@ -415,7 +413,7 @@ struct VisionArmCombo
 
 	static bool leaf_x_comparator(LeafIDnX & a, LeafIDnX & b) { return a.x > b.x;}
 
-	static bool pot_center_x_comparator(cv::Vec3f & a, cv::Vec3f & b) {	return a[0] > b[0]; }
+	static bool pot_center_x_comparator(cv::Vec3f & a, cv::Vec3f & b) {	return a[0] < b[0]; }
 
 	static bool pot_center_y_comparator(cv::Vec3f & a, cv::Vec3f & b) { return a[1] < b[1]; }
 
@@ -468,6 +466,7 @@ struct VisionArmCombo
 	bool enable_hyperspectral_ = true;
 	bool enable_scanner_ = true;
 	bool leaf_tracing_hyperspectral_ = true;
+	bool enable_arm_ = true;
 
 	PointCloudT::Ptr chamber_occupancy_cloud_;
 	std::string occu_cloud_dir_ = "C:\\Users\\lietang123\\Documents\\RoAdFiles\\LineProfilerRobotArmTest\\LineProfilerRobotArmTest\\chamber_occupancy_data\\";
@@ -479,8 +478,6 @@ struct VisionArmCombo
 	int max_samples_per_plant_ = 2;
 
 	bool hyperspectral_topview_ = true; 
-
-	int init_rover_position_in_chamber_ = 1;
 
 	bool enable_imaging_ = true;
 
@@ -497,6 +494,23 @@ struct VisionArmCombo
 	float probe_patch_max_curvature_ = 0.05;
 
 	MirClient mir_;
+
+	//additional variables for resume work upon program start
+	bool entered_mapWorkspace_ = false;
+	std::string inside_or_outside_chamber_ = "outside";
+	std::string imaging_or_probing_ = "imaging";
+	int rover_pos_in_chamber_ = -1;
+	int data_collection_done_ = 1;
+	int plant_imaging_stage_ = 0;
+	bool initial_enter_imagePots = true;
+	std::string data_folder_ = "";
+	std::string experiment_id_ = "new";
+	int data_collection_mode_ = TOP_VIEW;
+	double sideview_camera_x_pos_ = 0.8;
+
+	double scheduled_minutes_per_chamber_ = 40.;
+
+	int close_door_when_rover_inside_ = 1;
 
 	VisionArmCombo();
 
@@ -587,7 +601,7 @@ struct VisionArmCombo
 															std::vector<pcl::PointIndices> & leaf_cluster_indices_vec,
 															std::vector<std::vector<Eigen::Matrix4d*>> & hyperscan_hand_pose_sequence_vec,
 															std::vector<std::vector<ArmConfig>> & hyperscan_arm_config_sequence_vec,
-															std::vector<int> & hyperscan_leaf_id_vec, int plant_id =-1, int imaging_mode = TOP_VIEW);
+															std::vector<int> & hyperscan_leaf_id_vec, int plant_id =-1);
 
 	bool probeLeaf(PointT & probe_point, pcl::Normal & normal, int probe_id=PAM, int plant_id = -1);
 
@@ -657,7 +671,7 @@ struct VisionArmCombo
 
 	bool checkHandPoseReachableAlongAxis(Eigen::Matrix4d & start_hand_pose, double step, double range, Eigen::Matrix4d & result_hand_pose, std::string axis="x", int option = CHECK_PATH);
 
-	int openOrCloseCurtain(int chamber_id, int option);
+	int openOrCloseCurtain(int chamber_id, int option, int data_collection_mode = TOP_VIEW);
 
 	int enterOrExitChamber(int chamber_id, int option);
 
@@ -667,7 +681,7 @@ struct VisionArmCombo
 
 	void solveLinearCameraCalibration(std::vector<std::vector<cv::Point2d>> &image_points_vec, std::vector<cv::Point3d> &corners);
 
-	int moveArmInOrOutChamber(int option);
+	int moveArmInOrOutChamber(int option, int data_collection_mode);
 
 	int tiltLinearScan(Eigen::Matrix4d &camera_pose,  cv::Vec6d &start_scan_pose, double angle = 50., int option = DIRECT_IMAGING);
 
@@ -685,9 +699,15 @@ struct VisionArmCombo
 
 	int manualMapPotPositions(int x_start = 0 , int y_start = 0);
 
-	void waitForChamberTimeOffset(int target_chamber_id, double time_offset_min = 40.);
+	void run();
 
-	void simpleSideViewDataCollectionRoutine(double pot_x_wrt_rover = 0., int rover_pos = 1);
+	void sideViewImagingRoutinePerPlant(int plant_id, double pot_y_wrt_rover = 0., int rover_pos = 1);
+
+	void sideViewProbingRoutinePerPlant(int plant_id, double pot_y_wrt_rover, int rover_pos);
+
+	void topViewImagingRoutinePerPlant(int rover_position, int x, int y, int plant_id, cv::Vec3f & pot_xyz);
+
+	void topViewProbingRoutinePerPlant(int rover_position, int plant_id, cv::Vec3f & pot_xyz);
 
 	void collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pose, int plant_id, int image_id, int rover_pos);
 
@@ -695,8 +715,10 @@ struct VisionArmCombo
 
 	bool computeSideViewProbingPose(PointT & probe_point, pcl::Normal & normal, Eigen::Matrix4d & final_probe_pose, ArmConfig & final_config, int probe_id = PAM, int plant_id = -1);
 
-	int sideViewVerticalLaserScan(PointCloudT::Ptr cloud, Eigen::Vector3d & start_pos, Eigen::Vector3d & dst_pos, double start_tilt_down_angle, double dst_tilt_down_angle);
+	int sideViewVerticalLaserScan(PointCloudT::Ptr cloud, Eigen::Vector3d & start_pos, Eigen::Vector3d & dst_pos, double start_tilt_down_angle, double dst_tilt_down_angle, std::string file_path = "");
 
 	int saveProbingData(PointT & probe_point, pcl::Normal & normal, int probe_id, int plant_id);
+
+	int saveTaskProgressToFile();
 };
 #endif

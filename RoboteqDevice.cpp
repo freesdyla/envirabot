@@ -36,7 +36,7 @@ int RoboteqDevice::Connect(string port)
 
 	int status;
 	string response;
-	status = IssueCommand("?", "$1E", 10, response);
+	status = IssueCommand("?", "$1E", 100, response);
 	if(status != RQ_SUCCESS)
 	{
 		Utilities::to_log_file("failed to issue command roboteq");
@@ -84,7 +84,7 @@ void RoboteqDevice::InitPort()
 	// the comSettings structure with all the necessary values.
 	// Then change the ones you want and call SetCommState().
 	GetCommState((HANDLE) handle, &comSettings);
-	comSettings.BaudRate = 115200;
+	comSettings.BaudRate = 9600;
 	comSettings.StopBits = ONESTOPBIT;
 	comSettings.ByteSize = 8;
 	comSettings.Parity   = NOPARITY;
@@ -150,6 +150,7 @@ int RoboteqDevice::IssueCommand(string commandType, string command, string args,
 	sleepms(waitms);
 
 	status = ReadAll(read);
+	std::cout << read << std::endl;
 	if(status != RQ_SUCCESS)
 		return status;
 
@@ -333,4 +334,19 @@ string ReplaceString(string source, string find, string replacement)
 void sleepms(int milliseconds)
 {
 	Sleep(milliseconds);
+}
+
+int RoboteqDevice::GetBatteryStatus(std::string & bms_str)
+{
+	//int status = IssueCommand("?", "V", 100, bms_str);
+
+	Write("?V\r\n");
+
+	Sleep(100);
+
+	int status = ReadAll(bms_str);
+
+	std::cout << "status "<<status<<"   "<<bms_str << "\n";
+
+	return 0;
 }

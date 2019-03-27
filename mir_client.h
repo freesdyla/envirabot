@@ -47,12 +47,14 @@ struct MirClient
 		{
 			mission_map[std::to_string(i)] = "";
 			
-			for(int j=0; j<=2; j++)
-				mission_map[std::to_string(i*10+j)] = "";
+			std::string tmp = "VL" + std::to_string(i);
+			mission_map[tmp] = "";
+
+			tmp = std::to_string(i) + "1";
+			mission_map[tmp] = "";
 		}
 
-		mission_map["VL1"] = "";
-		mission_map["step_forward"] = ""; //move forward 0.5m
+		mission_map["step_forward"] = ""; //move forward by 0.5m
 		mission_map["topview"] = "";	//rotate counterclockwise by 90
 		mission_map["topview_reverse"] = "";	//rotate clockwise by 90
 
@@ -76,6 +78,12 @@ struct MirClient
         	out->append(in, totalBytes);
         	return totalBytes;
     }
+
+	int goToChargingStation()
+	{
+		executeMission(mission_map.at("0"));
+		return 0;
+	}
 
 	int goToDoor(int target_chamber_id)
 	{

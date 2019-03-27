@@ -47,7 +47,7 @@ protected:
 
 public:
 	bool IsConnected();
-	int Connect(string port);
+	int Connect(string port = "\\\\.\\COM12");
 	void Disconnect();
 
 	int SetConfig(int configItem, int index, int value);
@@ -62,6 +62,8 @@ public:
 
 	int GetValue(int operatingItem, int index, int &result);
 	int GetValue(int operatingItem, int &result);
+
+	int GetBatteryStatus(std::string & bms_str);
 
 	RoboteqDevice();
 	~RoboteqDevice();

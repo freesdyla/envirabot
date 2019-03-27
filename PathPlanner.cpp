@@ -1005,7 +1005,7 @@ bool PathPlanner::selfCollisionBetweenTwoConfigs(float* config1, float* config2)
 https://github.com/ros-industrial/universal_robot/blob/indigo-devel/ur_kinematics/src/ur_kin.cpp
 Analytical solutions + picking the feasible one
 */
-int PathPlanner::inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec)
+int PathPlanner::inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_sols_vec, int data_collection_mode)	//data_collection_mode: 0 topview, != 0 sideview
 {
 	ik_sols_vec.clear();
 	const double q6_des = -PI;
@@ -1155,6 +1155,7 @@ int PathPlanner::inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_so
 
 #if 1
 	// the solution joint angle may not be in the range we want
+	
 	for (int i = 0; i < num_sols; i++)
 	{
 		bool valid_solution = true;
@@ -1162,8 +1163,17 @@ int PathPlanner::inverseKinematics(Eigen::Matrix4d & T, std::vector<int> & ik_so
 		// try to bring the joint angle back to the range we want
 		for (int j = 0; j < 6; j++)
 		{
-			double min = joint_range_[j * 2];
-			double max = joint_range_[j * 2 + 1];
+			double min, max;
+			if (data_collection_mode == 0)
+			{
+				min = joint_range_[j * 2];
+				max = joint_range_[j * 2 + 1];
+			}
+			else
+			{
+				min = joint_range_sideview_[j * 2];
+				max = joint_range_sideview_[j * 2 + 1];
+			}
 
 			double q = ik_sols_[i * 6 + j];
 

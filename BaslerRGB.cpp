@@ -87,7 +87,7 @@ void BaslerRGB::setBrightness(float val)
 	camera.AutoFunctionROIWidth.SetValue(camera.AutoFunctionROIWidth.GetMax());
 	camera.AutoFunctionROIHeight.SetValue(camera.AutoFunctionROIHeight.GetMax());
 	camera.AutoExposureTimeLowerLimit.SetValue(1000.0);
-	camera.AutoExposureTimeUpperLimit.SetValue(20000.0);
+	camera.AutoExposureTimeUpperLimit.SetValue(50000.0);	// this is doing the work
 	camera.AutoFunctionProfile.SetValue(AutoFunctionProfile_MinimizeExposureTime);
 	camera.AutoTargetBrightness.SetValue(val);
 	camera.ExposureAuto.SetValue(ExposureAuto_Continuous);

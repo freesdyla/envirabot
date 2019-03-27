@@ -1,6 +1,7 @@
 %YAML 1.0
 ---
-shelf_z_: -0.6
+shelf_z_: -0.65
+pot_height_: 0.22
 voxel_grid_size_laser_: 0.001
 normal_estimation_radius_: 0.005
 region_grow_residual_threshold_: 0.01
@@ -11,7 +12,7 @@ region_grow_min_cluster_size_:1000
 region_grow_max_cluster_size_:100000
 laser_scan_frequency_: 2000.0
 scan_speed_: 0.1
-scan_acceleration_: 0.5
+scan_acceleration_: 0.2
 move_arm_speed_: 0.1
 move_arm_acceleration_: 0.05
 move_joint_speed_: 0.5
@@ -36,16 +37,17 @@ enable_tof_: 1
 enable_rgb_ : 1
 enable_hyperspectral_: 1
 enable_scanner_: 1
+enable_arm_: 1
 enable_probing_: 1
 remap_pot_position_: 0
-cur_chamber_id_: 1
-cur_plant_id_: 1
-only_do_probing_ : 1
+only_do_probing_ : 0
 view_time_: 50
 multi_work_position_: 1
 hyperspectral_topview_: 1
-leaf_tracing_hyperspectral_: 0
-init_rover_position_in_chamber_: 1
+leaf_tracing_hyperspectral_: 1
 enable_imaging_: 1
 upload_data_: 0
-start_time_: "9:45"
+start_time_: "11:20"
+scheduled_minutes_per_chamber_: 50
+sideview_camera_x_pos_ : 0.77
+close_door_when_rover_inside_: 0
