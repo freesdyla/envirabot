@@ -51,10 +51,10 @@ VisionArmCombo::VisionArmCombo()
 
 #ifdef ENABLE_PP
 	if (!pp_.loadPathPlanner("pp"))	std::cout << "load path planner fail\n";
-	//for (int i = 444; i<pp_.num_nodes_; i += 2) viewPlannedPath(pp_.random_nodes_buffer_ + (i - 1) * 6, pp_.random_nodes_buffer_ + i * 6); std::getchar(); exit(0);
+	//for (int i = 444; i<pp_.num_nodes_; i += 2) viewPlannedPath(pp_.random_nodes_buffer_ + (i - 1) * 6, pp_.random_nodes_buffer_ + i * 6); std::getchar(); close();
 #endif
 
-	//auto upload_thread = std::async(&ServerManager::uploadDirectory, &data_server_manager_, "c7_2018_7_17_16_7_15_492", "experiment"); upload_thread.get();  exit(0);
+	//auto upload_thread = std::async(&ServerManager::uploadDirectory, &data_server_manager_, "c7_2018_7_17_16_7_15_492", "experiment"); upload_thread.get();  close();
 	//	float Fo, Fm, FvFm, qP, qL, qN, NPQ, YNPQ, YNO, F, FmPrime, PAR, YII, ETR, FoPrime;
 	//	MiniPamActPlusYield(Fo, Fm, FvFm, qP, qL, qN, NPQ, YNPQ, YNO, F, FmPrime, PAR, YII, ETR, FoPrime);
 
@@ -315,11 +315,11 @@ void VisionArmCombo::initVisionCombo()
 		fs["hyperspectral_topview_"] >> hyperspectral_topview_;
 		fs["leaf_tracing_hyperspectral_"] >> leaf_tracing_hyperspectral_;
 		fs["enable_imaging_"] >> enable_imaging_;
-		fs["upload_data_"] >> upload_data_;
 		fs["start_time_"] >> start_time_;
 		fs["scheduled_minutes_per_chamber_"] >> scheduled_minutes_per_chamber_;
 		fs["sideview_camera_x_pos_"] >> sideview_camera_x_pos_;
 		fs["close_door_when_rover_inside_"] >> close_door_when_rover_inside_;
+		fs["charing_time_2_work_time_ratio_"] >> charing_time_2_work_time_ratio_;
 	}
 	fs.release();
 
@@ -328,6 +328,7 @@ void VisionArmCombo::initVisionCombo()
 	if (fs.isOpened())
 	{
 		fs["inside_or_outside_chamber_"] >> inside_or_outside_chamber_;
+		fs["rover_run_index_in_chamber_"] >> rover_run_index_in_chamber_;
 		fs["rover_pos_in_chamber_"] >> rover_pos_in_chamber_;
 		fs["cur_chamber_id_"] >> cur_chamber_id_;
 		fs["data_collection_mode_"] >> data_collection_mode_;
@@ -337,6 +338,7 @@ void VisionArmCombo::initVisionCombo()
 		fs["data_folder_"] >> data_folder_;
 		fs["experiment_id_"] >> experiment_id_;
 		fs["pot_processed_map_"] >> pot_processed_map_;
+		fs["pot_sensor_map_"] >> pot_sensor_map_;
 	}
 
 	fs.release();
@@ -375,9 +377,6 @@ void VisionArmCombo::initVisionCombo()
 	sor_.setStddevMulThresh(sor_std_);
 	ror_.setRadiusSearch(ror_radius_);
 	ror_.setMinNeighborsInRadius(ror_num_);
-
-//	pot_processed_map_.create(pot_position_vec_[cur_chamber_id_ - 1].rows, pot_position_vec_[cur_chamber_id_ - 1].cols, CV_8U);
-	//pot_processed_map_ = 0;
 }
 
 void VisionArmCombo::pp_callback(const pcl::visualization::PointPickingEvent& event, void*)
@@ -463,7 +462,7 @@ void VisionArmCombo::initThermoCam() {
 
 void VisionArmCombo::initRaman()
 {
-	raman_ = new Raman();
+	//raman_ = new Raman();
 }
 
 float VisionArmCombo::DDERequest(DWORD idInst, HCONV hConv, wchar_t* szItem)
@@ -473,7 +472,7 @@ float VisionArmCombo::DDERequest(DWORD idInst, HCONV hConv, wchar_t* szItem)
 		XTYP_REQUEST, 2000, NULL);
 	if (hData == NULL)
 	{
-		printf("Request failed: %s\n", szItem);
+		printf("Request failed: %ls\n", szItem);
 	}
 	else
 	{
@@ -530,7 +529,7 @@ int VisionArmCombo::MiniPamBasicData(float & PAR, float & YII)
 
 		HDDEDATA hData = DdeClientTransaction(NULL, -1, hConv, hszItem, CF_TEXT, XTYP_REQUEST, 1000, NULL);
 		if (hData == NULL)
-			printf("Request failed: %s\n", variable_name);
+			printf("Request failed: %ls\n", variable_name);
 		else
 		{
 			char szResult[4];
@@ -604,7 +603,7 @@ int VisionArmCombo::MiniPamActPlusYield(float & Fo, float & Fm, float & FvFm, fl
 	
 		HDDEDATA hData = DdeClientTransaction(NULL, -1, hConv, hszItem, CF_TEXT, XTYP_REQUEST, 1000, NULL);
 		if (hData == NULL)
-			printf("Request failed: %s\n", variable_name);
+			printf("Request failed: %ls\n", variable_name);
 		else
 		{
 			char szResult[4];
@@ -1227,6 +1226,9 @@ void VisionArmCombo::scanLeafWithHyperspectral(std::vector<Eigen::Matrix4d*> & v
 	{
 	//	robot_arm_client_->moveHandJ(valid_arm_config_sequence[0].joint_pos_d, move_joint_speed_, move_joint_acceleration_);
 	}
+
+	if (cur_chamber_config_.light_status == 1)
+		controlChamber(cur_chamber_id_, PAUSE_LIGHT);
 	
 	// move to first pose
 	eigenMat4dToArray6(*valid_scan_hand_pose_sequence[0], array6);
@@ -1258,6 +1260,8 @@ void VisionArmCombo::scanLeafWithHyperspectral(std::vector<Eigen::Matrix4d*> & v
 
 	hypercam_->dropBufferedFrames();
 	hypercam_->stop();
+
+	controlChamber(cur_chamber_id_, RESUME_LIGHT);
 
 	//save data
 	std::string time_str = getCurrentDateTimeStr();
@@ -1698,18 +1702,7 @@ int VisionArmCombo::mapWorkspace(int rover_position, int option, int data_collec
 	if (data_collection_mode != TOP_VIEW && data_collection_mode != SIDE_VIEW)
 		return -2;
 
-	if (option == PROBING)
-	{
-		controlChamber(cur_chamber_id_, PAUSE_LIGHT);
-		imaging_or_probing_ = "probing";
-	}
-	else if (option == IMAGING)
-	{
-		controlChamber(cur_chamber_id_, RESUME_LIGHT);
-		imaging_or_probing_ = "imaging";
-	}
-
-	Sleep(2000);
+	//if (option == IMAGING) controlChamber(cur_chamber_id_, RESUME_LIGHT);
 
 #ifdef ENABLE_PP
 	if (data_collection_mode == TOP_VIEW)
@@ -1775,16 +1768,19 @@ int VisionArmCombo::mapWorkspace(int rover_position, int option, int data_collec
 
 		loadOrUpdateChamberOccupancyData(rover_position, LOAD_OCCUPANCY);
 
-		showOccupancyGrid();
+		//showOccupancyGrid();
 	}
 #endif
 
 	tof_cloud_->clear();
 
 	// remap pot positions if remap_pot_position_ is 1 in the parameter file
-	if (rover_position == 1 && data_collection_mode == TOP_VIEW && option == IMAGING && remap_pot_position_)
+	if (remap_pot_position_ && rover_position == 1 && rover_run_index_in_chamber_ == 0 && data_collection_mode == TOP_VIEW && option == IMAGING)
 	{
-		if (tof_cam_ != NULL) tof_cam_->setPower(2600);
+		if (tof_cam_ != NULL) tof_cam_->setPower(3000);
+		
+		if (cur_chamber_config_.light_status == 1)
+			controlChamber(cur_chamber_id_, PAUSE_LIGHT);
 
 		PointCloudT::Ptr chamber_cloud(new PointCloudT);
 
@@ -1812,6 +1808,8 @@ int VisionArmCombo::mapWorkspace(int rover_position, int option, int data_collec
 				*chamber_cloud += *tof_cloud_;
 			}
 		}
+		
+		controlChamber(cur_chamber_id_, RESUME_LIGHT);
 
 		if (chamber_cloud->size() > 100)
 		{
@@ -1821,7 +1819,7 @@ int VisionArmCombo::mapWorkspace(int rover_position, int option, int data_collec
 		else
 		{
 			Utilities::to_log_file("map pot no point cloud");
-			exit(0);
+			close();
 		}
 	}
 	
@@ -1846,16 +1844,21 @@ int VisionArmCombo::mapWorkspace(int rover_position, int option, int data_collec
 	{
 		//TODO not sure where to get white reference data in side view mode
 	}
-
-
-#if 1
-	if (hypercam_ != NULL && data_collection_mode == TOP_VIEW)
+#if 0
+	// only collect hyperspectral reference data in the center position
+	if (rover_position == 1 && hypercam_ != NULL && data_collection_mode == TOP_VIEW && rover_run_index_in_chamber_ != 0)
 	{
 		if (option == IMAGING || leaf_tracing_hyperspectral_ == 1)
 		{
+			if(rover_run_index_in_chamber_ == 2)	//white reference of line light
+				controlChamber(cur_chamber_id_, PAUSE_LIGHT);
+
 			std::string path(data_saving_folder_.begin(), data_saving_folder_.end());
 
 			getReferenceHyperspectralData(path, rover_position, option);
+
+			if (rover_run_index_in_chamber_ == 2)
+				controlChamber(cur_chamber_id_, RESUME_LIGHT);
 		}
 	}
 #endif
@@ -1863,6 +1866,8 @@ int VisionArmCombo::mapWorkspace(int rover_position, int option, int data_collec
 	imagePots(rover_position, option, data_collection_mode);
 
 	controlChamber(cur_chamber_id_, RESUME_LIGHT);
+
+	return SUCCESS;
 }
 
 /*
@@ -2575,24 +2580,14 @@ bool VisionArmCombo::moveToConfigGetPointCloud(ArmConfig & config, int options)
 			if (!move)
 				return true;
 
-			//pre_tcp_pos = pp_.fk_mat_.col(3).head<3>();
-			//pre_elbow_pos = pp_.DH_mat_vec_[1].col(3).head<3>();
-
 			for (int i = 0; i < pp_.shortest_path_index_vec_.size(); i++)
 			{
 				float config_f[6];
 				std::memcpy(config_f, pp_.random_nodes_buffer_ + pp_.shortest_path_index_vec_[i] * pp_.num_joints_, pp_.num_joints_*sizeof(float));
 
-				//pp_.forwardKinematicsUR10(config_f);
-				//distance_traveled_tcp += (pp_.fk_mat_.col(3).head<3>() - pre_tcp_pos).norm();
-				//distance_traveled_elbow += (pp_.DH_mat_vec_[1].col(3).head<3>() - pre_elbow_pos).norm();
-				//pre_tcp_pos = pp_.fk_mat_.col(3).head<3>();
-				//pre_elbow_pos = pp_.DH_mat_vec_[1].col(3).head<3>();
-
 				double config_d[6];
 				float2double(config_f, config_d);
 				robot_arm_client_->moveHandJ(config_d, move_joint_speed_, move_joint_acceleration_, true);
-				//std::getchar();
 			}
 		}
 
@@ -2701,12 +2696,14 @@ bool VisionArmCombo::computeCollisionFreeProbeOrScanPose(PointT & point, pcl::No
 	line.values[4] = -z_dir(1)*0.1;
 	line.values[5] = -z_dir(2)*0.1;
 
+#if 0
 	std::string name = "line";
 	viewer_->removeAllShapes();
-	//viewer_->addLine(line, name, 0);
-	//display();
+	viewer_->addLine(line, name, 0); 
+	display();
+#endif
 
-	// favor hand y pointing forward (Enviratron)
+	// favor hand y pointing forward
 	Eigen::Vector3d init_y_dir;
 	Eigen::Matrix4d pose_to_hand;
 	if (sensor_type == PROBE)
@@ -2727,7 +2724,7 @@ bool VisionArmCombo::computeCollisionFreeProbeOrScanPose(PointT & point, pcl::No
 
 	//std::cout << "init_y_dir " << init_y_dir.transpose() << "\n";
 
-	double step_size = 10. / 180.*M_PI;
+	double step_size = 20. / 180.*M_PI;
 
 	solution_config_vec.clear();
 
@@ -2751,17 +2748,7 @@ bool VisionArmCombo::computeCollisionFreeProbeOrScanPose(PointT & point, pcl::No
 	{
 		Eigen::Vector3d y_dir = Eigen::AngleAxisd(angle, z_dir) * init_y_dir;
 
-		//std::cout << "y_dir " << y_dir.transpose() << "\n";
-
 		Eigen::Vector3d x_dir = y_dir.cross(z_dir);
-
-		// robot hand pose
-		Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
-
-		pose.col(0).head<3>() = x_dir;
-		pose.col(1).head<3>() = y_dir;
-		pose.col(2).head<3>() = z_dir;
-		pose.col(3).head<3>() << point.x, point.y, point.z;
 
 		// visualization
 #if 0
@@ -2774,57 +2761,80 @@ bool VisionArmCombo::computeCollisionFreeProbeOrScanPose(PointT & point, pcl::No
 		viewer_->addCoordinateSystem(0.2, affine_pose, "co1");
 		display();
 #endif
-
-		pose = pose * pose_to_hand;
-
-		std::vector<int> ik_sols_vec;
-
-		pp_.inverseKinematics(pose, ik_sols_vec);
-
-		//if (ik_sols_vec.size() == 0) std::cout << "no ik solution\n";
-		
-		for (auto idx : ik_sols_vec)
+		for (int rot_angle_id = 0; rot_angle_id < 4; rot_angle_id++)
 		{
-			float sol_f[6];
+			// robot hand pose
+			Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
 
-			double2float(pp_.ik_sols_ + idx * num_joints_, sol_f);
+			pose.col(0).head<3>() = x_dir;
+			pose.col(1).head<3>() = y_dir;
+			pose.col(2).head<3>() = z_dir;
+			pose.col(3).head<3>() << point.x, point.y, point.z;
+
+			double rot_x_angle = 30.;
+
+			if (rot_angle_id % 2 == 0 ) rot_x_angle = -30.;
+
+			Eigen::Vector3d rot_axis = Eigen::Vector3d::UnitX();
+
+			if (rot_angle_id > 1) rot_axis = Eigen::Vector3d::UnitY();
+
+			pose.block<3,3>(0,0) = pose.block<3,3>(0,0) * Eigen::AngleAxisd(rot_x_angle / 180.*M_PI, rot_axis).matrix();
+
+			pose = pose * pose_to_hand;
+
+			std::vector<int> ik_sols_vec;
+
+			pp_.inverseKinematics(pose, ik_sols_vec);
+
+			//if (ik_sols_vec.size() == 0) std::cout << "no ik solution\n";
+
+			for (auto idx : ik_sols_vec)
+			{
+				float sol_f[6];
+
+				double2float(pp_.ik_sols_ + idx * num_joints_, sol_f);
 #if 0
-			// visualization
-			ArmConfig config;
-			config.setJointPos(sol_f[0], sol_f[1], sol_f[2], sol_f[3], sol_f[4], sol_f[5]);
-			std::vector<PathPlanner::RefPoint> ref_points;
-			std::vector<Eigen::Matrix3f> rot_mats;
-			std::vector<PathPlanner::OBB> arm_obbs;
-			pp_.computeReferencePointsOnArm(config.joint_pos_f, ref_points, rot_mats);
-			pp_.getArmOBBModel(ref_points, rot_mats, arm_obbs); addOBBArmModelToViewer(arm_obbs);
+				// visualization
+				ArmConfig config;
+				config.setJointPos(sol_f[0], sol_f[1], sol_f[2], sol_f[3], sol_f[4], sol_f[5]);
+				std::vector<PathPlanner::RefPoint> ref_points;
+				std::vector<Eigen::Matrix3f> rot_mats;
+				std::vector<PathPlanner::OBB> arm_obbs;
+				pp_.computeReferencePointsOnArm(config.joint_pos_f, ref_points, rot_mats);
+				pp_.getArmOBBModel(ref_points, rot_mats, arm_obbs); addOBBArmModelToViewer(arm_obbs);
 #endif
-			bool collision = true;
+				bool collision = true;
 
 #ifdef ENABLE_PP
-			collision = pp_.collisionCheckForSingleConfig(sol_f);
+				collision = pp_.collisionCheckForSingleConfig(sol_f);
+				//ArmConfig config;
+				//collision = checkHandPoseReachable(pose, config, CHECK_PATH);
 #else
-			collision = pp_.selfCollision(sol_f);
+				collision = pp_.selfCollision(sol_f);
 #endif
-			if(!collision)
-			{
-				//std::cout << "no collision\n";
-				if (pose(0, 1) <= min_x)
+				if (!collision)
 				{
-					optimal_hand_pose = pose;
+					//std::cout << "no collision\n";		
 
-					optimal_angle = angle;
+					if (pose(0, 1) <= min_x)
+					{
+						optimal_hand_pose = pose;
 
-					min_x = pose(0, 1);
+						optimal_angle = angle;
 
-					optimal_config.setJointPos(pp_.ik_sols_[idx*num_joints_], pp_.ik_sols_[idx*num_joints_ + 1],
-											pp_.ik_sols_[idx*num_joints_ + 2], pp_.ik_sols_[idx*num_joints_ + 3],
-											pp_.ik_sols_[idx*num_joints_ + 4], pp_.ik_sols_[idx*num_joints_ + 5]);
+						min_x = pose(0, 1);
 
-					solution_found = true;
+						optimal_config.setJointPos(pp_.ik_sols_[idx*num_joints_], pp_.ik_sols_[idx*num_joints_ + 1],
+							pp_.ik_sols_[idx*num_joints_ + 2], pp_.ik_sols_[idx*num_joints_ + 3],
+							pp_.ik_sols_[idx*num_joints_ + 4], pp_.ik_sols_[idx*num_joints_ + 5]);
+
+						solution_found = true;
+					}
 				}
+
+				//else std::cout << "single config collision\n";
 			}
-			
-			//else std::cout << "single config collision\n";
 		}
 	}
 
@@ -3040,25 +3050,6 @@ void VisionArmCombo::extractLeafProbingPointsAndHyperspectralScanPoses(PointClou
 
 		pcl::PointIndices::Ptr inliers(new pcl::PointIndices(leaf_cluster_indices_vec[j]));
 
-#if 0
-		// for each cluster, compute average normal direction
-		Eigen::Vector3f average_normal(0.f, 0.f, 0.f);
-		for (int i = 0; i < inliers->indices.size(); i++)
-		{
-			int index = inliers->indices[i];
-
-			Eigen::Vector3f point_normal(normals->points[index].normal_x, normals->points[index].normal_y, normals->points[index].normal_z);
-
-			// make normal point up
-			if (point_normal(2) < 0.f) point_normal *= -1.f;
-
-			average_normal += point_normal;
-		}
-
-		average_normal.normalize();
-
-		std::cout << "average_normal " << average_normal.transpose() << std::endl;
-#endif
 		//copy leaf segment point cloud for slicing
 		PointCloudT::Ptr cloud(new PointCloudT);
 		extract_indices_.setInputCloud(cloud_in);
@@ -3265,8 +3256,14 @@ void VisionArmCombo::extractLeafProbingPointsAndHyperspectralScanPoses(PointClou
 						config.setJointPos(sol_f[0], sol_f[1], sol_f[2], sol_f[3], sol_f[4], sol_f[5]);
 						leaf_tracing_scan_possible = true;
 
-						valid_scan_hand_pose_sequence.push_back(hand_pose);
-						valid_arm_config_sequence.push_back(config);
+						if (valid_arm_config_sequence.size() > 0)
+						{
+							if (!pp_.selfCollisionBetweenTwoConfigs(valid_arm_config_sequence.back().joint_pos_f, sol_f))
+							{
+								valid_scan_hand_pose_sequence.push_back(hand_pose);
+								valid_arm_config_sequence.push_back(config);
+							}
+						}
 
 						//Eigen::Affine3f affine_pose;
 						//affine_pose.matrix() = *scanner_pose_ptr;
@@ -3281,9 +3278,6 @@ void VisionArmCombo::extractLeafProbingPointsAndHyperspectralScanPoses(PointClou
 						pp_.getArmOBBModel(ref_points, rot_mats, arm_obbs); addOBBArmModelToViewer(arm_obbs);
 						//display();
 #endif
-						//double array6[6];
-						//eigenMat4dToArray6(*hand_pose, array6);
-						//robot_arm_client_->moveHandL(array6, 0.05, 0.05);
 						break;
 					}
 					//else std::cout << "self collision\n";
@@ -3306,6 +3300,7 @@ void VisionArmCombo::extractLeafProbingPointsAndHyperspectralScanPoses(PointClou
 
 					probe_point.r = probe_point.g = probe_point.b = 0;
 
+					// favor probing points that can also be scanned by hyperspectral 
 					if (leaf_tracing_scan_possible)
 						probe_point.r = 1;
 
@@ -3383,7 +3378,8 @@ int VisionArmCombo::saveProbingData(PointT & probe_point, pcl::Normal & normal, 
 
 	std::string save_path(data_saving_folder_.begin(), data_saving_folder_.end());
 
-	if (probe_id == PAM) {
+	if (probe_id == PAM) 
+	{
 
 #if 0
 		float Fo, Fm, FvFm, qP, qL, qN, NPQ, YNPQ, YNO, F, FmPrime, PAR, YII, ETR, FoPrime;
@@ -3409,6 +3405,9 @@ int VisionArmCombo::saveProbingData(PointT & probe_point, pcl::Normal & normal, 
 
 		if (MiniPamBasicData(PAR, YII) == 0)
 		{
+			//bad measurement, possibly probed the wrong place
+			//if (YII < 0.1f)	return -1;
+
 			std::string pam_file = save_path + "PAM_" + std::to_string(plant_id) + "_" + time + ".yml";
 
 			cv::FileStorage fs(pam_file, cv::FileStorage::WRITE);
@@ -3421,8 +3420,9 @@ int VisionArmCombo::saveProbingData(PointT & probe_point, pcl::Normal & normal, 
 			fs.release();
 		}
 	}
-	else if (probe_id == RAMAN_1064 || probe_id == RAMAN_532) {
-
+#if 0
+	else if (probe_id == RAMAN_1064 || probe_id == RAMAN_532) 
+	{
 		std::string wavelength_str;
 
 		int status = -1;
@@ -3436,7 +3436,8 @@ int VisionArmCombo::saveProbingData(PointT & probe_point, pcl::Normal & normal, 
 			wavelength_str = "532";
 		}
 
-		if (status == 0) {
+		if (status == 0) 
+		{
 
 			std::string raman_csv = save_path + "raman" + wavelength_str + "_" + std::to_string(plant_id) + "_" + time + ".csv";
 
@@ -3453,7 +3454,7 @@ int VisionArmCombo::saveProbingData(PointT & probe_point, pcl::Normal & normal, 
 			fs.release();
 		}
 	}
-
+#endif
 	return 0;
 }
 
@@ -3525,6 +3526,12 @@ bool VisionArmCombo::probeLeaf(PointT & probe_point, pcl::Normal & normal, int p
 			return false;
 		}
 
+		ArmConfig target_config;
+		if (!checkHandPoseReachable(probe_hand_pose_final, target_config, CHECK_PATH))
+		{
+			return false;
+		}
+
 		if (!moveToConfigGetPointCloud(prepare_probe_config))
 		{
 			//std::cout << "could not reach prepare probe pose\n";
@@ -3535,20 +3542,18 @@ bool VisionArmCombo::probeLeaf(PointT & probe_point, pcl::Normal & normal, int p
 		
 		eigenMat4dToArray6(probe_hand_pose_final, pose);
 
-		robot_arm_client_->moveHandL(pose, 0.04, 0.04);
+		robot_arm_client_->moveHandL(pose, 0.04, 0.04, false);
 
 		// extend probe
 		robot_arm_client_->probeCylinderControl(true);
 
-		Sleep(2000);
-
-		saveProbingData(probe_point, normal, probe_id, plant_id);
+		bool success = saveProbingData(probe_point, normal, probe_id, plant_id) == SUCCESS;
 
 		robot_arm_client_->probeCylinderControl(false);
 
 		//display();
 
-		return true;
+		return success;
 	}
 
 	return false;
@@ -4371,7 +4376,7 @@ void VisionArmCombo::ThermalHandEyeCalibration() {
 
 int VisionArmCombo::markerDetection(int rgb_or_ir, float & nearest_marker_dist, int & marker_id, float max_dist_thresh, bool search_zero)
 {
-	if (rgb_or_ir != RGB && rgb_or_ir != IR) {
+	if (rgb_or_ir != BASLER_RGB && rgb_or_ir != IR) {
 
 		std::cout << "wrong camera type\n";
 		return -1;
@@ -4382,7 +4387,7 @@ int VisionArmCombo::markerDetection(int rgb_or_ir, float & nearest_marker_dist, 
 	//while (true)//for debug
 	{
 
-		if (rgb_or_ir == RGB) {
+		if (rgb_or_ir == BASLER_RGB) {
 			
 			img_tmp = rgb_cam_->getRGB();
 
@@ -4401,7 +4406,7 @@ int VisionArmCombo::markerDetection(int rgb_or_ir, float & nearest_marker_dist, 
 
 		std::vector<cv::Vec3d> rvecs, tvecs;
 
-		if(rgb_or_ir == RGB)
+		if(rgb_or_ir == BASLER_RGB)
 			cv::aruco::estimatePoseSingleMarkers(markerCorners, marker_length_, rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_, rvecs, tvecs);
 		else
 			cv::aruco::estimatePoseSingleMarkers(markerCorners, marker_length_, infrared_camera_matrix_cv_, infrared_dist_coeffs_cv_, rvecs, tvecs);
@@ -4442,7 +4447,7 @@ int VisionArmCombo::markerDetection(int rgb_or_ir, float & nearest_marker_dist, 
 
 		if (nearest_marker_idx >= 0) {
 
-			if (rgb_or_ir == RGB)
+			if (rgb_or_ir == BASLER_RGB)
 				cv::aruco::drawAxis(img_rgb, rgb_camera_matrix_cv_, rgb_dist_coeffs_cv_, rvecs[nearest_marker_idx], tvecs[nearest_marker_idx], marker_length_*0.5f);
 			else
 				cv::aruco::drawAxis(img_rgb, infrared_camera_matrix_cv_, infrared_dist_coeffs_cv_, rvecs[nearest_marker_idx], tvecs[nearest_marker_idx], marker_length_*0.5f);
@@ -4749,216 +4754,341 @@ int VisionArmCombo::scanPlantCluster(cv::Vec3f &object_center, float max_z, floa
 	return 0;
 }
 
+// assume rover is at the chamber center facing the plants
+int VisionArmCombo::doOneDataAcquisitionRunInChamber(int last_run)
+{
+	if (rover_pos_in_chamber_ == 2) goto CHMABER_LEFT_POSITION;
+
+	if (rover_pos_in_chamber_ == 0) goto CHMABER_RIGHT_POSITION;
+		
+	std::cout << "move arm in\n";
+	moveArmInOrOutChamber(MOVE_ARM_IN_CHAMBER, data_collection_mode_);
+
+	//collect data at the center position
+	mapWorkspace(1, imaging_or_probing_, data_collection_mode_);
+
+	const bool only_work_at_center = (!work_at_pos_0_needed_) && (!work_at_pos_2_needed_);
+
+	if (only_work_at_center) goto FINISH;
+
+	std::cout << "move arm out\n";
+	moveArmInOrOutChamber(MOVE_ARM_OUT_CHAMBER, data_collection_mode_);
+
+	if (multi_work_position_)
+	{
+		if (data_collection_mode_ == TOP_VIEW)
+		{
+			if (mir_.reverseTopView() != 0) close();
+		}
+		else
+		{
+			if (mir_.reverseSideView() != 0) close();
+		}
+
+		//go to right position
+		if (cur_chamber_id_ == 2)
+		{
+			if (mir_.stepBackward25CMInChamber() != 0) close();
+		}
+
+		if(mir_.goToChamebrVLMarker(cur_chamber_id_)!=0) close();
+
+		if (data_collection_mode_ == TOP_VIEW)
+		{
+			if (mir_.moveToTopView() != 0) close();
+		}
+		else
+		{
+			if (mir_.moveToSideView() != 0) close();
+		}
+
+		rover_pos_in_chamber_ = 0; saveTaskProgressToFile();
+
+	CHMABER_RIGHT_POSITION:
+		moveArmInOrOutChamber(MOVE_ARM_IN_CHAMBER, data_collection_mode_);
+
+		mapWorkspace(0, imaging_or_probing_, data_collection_mode_);
+
+		moveArmInOrOutChamber(MOVE_ARM_OUT_CHAMBER, data_collection_mode_);
+
+		if (data_collection_mode_ == TOP_VIEW)
+		{
+			if (mir_.reverseTopView() != 0) close();
+		}
+		else
+		{
+			if (mir_.reverseSideView() != 0) close();
+		}
+
+		// go to left position
+		if(mir_.stepForward1MInChamber() != 0) close();
+
+		if (data_collection_mode_ == TOP_VIEW)
+		{
+			if (mir_.moveToTopView() != 0) close();
+		}
+		else
+		{
+			if (mir_.moveToSideView() != 0) close();
+		}
+
+		rover_pos_in_chamber_ = 2; saveTaskProgressToFile();
+
+	CHMABER_LEFT_POSITION:
+		moveArmInOrOutChamber(MOVE_ARM_IN_CHAMBER, data_collection_mode_);
+
+		mapWorkspace(2, imaging_or_probing_, data_collection_mode_);
+
+		moveArmInOrOutChamber(MOVE_ARM_OUT_CHAMBER, data_collection_mode_);
+
+	FINISH:
+		if (last_run == 0)	//not last run
+		{
+			if (only_work_at_center) return SUCCESS;
+
+			if (data_collection_mode_ == TOP_VIEW)
+			{
+				if (mir_.reverseTopView() != 0) close();
+			}
+			else
+			{
+				if (mir_.reverseSideView() != 0) close();
+			}
+
+			if(mir_.stepBackward75CMInChamber() != 0) close();
+
+			if(mir_.goToChamebrVLMarker(cur_chamber_id_) != 0) close();
+
+			if(mir_.stepForwardInChamber() != 0) close();
+
+			if (data_collection_mode_ == TOP_VIEW)
+			{
+				if (mir_.moveToTopView() != 0) close();
+			}
+			else
+			{
+				if (mir_.moveToSideView() != 0) close();
+			}
+
+			rover_pos_in_chamber_ = 1; saveTaskProgressToFile();
+		}
+		else // last run
+		{
+			if (only_work_at_center)
+			{
+				std::cout << "move arm out\n";
+				moveArmInOrOutChamber(MOVE_ARM_OUT_CHAMBER, data_collection_mode_);
+
+				if (data_collection_mode_ == TOP_VIEW)
+				{
+					if (mir_.moveToTopView() != 0) close();	
+				}
+				else
+				{
+					if (mir_.moveToSideView() != 0) close();
+				}
+
+				if (mir_.stepBackwardInChamber() != 0) close();
+
+				if (mir_.moveToSideView() != 0) close();
+
+				return SUCCESS;
+			}
+
+			if (data_collection_mode_ == SIDE_VIEW)
+			{
+				if (mir_.turn180() != 0) close();	//make mir head facing door
+			}
+		}
+	}
+	return SUCCESS;
+}
+
 // assumes rover is not inside any chamber
 int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 {
-	if (target_chamber_id < 0 || target_chamber_id > 8) {
+	if (target_chamber_id < 0 || target_chamber_id > 8) 
+	{
 		std::cout << "invalid chamber id\n";
 		return -1;
 	}
 
-	// this stores which pots are already processed in the current chamber
-	if (data_collection_done_ == 1)
-	{
-		pot_processed_map_.create(pot_position_vec_[target_chamber_id - 1].rows, pot_position_vec_[target_chamber_id - 1].cols, CV_8U);
-		pot_processed_map_ = 0;	saveTaskProgressToFile();
-	}
+	getChamberConfig(target_chamber_id, cur_chamber_config_);
 
-	cur_chamber_id_ = target_chamber_id;  saveTaskProgressToFile();
-
-	//getChamberConfig(target_chamber_id, cur_chamber_config_);
-	
 	if (only_do_probing_ != 1 && inside_or_outside_chamber_ == "outside")
-	{	
-#if 1
-		controlChamber(target_chamber_id, CLOSE_DOOR); // sometimes sending open door command first does not work
+	{
+		rover_run_index_in_chamber_ = 0; rover_pos_in_chamber_ = 1; plant_imaging_stage_ = 0;
+		imaging_or_probing_ = 0; saveTaskProgressToFile();
 
-		if(data_collection_mode_ == TOP_VIEW)
-			moveToConfigGetPointCloud(home_config_);
-		else
-			moveToConfigGetPointCloud(sideview_home_config_);
-
-		Sleep(5000);
-
+		moveArmToHome();
 		// dont need to go to door front first. longer planning distances work better
 		controlChamber(target_chamber_id, OPEN_DOOR);
 
-		Sleep(7000);
+		if (enable_tof_)
+		{
+			tof_cam_->start();
+			tof_cam_->setPower(256);
+		}
 
-		if (target_chamber_id == 2) mir_.goToChamberPosition(2, 1);
+		if (mir_.goToDoor(target_chamber_id) != 0) close();
+
+		//if the chamber door did not open, skip to next chamber
+		if (mir_.goToChamberPosition(target_chamber_id, 2) != 0)
+		{
+			Utilities::to_log_file("chamber door did not open");
+			mir_.clearError();
+			mir_.continueMissionQueue();
+			//wait 1 min and let the scheduler try again
+			Sleep(1000*60);
+			return -1;
+		}
+
+		if(mir_.goToChamberPosition(target_chamber_id, 1) != 0) close();
+
+		// go marker first before closing door because the mir robot is less likely to fail to dock with the door open
+		if(mir_.goToChamebrVLMarker(target_chamber_id) != 0) close();
+
 		
-		mir_.goToChamebrVLMarker(target_chamber_id);
+		pot_processed_map_.create(pot_position_vec_[target_chamber_id - 1].rows, pot_position_vec_[target_chamber_id - 1].cols, CV_8U);
+		pot_processed_map_ = 0;
+		pot_sensor_map_ = cv::Mat::ones(pot_processed_map_.size(), CV_8U);
 
-		if(close_door_when_rover_inside_ == 1) controlChamber(target_chamber_id, CLOSE_DOOR);
-		
-		mir_.stepForwardInChamber();
+		rover_run_index_in_chamber_ = 0;
 
-		controlChamber(target_chamber_id, OPEN_CURTAIN); // assume chamber door closed, send open curtain command early to save some time
-	
+		std::string folder_name = "c" + std::to_string(target_chamber_id) + "_" + getCurrentDateTimeStr();
+
+		std::ofstream file;
+		file.open("data_folders_to_upload.txt", std::ios::app);
+
+		file << folder_name << "," << experiment_id_ << std::endl;
+		file.close();
+
+		folder_name = "Enviratron_Data\\chamber_" + std::to_string(target_chamber_id) + "\\" + folder_name + "\\";
+
+		data_folder_ = folder_name; saveTaskProgressToFile();
+
+		std::wstring folder_name_w(folder_name.begin(), folder_name.end());
+
+		data_saving_folder_ = folder_name_w;
+
+		std::cout << CreateDirectory(data_saving_folder_.c_str(), NULL);
+
+		if (close_door_when_rover_inside_ == 1) controlChamber(target_chamber_id, CLOSE_DOOR);
+
+		if(mir_.stepForwardInChamber() != 0) close();
+
 		if (data_collection_mode_ == TOP_VIEW)
-			mir_.moveToTopView();
+		{
+			if (mir_.moveToTopView() != 0) close();
+		}
 		else
-			mir_.moveToSideView();
-		
-		if (openOrCloseCurtain(target_chamber_id, OPEN_CURTAIN, data_collection_mode_) != SUCCESS) return CURTAIN_OPEN_FAIL;
-#endif
-		// if rover outside, reset the other state variables
-		rover_pos_in_chamber_ = 1; plant_imaging_stage_ = 0; data_collection_done_ = 1; 
-		imaging_or_probing_ = "imaging"; inside_or_outside_chamber_ = "inside"; saveTaskProgressToFile();
-	}
+		{
+			if (mir_.moveToSideView() != 0) close();
+		}
 
-	std::string folder_name;
+		// only collect hyperspectral reference data in the center position
+		std::string data_folder(data_saving_folder_.begin(), data_saving_folder_.end());
+		//getReferenceHyperspectralData(data_folder, rover_pos_in_chamber_, PROBING);	//depreciated, no leaf tracing hyperspectral imaging any more
+
+		controlChamber(target_chamber_id, OPEN_CURTAIN);
+		
+		checkCurtainOpenOrClosed(target_chamber_id, OPEN_CURTAIN, data_collection_mode_);
+
+		if(cur_chamber_config_.light_status == 1)
+			getReferenceHyperspectralData(data_folder, rover_pos_in_chamber_, IMAGING);
+
+		// if rover outside, reset the other state variables
+		cur_chamber_id_ = target_chamber_id;
+		pot_processed_map_ = 0;
+		data_collection_done_ = 1; 
+		inside_or_outside_chamber_ = "inside"; saveTaskProgressToFile();
+	}
+	else // check if there is remaining work in chamber due to program crash
+	{
+		std::wstring data_saving_folder_w(data_folder_.begin(), data_folder_.end());
+		data_saving_folder_ = data_saving_folder_w;
+		if (enable_tof_) tof_cam_->start();
+	}
 	
 	// assuming robot is in topview position or side view position now
 	if(enable_imaging_)
 	{
-		// check if there is remaining work in chamber due to program shutdown
-		if (data_collection_done_ == 0 && inside_or_outside_chamber_ == "inside")
+		data_collection_done_ = 0;
+		pot_sensor_map_ = cur_chamber_config_.pot_sensor_map.clone();
+		saveTaskProgressToFile();
+
+		// check if rover needs to work at left and right positions
+		cv::Mat pot_pos = pot_position_vec_[cur_chamber_id_ - 1];
+		work_at_pos_2_needed_ = false;
+		work_at_pos_0_needed_ = false;
+		std::cout << "pot_sensor_map_:\n" << pot_sensor_map_ << std::endl;
+		for (int y = 0; y < pot_pos.rows; y++)
+			for (int x = 0; x < pot_pos.cols; x++)
+			{
+				if (pot_sensor_map_.at<uchar>(y, x) == 0) continue;
+
+				cv::Vec3f pot_xyz = pot_pos.at<cv::Vec3f>(y, x);
+
+				if (pot_xyz[1] < -topview_y_access_limit_)
+					work_at_pos_2_needed_ = true;
+
+				if (pot_xyz[1] > topview_y_access_limit_)
+					work_at_pos_0_needed_ = true;
+			}
+
+		std::cout << "work_at_pos_2_needed_: " << work_at_pos_2_needed_ << "  work_at_pos_0_needed_: " << work_at_pos_0_needed_ << std::endl;
+
+		if (pot_sensor_map_.rows != pot_pos.rows || pot_sensor_map_.cols != pot_pos.cols)
 		{
-			std::wstring data_saving_folder_w(data_folder_.begin(), data_folder_.end());
-
-			data_saving_folder_ = data_saving_folder_w;
-
-			if (rover_pos_in_chamber_ == 1 && imaging_or_probing_ == "imaging")
-				goto ROVER_CENTER_IMAGING;
-
-			if (rover_pos_in_chamber_ == 1 && imaging_or_probing_ == "probing")
-				goto ROVER_CENTER_PROBING;
-
-			if (rover_pos_in_chamber_ == 2 && imaging_or_probing_ == "imaging")
-				goto ROVER_LEFT_IMAGING;
-
-			if (rover_pos_in_chamber_ == 2 && imaging_or_probing_ == "probing")
-				goto ROVER_LEFT_PROBING;
-
-			if (rover_pos_in_chamber_ == 0 && imaging_or_probing_ == "imaging")
-				goto ROVER_RIGHT_IMAGING;
-
-			if (rover_pos_in_chamber_ == 0 && imaging_or_probing_ == "probing")
-				goto ROVER_RIGHT_PROBING;
-		}
-		else
-		{
-			folder_name = "c" + std::to_string(target_chamber_id) + "_" + getCurrentDateTimeStr();
-
-			std::ofstream file;
-			file.open("data_folders_to_upload.txt", std::ios::app);
-
-			file << folder_name << "," << experiment_id_ << std::endl;
-			file.close();
-
-			folder_name = "Enviratron_Data\\chamber_" + std::to_string(target_chamber_id) + "\\" + folder_name + "\\";
-
-			data_folder_ = folder_name; saveTaskProgressToFile();
-
-			std::wstring folder_name_w(folder_name.begin(), folder_name.end());
-
-			data_saving_folder_ = folder_name_w;
-
-			std::cout << CreateDirectory(data_saving_folder_.c_str(), NULL);
+			Utilities::to_log_file("pot_sensor_map and pot_pos mismatch");
+			close();
 		}
 
-		data_collection_done_ = 0; saveTaskProgressToFile();
-	ROVER_CENTER_IMAGING:
-
-		moveArmInOrOutChamber(MOVE_ARM_IN_CHAMBER, data_collection_mode_);
-
-		//collect data at the center position
-		mapWorkspace(1, IMAGING, data_collection_mode_);
-
-	ROVER_CENTER_PROBING:
-		mapWorkspace(1, PROBING, data_collection_mode_);
-
-		moveArmInOrOutChamber(MOVE_ARM_OUT_CHAMBER, data_collection_mode_);
-
-		if (multi_work_position_ )
+		for (; rover_run_index_in_chamber_ < 3; rover_run_index_in_chamber_++)
 		{
-#if 1
-			if (data_collection_mode_ == TOP_VIEW)
-				mir_.reverseTopView();
-			else
-				mir_.reverseSideView();
-	
-			//go to left position
-			mir_.stepForwardInChamber();
+			saveTaskProgressToFile();
 
-			if (data_collection_mode_ == TOP_VIEW)
-				mir_.moveToTopView();
-			else
-				mir_.moveToSideView();
-#endif
-
-			rover_pos_in_chamber_ = 2; saveTaskProgressToFile();
-
-		ROVER_LEFT_IMAGING:
-			moveArmInOrOutChamber(MOVE_ARM_IN_CHAMBER, data_collection_mode_);
-
-			mapWorkspace(2, IMAGING, data_collection_mode_);
-
-		ROVER_LEFT_PROBING:
-			mapWorkspace(2, PROBING, data_collection_mode_);
-#if 1
-			moveArmInOrOutChamber(MOVE_ARM_OUT_CHAMBER, data_collection_mode_);
-
-			if (data_collection_mode_ == TOP_VIEW)
-				mir_.reverseTopView();
-			else
-				mir_.reverseSideView();
-
-			// go to right position
-			if (target_chamber_id == 2) mir_.goToChamberPosition(2, 1);
-			mir_.goToChamebrVLMarker(target_chamber_id);
-
-			if (data_collection_mode_ == TOP_VIEW)
-				mir_.moveToTopView();
-			else
-				mir_.moveToSideView();
-#endif
-			rover_pos_in_chamber_ = 0; saveTaskProgressToFile();
-
-		ROVER_RIGHT_IMAGING:
-			moveArmInOrOutChamber(MOVE_ARM_IN_CHAMBER, data_collection_mode_);
-
-			mapWorkspace(0, IMAGING, data_collection_mode_);
-
-		ROVER_RIGHT_PROBING:
-			mapWorkspace(0, PROBING, data_collection_mode_);
-
-#if 1
-			moveArmInOrOutChamber(MOVE_ARM_OUT_CHAMBER, data_collection_mode_);
-
-			if (data_collection_mode_ == TOP_VIEW)
-				mir_.reverseTopView();
-			else
-				mir_.reverseSideView();
-#endif
-			data_collection_done_ = 1; saveTaskProgressToFile();
+			if (rover_run_index_in_chamber_ == 0)
+			{
+				// depth, thermal, and RGB
+				doOneDataAcquisitionRunInChamber();
+			}
+			else if (rover_run_index_in_chamber_ == 1)
+			{
+				//hyperspectral imaging
+				plant_imaging_stage_ = 3; saveTaskProgressToFile();
+				// skip if during night
+				if (cur_chamber_config_.light_status == 1)
+					doOneDataAcquisitionRunInChamber();
+			}
+			else if (rover_run_index_in_chamber_ == 2)
+			{
+				// laser scan and probing
+				imaging_or_probing_ = 1; saveTaskProgressToFile(); //probing
+				const int last_run = 1;
+				doOneDataAcquisitionRunInChamber(last_run);
+			}
 		}
+
+		data_collection_done_ = 1; saveTaskProgressToFile();
 	}
 	
-#if 1
-	if (only_do_probing_ != 1)
+	if (only_do_probing_ != 1)	//exit chamber
 	{
-#if 1
-		openOrCloseCurtain(target_chamber_id, CLOSE_CURTAIN, data_collection_mode_);
+		controlChamber(target_chamber_id, CLOSE_CURTAIN);
 
-		// open door
+		if (enable_tof_) tof_cam_->stop();
+
+		Sleep(12000);
+
 		controlChamber(target_chamber_id, OPEN_DOOR);
 
-		Sleep(5000);
-
-		// exit chamber
-		mir_.goToDoor(target_chamber_id);
+		if(mir_.goToDoor(target_chamber_id) != 0) close();
 
 		controlChamber(target_chamber_id, CLOSE_DOOR);
 
-		// to prevent odos camera stop working after a while
-		tof_cam_->stop();
-		tof_cam_->start();
-#endif
 		inside_or_outside_chamber_ = "outside"; saveTaskProgressToFile();
 	}
-#endif
 
 	return 0;
 }
@@ -4971,7 +5101,7 @@ void VisionArmCombo::run()
 	if (time_str.size() != 2)
 	{
 		Utilities::to_log_file("start time error");
-		exit(0);
+		close();
 	}
 
 	int start_hour = std::stoi(time_str[0]);
@@ -4979,7 +5109,7 @@ void VisionArmCombo::run()
 	if (start_hour < 0 || start_hour > 23)
 	{
 		Utilities::to_log_file("start time hour wrong");
-		exit(0);
+		close();
 	}
 
 	int start_min = std::stoi(time_str[1]);
@@ -4987,18 +5117,16 @@ void VisionArmCombo::run()
 	if (start_min < 0 || start_min > 60)
 	{
 		Utilities::to_log_file("start time minute wrong");
-		exit(0);
+		close();
 	}
 
 	const double one_round_work_time = scheduled_minutes_per_chamber_*8.;
-	const double charing_time_2_work_time_ratio = 1.;
-	const double one_round_workk_plus_charging_time = one_round_work_time*(1. + charing_time_2_work_time_ratio);
+	const double one_round_workk_plus_charging_time = one_round_work_time*(1. + charing_time_2_work_time_ratio_);
 	const int max_num_runs_per_day = (int)(1440. / one_round_workk_plus_charging_time);
 	const double total_one_round_time = 1440. / max_num_runs_per_day;
-	const double extra_minutes_per_run = total_one_round_time - one_round_work_time*(1. + charing_time_2_work_time_ratio);
+	const double extra_minutes_per_run = total_one_round_time - one_round_work_time*(1. + charing_time_2_work_time_ratio_);
 
 	time_t now;
-	struct tm now_tm;
 	struct tm daily_rover_start_tm, end_of_day_tm;
 
 	int target_chamber_id = cur_chamber_id_;
@@ -5074,26 +5202,30 @@ void VisionArmCombo::run()
 			std::string msg = "time to enter chamber " + std::to_string(target_chamber_id);
 			Utilities::to_log_file(msg);
 
-			//Sleep(scheduled_minutes_per_chamber_ * 60 * 1000);
 			sendRoverToChamber(target_chamber_id);
 			if(target_chamber_id == 8) mir_.goToChargingStation();			
 		}
 		else if (action == 2)
 		{
 			//missed entering the target chamber, wait for
-			//if(scheduled_minutes_per_chamber_ - since_chamber_i_scheduled_start_time > 20.)
-				//data_server_manager_.uploadOneDataFolderFromTheSavedFile();
-
 			Sleep(1000);
 		}
 		else if (action == 0)
 		{
 			//chariging and upload data
+			mir_.goToChargingStation();	// this function would check if rover is charging already
 			if (total_one_round_time - time_in_current_round > 20.)
+			{
 				data_server_manager_.uploadOneDataFolderFromTheSavedFile();
+
+				// free up space
+				data_server_manager_.deleteOutdatedData();
+			}
 
 			Sleep(1000);
 		}
+
+		//std::cout << "action " << action << std::endl;
 	}
 }
 
@@ -5486,11 +5618,43 @@ void VisionArmCombo::controlChamber(int chamber_id, int action)
 
 	command += std::to_string(chamber_id) + " rover";
 
-	socket.send_to(boost::asio::buffer(command, command.size()), remote_endpoint, 0, err);
+	if (action == DIM_LIGHT)
+		command = "dim-lighting " + std::to_string(chamber_id) + " 1 rover";
+
+	char recv_buffer[128];
+	int send_success = 0;
+	for (int try_id = 0; try_id < 5 && send_success == 0; try_id++)
+	{
+		socket.send_to(boost::asio::buffer(command, command.size()), remote_endpoint, 0, err);
+
+		for (int i = 0; i < 10; i++)
+		{
+			int num_bytes = socket.available();
+
+			if (num_bytes > 0)
+			{
+				int num_bytes = socket.receive_from(boost::asio::buffer(recv_buffer, 1024), remote_endpoint, 0, err);	//blocking read
+				std::string result(recv_buffer, recv_buffer + num_bytes);
+				std::cout << result << std::endl;
+				send_success = 1;
+				break;
+			}
+			else
+			{
+				//no response from server
+				if (i == 5)
+				{
+					Utilities::to_log_file(command);
+				}
+			}
+
+			Sleep(1000);
+		}
+
+		Sleep(3000);
+	}
 
 	socket.close();
-
-	Sleep(100);
 }
 
 void VisionArmCombo::hyperspectralCameraCalibration()
@@ -5550,8 +5714,9 @@ void VisionArmCombo::hyperspectralCameraCalibration()
 		camera_pose *= hand_to_hyperspectral_d_;
 
 		cv::Vec6d start_scan_pose;
+		cv::Mat thumbnail;
 
-		tiltLinearScan(camera_pose, start_scan_pose);
+		tiltLinearScan(camera_pose, thumbnail, start_scan_pose);
 
 		cv::Mat img = showHyperspectralImage(hypercam_->scanlines_);
 
@@ -6089,46 +6254,50 @@ int VisionArmCombo::imagePots(int rover_position, int option, int data_collectio
 
 #if 1
 	// image pots column by column
-	if(option == IMAGING)
-	for (int x = 0; x < pot_pos.cols; x++)
+	if (option == IMAGING)
 	{
-		// traverse pots like a snake, faster
-		for (int y = 0; y < pot_pos.rows; y++)
+		for (int x = 0; x < pot_pos.cols; x++)
 		{
-			int y_snake = x % 2 == 0 ? y : pot_pos.rows - y - 1;
-
-			if (pot_processed_map_.at<unsigned char>(y_snake, x) > 0)
-				continue;
-
-			cv::Vec3f pot_xyz = pot_pos.at<cv::Vec3f>(y_snake, x);
-
-			if (multi_work_position_)
+			// traverse pots like a snake, faster
+			for (int y = 0; y < pot_pos.rows; y++)
 			{
-				// shift pot y cooridinate
-				if (rover_position != 1)
-					pot_xyz[1] -= work_pos_offset_map_.at(rover_position);
+				int y_snake = x % 2 == 0 ? y : pot_pos.rows - y - 1;
 
-				//check pot position, skip if out of range
-				if ( (data_collection_mode== TOP_VIEW && std::abs(pot_xyz[1]) > 0.5f) 
-					|| (data_collection_mode == SIDE_VIEW && std::abs(pot_xyz[1]) > 0.3f)	// robot hand is y motion is more limited in sideview
-					)
-				{
-					std::cout << "pot_xyz[0]: " << pot_xyz[0] << std::endl;
+				if (pot_sensor_map_.at<unsigned char>(y_snake, x) == 0) continue;
+
+				if (pot_processed_map_.at<unsigned char>(y_snake, x) > rover_run_index_in_chamber_)
 					continue;
+
+				cv::Vec3f pot_xyz = pot_pos.at<cv::Vec3f>(y_snake, x);
+
+				if (multi_work_position_)
+				{
+					// shift pot y cooridinate
+					if (rover_position != 1)
+						pot_xyz[1] -= work_pos_offset_map_.at(rover_position);
+
+					//check pot position, skip if out of range
+					if ((data_collection_mode == TOP_VIEW && std::abs(pot_xyz[1]) > topview_y_access_limit_)
+						|| (data_collection_mode == SIDE_VIEW && std::abs(pot_xyz[1]) > 0.3f)	// robot hand is y motion is more limited in sideview
+						)
+					{
+						std::cout << "pot_xyz[0]: " << pot_xyz[0] << std::endl;
+						continue;
+					}
 				}
+
+				int plant_id = y_snake*pot_pos.cols + x + 1;
+
+				if (data_collection_mode == TOP_VIEW)
+					topViewImagingRoutinePerPlant(rover_position, x, y_snake, plant_id, pot_xyz);
+				else
+					sideViewImagingRoutinePerPlant(plant_id, pot_xyz[1], rover_position);
+
+				std::cout << "\n";
+				pot_processed_map_.at<unsigned char>(y_snake, x) = rover_run_index_in_chamber_ + 1; saveTaskProgressToFile();
+
+				std::cout << "pot_processed_map_:\n" << pot_processed_map_ << std::endl;
 			}
-		
-			int plant_id = Utilities::gridID2PotID(x, y, pot_pos.rows);	// the "y" should have been "y_snake", this messed up plant_id and Scott already used it
-
-			if(data_collection_mode == TOP_VIEW)
-				topViewImagingRoutinePerPlant(rover_position, x, y_snake, plant_id, pot_xyz);
-			else
-				sideViewImagingRoutinePerPlant(pot_xyz[1], rover_position);
-
-			std::cout << "\n";
-			pot_processed_map_.at<unsigned char>(y_snake, x) = 1; saveTaskProgressToFile();
-
-			std::cout << "pot_processed_map_:\n" << pot_processed_map_ << std::endl;
 		}
 	}
 #endif
@@ -6148,7 +6317,9 @@ int VisionArmCombo::imagePots(int rover_position, int option, int data_collectio
 
 			int y_snake = x % 2 == 0 ? y : pot_pos.rows - y - 1;
 
-			if (pot_processed_map_.at<unsigned char>(y_snake, x) > 1)
+			if (pot_sensor_map_.at<unsigned char>(y_snake, x) == 0) continue;
+
+			if (pot_processed_map_.at<unsigned char>(y_snake, x) > rover_run_index_in_chamber_)
 				continue;
 
 			cv::Vec3f pot_xyz = pot_pos.at<cv::Vec3f>(y_snake, x);
@@ -6160,21 +6331,22 @@ int VisionArmCombo::imagePots(int rover_position, int option, int data_collectio
 					pot_xyz[1] -= work_pos_offset_map_.at(rover_position);
 
 				//check pot position, skip if out of range
-				if (std::abs(pot_xyz[1]) > 0.5f)
+				if (std::abs(pot_xyz[1]) > topview_y_access_limit_)
 				{
 					std::cout << "pot_xyz[1]: " << pot_xyz[1] << std::endl;
 					continue;
 				}
 			}
 
-			int plant_id = Utilities::gridID2PotID(x, y, pot_pos.rows);
+			//int plant_id = Utilities::gridID2PotID(x, y, pot_pos.rows);
+			int plant_id = y_snake*pot_pos.cols + x + 1;
 
 			if (data_collection_mode == TOP_VIEW)
 				topViewProbingRoutinePerPlant(rover_position, plant_id, pot_xyz);
 			else
 				sideViewProbingRoutinePerPlant(plant_id, pot_xyz[1], rover_position);
 		
-			pot_processed_map_.at<unsigned char>(y_snake, x) = 2; saveTaskProgressToFile();
+			pot_processed_map_.at<unsigned char>(y_snake, x) = rover_run_index_in_chamber_ + 1; saveTaskProgressToFile();
 
 			std::cout << "pot_processed_map_:\n" << pot_processed_map_ << std::endl;
 		}
@@ -6614,13 +6786,13 @@ bool VisionArmCombo::rotateLaserScanPot(cv::Vec3f& pot_xyz, double angular_fov, 
 	bool start_pose_reachable = false;
 	bool end_pose_reachable = false;
 	
-	//limit x based on rover position 
+	//limit y based on rover position
 	if (rover_position == 0)	//right
 	{
 		scan_start_hand_pose(1, 3) = std::max(scan_start_hand_pose(1, 3), -0.29);
 		scan_end_hand_pose(1, 3) = std::max(scan_end_hand_pose(1, 3), -0.29);
 	}
-	else if (rover_position == 2)
+	else if (rover_position == 2)	//left
 	{
 		scan_start_hand_pose(1, 3) = std::min(scan_start_hand_pose(1, 3), 0.4);
 		scan_end_hand_pose(1, 3) = std::min(scan_end_hand_pose(1, 3), 0.4);
@@ -6652,31 +6824,38 @@ bool VisionArmCombo::rotateLaserScanPot(cv::Vec3f& pot_xyz, double angular_fov, 
 	finish_pose(2, 3) = max_plant_z_ + 0.25;
 
 	//std::cout << "intial prepare pose\n" << prepare_pose << std::endl;
-	checkHandPoseReachableAlongAxis(prepare_pose, 0.05, 0.4, tmp_hand_pose, "z", CHECK_PATH);
+	checkHandPoseReachableAlongAxis(prepare_pose, 0.05, 0.4, tmp_hand_pose, "z", ONLY_CHECK_DESTINATION);
+
 	prepare_pose = tmp_hand_pose;
 	//std::cout << "then prepare pose\n" << prepare_pose << std::endl;
-
-	if (!checkHandPoseReachable(prepare_pose, prepare_config, ONLY_CHECK_DESTINATION_SELFCOLLISION/*CHECK_PATH*/))
+	if (!checkHandPoseReachable(prepare_pose, prepare_config, ONLY_CHECK_DESTINATION_SELFCOLLISION))
 	{
 		std::cout << "scan prepare pose NOT reachable" << std::endl;
 		return false;
 	}
 
-	checkHandPoseReachableAlongAxis(finish_pose, 0.05, 0.4, tmp_hand_pose, "z", CHECK_PATH);
+	checkHandPoseReachableAlongAxis(finish_pose, 0.05, 0.4, tmp_hand_pose, "z", ONLY_CHECK_DESTINATION);
+
 	finish_pose = tmp_hand_pose;
 
-	if (!checkHandPoseReachable(finish_pose, finish_config, ONLY_CHECK_DESTINATION_SELFCOLLISION/*CHECK_PATH*/))
+	if (!checkHandPoseReachable(finish_pose, finish_config, ONLY_CHECK_DESTINATION_SELFCOLLISION))
 	{
 		std::cout << "scan finish pose NOT reachable" << std::endl;
 		return false;
 	}
 
-	moveToConfigGetPointCloud(prepare_config);
+	//moveToConfigGetPointCloud(prepare_config, SKIP_PATH_PLAN);
+	//robot_arm_client_->moveHandJ(prepare_config.joint_pos_d, 0.5, 1.0);
+	double array6[6];
+	eigenMat4dToArray6(prepare_pose, array6);
+	robot_arm_client_->moveHandL(array6, 0.2, 0.5);	//safer when doing plants near chamber inner wall
 
 	// ignore collision with plants
-	double array6[6];
+	if (cur_chamber_config_.light_status == 1)
+		controlChamber(cur_chamber_id_, PAUSE_LIGHT);
+
 	eigenMat4dToArray6(scan_start_hand_pose, array6);
-	robot_arm_client_->moveHandL(array6, move_arm_acceleration_, move_arm_speed_);
+	robot_arm_client_->moveHandL(array6, 0.05, 0.3);
 	Sleep(1000);
 
 	PointCloudT::Ptr tmp_cloud(new PointCloudT);
@@ -6685,7 +6864,9 @@ bool VisionArmCombo::rotateLaserScanPot(cv::Vec3f& pot_xyz, double angular_fov, 
 	scanMoveL(scanner_end_pose, cloud, scan_acceleration_, scan_speed_);
 
 	eigenMat4dToArray6(finish_pose, array6);
-	robot_arm_client_->moveHandL(array6, move_arm_acceleration_, move_arm_speed_);
+	robot_arm_client_->moveHandL(array6, 0.2, 0.5);	//do not wait
+
+	controlChamber(cur_chamber_id_, RESUME_LIGHT);
 
 	if (cloud->size() > 100)
 	{
@@ -6709,6 +6890,8 @@ bool VisionArmCombo::rotateLaserScanPot(cv::Vec3f& pot_xyz, double angular_fov, 
 		viewer_->addPointCloud(cloud, "laser");
 		display();
 	}
+
+	robot_arm_client_->waitTillHandReachDstPose(array6);
 
 	return true;
 }
@@ -6921,7 +7104,7 @@ bool VisionArmCombo::checkHandPoseReachableAlongAxis(Eigen::Matrix4d & start_han
 	return false;
 }
 
-int VisionArmCombo::openOrCloseCurtain(int chamber_id, int option, int data_collection_mode)
+int VisionArmCombo::checkCurtainOpenOrClosed(int chamber_id, int option, int data_collection_mode)
 {
 	if (option != OPEN_CURTAIN && option != CLOSE_CURTAIN)
 		return WRONG_OPTION;
@@ -6944,19 +7127,17 @@ int VisionArmCombo::openOrCloseCurtain(int chamber_id, int option, int data_coll
 			return -1;
 	}
 
-	tof_cam_->setPower(256);
-
-	controlChamber(chamber_id, option);
-
-#if 1
-	if (option == OPEN_CURTAIN)	
-		Sleep(15000);
+	if (option == OPEN_CURTAIN)
+	{
+		if (tof_cam_->streaming_.load() == false)
+			tof_cam_->start();
+	}
 	else
 	{
-		Sleep(6000);
+		controlChamber(chamber_id, option);
+		Sleep(18000);
 		return 0;
 	}
-#endif
 
 	cv::Mat depth;
 
@@ -6973,149 +7154,23 @@ int VisionArmCombo::openOrCloseCurtain(int chamber_id, int option, int data_coll
 		if (option == OPEN_CURTAIN)
 		{
 			if ( (data_collection_mode_ == TOP_VIEW && screen_dist > 15000.f) 
-				|| (data_collection_mode_ == SIDE_VIEW && screen_dist > 11000.f) )
-			{
-				Sleep(5000);
+				|| (data_collection_mode_ == SIDE_VIEW && screen_dist > 10000.f) )
+			{			
+				std::cout << "curtain open\n";
 				break;
 			}
-
-			if (++time_cnt > 10)
-			{
-				controlChamber(chamber_id, option);
-				time_cnt = 0;
-			}
 		}
-		else if (option == CLOSE_CURTAIN && (screen_dist < 3000.f))
-			break;
 
-		Sleep(3000);
-	}
-
-	return SUCCESS;
-}
-
-int VisionArmCombo::enterOrExitChamber(int chamber_id, int option)
-{
-	if(option != ENTER_CHAMBER && option != EXIT_CHAMBER)
-		return WRONG_OPTION;
-
-	cv::Mat depth, ir, good_pixels;
-
-	int time_out_cnt = 0;
-
-	if (option == ENTER_CHAMBER)
-	{
-		// move arm
-		//tof_cam_->setPower(256);
-		robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_);
-
-		float marker_dist;
-		int marker_id = -1;
-		time_out_cnt = 0;
-
-#if 0
-		//verify AR marker matches chamber id
-		while (chamber_id != marker_id)
+		if (++time_cnt > 30)
 		{
-			ir = tof_cam_->getIR();
-			
-			marker_id = -1;
+			Utilities::to_log_file("curtain is not open");
 
-			markerDetection(IR, marker_dist, marker_id);
-
-			if (marker_id > 0 && marker_id < 9 && marker_id != chamber_id)
-			{
-				// TODO move mir robot
-				mir_.goToDoor(chamber_id);
-			}
-
-			//TODO timeout
-			if (time_out_cnt > 60 * 5)
-			{
-
-			}
-			time_out_cnt++;
-			Sleep(1000);
+			if(data_collection_mode_ == TOP_VIEW)
+				close();
+			else return SUCCESS;
 		}
-#endif
-		cur_chamber_id_ = chamber_id;
 
-		controlChamber(chamber_id, OPEN_DOOR);
-
-		//Sleep(4000);
-
-		//controlChamber(chamber_id, OPEN_DOOR);
-
-#if 0
-		tof_cam_->setPower(3000);
-
-		//verify door open
-		while (1)
-		{
-			controlChamber(chamber_id, OPEN_DOOR);
-
-			depth = tof_cam_->getDepth16U();
-			
-			cv::inRange(depth, 1000, 30000, good_pixels);
-
-			float mean_dist = cv::mean(depth, good_pixels).val[0];	// unit 0.1mm
-
-			std::cout << "mean dist: "<<mean_dist << std::endl;
-
-			if (mean_dist > 20000.f) break;
-
-			Sleep(2000);
-		}
-#endif
-		//enter chamber
-		mir_.goToChamberPosition(chamber_id, 1);
-
-		controlChamber(chamber_id, CLOSE_DOOR);
-	}
-	else if (option == EXIT_CHAMBER)
-	{
-		//go to chamber center location
-		//mir_.goToChamberPosition(chamber_id, 1);
-
-		//check if door is OPEN
-		//robot_arm_client_->moveHandJ(check_door_inside_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-
-		// open door
-		controlChamber(chamber_id, OPEN_DOOR);
-		Sleep(5000);
-		
-#if 0
-		tof_cam_->setPower(3000);
-
-		time_out_cnt = 0;
-
-		//verify door open
-		while (1)
-		{
-			depth = tof_cam_->getDepth16U();
-			cv::inRange(depth, 1000, 40000, good_pixels);
-			float mean_dist = cv::mean(depth, good_pixels).val[0];	// unit 0.1mm
-
-			//std::cout << "mean_dist: " << mean_dist << std::endl;
-
-			if (mean_dist > 20000.f)
-				break;
-
-			Sleep(1000);
-
-			if(time_out_cnt % 20)
-				controlChamber(chamber_id, OPEN_DOOR);
-		}
-#endif
-
-		robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_, true);
-
-		// exit chamber
-		mir_.goToDoor(chamber_id);
-
-		controlChamber(chamber_id, CLOSE_DOOR);
-
-		//mir_.goToDoor(0);
+		Sleep(1000);
 	}
 
 	return SUCCESS;
@@ -7137,88 +7192,153 @@ int VisionArmCombo::getChamberConfig(int chamber_id, ChamberConfig & chamber_con
 
 	std::string command;
 
-	command = "get config "+std::to_string(chamber_id) + " rover";
-
-	socket.send_to(boost::asio::buffer(command, command.size()), remote_endpoint, 0, err);
-
-	Sleep(100);
-
 	char recv_buffer[1024];
-	
-	socket.receive_from(boost::asio::buffer(recv_buffer, 1024), remote_endpoint, 0, err);
 
-	std::string config_str(recv_buffer);
+	command = "get config "+std::to_string(chamber_id) + " rover";
+	int send_success = 0;
+	int num_bytes;
+	std::string pot_sensor_map_str;
 
-	std::cout << config_str << std::endl;
-
-	std::vector<std::string> str_vec;
-
-	boost::split(str_vec, config_str, boost::is_any_of("\n"), boost::token_compress_on);
-
-	std::cout << str_vec.size()<<std::endl;
-
-	for (auto str : str_vec)
+	for (int try_id = 0; try_id < 5 && send_success == 0; try_id++)
 	{
-		std::vector<std::string> inner_str_vec;
+		socket.send_to(boost::asio::buffer(command, command.size()), remote_endpoint, 0, err);
 
-		boost::split(inner_str_vec, str, boost::is_any_of(" "), boost::token_compress_on);
+		for (int i = 0; i < 10; i++)
+		{
+			num_bytes = socket.available();
 
-		if (inner_str_vec.size() != 2) continue;
+			if (num_bytes > 256)
+			{
+				int num_bytes = socket.receive_from(boost::asio::buffer(recv_buffer, 1024), remote_endpoint, 0, err);	//blocking read
+				//std::string result(recv_buffer, recv_buffer + num_bytes);
+				//std::cout << result << std::endl;
+				send_success = 1;
+				break;
+			}
+			else
+			{
+				//no response from server
+				if (i == 5)
+				{
+					Utilities::to_log_file(command);
+				}
+			}
 
-		std::cout << inner_str_vec[0] << "___" << inner_str_vec[1] << std::endl;
+			Sleep(1000);
+		}
 
-		if (inner_str_vec[0] == "current_experiment:")
-		{
-			chamber_config.experiment_name = inner_str_vec[1];
-		}
-		else if (inner_str_vec[0] == "cur_chamber_time_local:")
-		{
-			chamber_config.chamber_time = inner_str_vec[1];
-		}
-		else if (inner_str_vec[0] == "pot_count:")
-		{
-			
-		}
-		else if (inner_str_vec[0] == "row_count:")
-		{
-			chamber_config.rows = std::stoi(inner_str_vec[1]);
-		}
-		else if (inner_str_vec[0] == "column_count:")
-		{
-			chamber_config.cols = std::stoi(inner_str_vec[1]);
-		}
-		else if (inner_str_vec[0] == "pot_height:")
-		{
-			chamber_config.pot_height = std::stof(inner_str_vec[1])*0.01;
-		}
-		else if (inner_str_vec[0] == "pot_width:")
-		{
-			chamber_config.pot_width = std::stof(inner_str_vec[1])*0.0254;
-		}
-		else if (inner_str_vec[0] == "pot_shape:")
-		{
+		Sleep(3000);
+	}
 
-		}
-		else if (inner_str_vec[0] == "lights_on:")
+	if (send_success == 1)
+	{
+		std::string config_str(recv_buffer, recv_buffer + num_bytes);
+
+		std::cout << config_str << std::endl;
+
+		std::vector<std::string> str_vec;
+
+		boost::split(str_vec, config_str, boost::is_any_of("\n"), boost::token_compress_on);
+
+		std::cout << str_vec.size() << std::endl;
+
+		for (auto str : str_vec)
 		{
-			chamber_config.light_status = std::stoi(inner_str_vec[1]);
+			std::vector<std::string> inner_str_vec;
+
+			boost::split(inner_str_vec, str, boost::is_any_of(" "), boost::token_compress_on);
+
+			if (inner_str_vec.size() != 2) continue;
+
+			std::cout << inner_str_vec[0] << "___" << inner_str_vec[1] << std::endl;
+
+			if (inner_str_vec[0] == "current_experiment:")
+			{
+				chamber_config.experiment_name = inner_str_vec[1];
+			}
+			else if (inner_str_vec[0] == "cur_chamber_time_local:")
+			{
+				chamber_config.chamber_time = inner_str_vec[1];
+			}
+			else if (inner_str_vec[0] == "pot_count:")
+			{
+
+			}
+			else if (inner_str_vec[0] == "row_count:")
+			{
+				chamber_config.rows = std::stoi(inner_str_vec[1]);
+			}
+			else if (inner_str_vec[0] == "column_count:")
+			{
+				chamber_config.cols = std::stoi(inner_str_vec[1]);
+			}
+			else if (inner_str_vec[0] == "pot_height:")
+			{
+				chamber_config.pot_height = std::stof(inner_str_vec[1])*0.01;
+			}
+			else if (inner_str_vec[0] == "pot_width:")
+			{
+				chamber_config.pot_width = std::stof(inner_str_vec[1])*0.0254;
+			}
+			else if (inner_str_vec[0] == "pot_shape:")
+			{
+
+			}
+			else if (inner_str_vec[0] == "lights_on:")
+			{
+				chamber_config.light_status = std::stoi(inner_str_vec[1]);
+			}
+			else if (inner_str_vec[0] == "pot_sensor_map:")
+			{
+				pot_sensor_map_str = inner_str_vec[1];
+			}
+			else if (inner_str_vec[0] == "hyperspectral:")
+			{
+				chamber_config.hyperspectral = std::stoi(inner_str_vec[1]);
+			}
+			else if (inner_str_vec[0] == "thermal:")
+			{
+				chamber_config.thermal = std::stoi(inner_str_vec[1]);
+			}
+			else if (inner_str_vec[0] == "fluorometer:")
+			{
+				chamber_config.fluorometer = std::stoi(inner_str_vec[1]);
+			}
+			else if (inner_str_vec[0] == "leaves_to_scan_max:")
+			{
+				chamber_config.max_num_leaves_to_scan = std::stoi(inner_str_vec[1]);
+			}
 		}
-		else if (inner_str_vec[0] == "hyperspectral:")
+
+		chamber_config.pot_sensor_map = cv::Mat::ones(chamber_config.rows, chamber_config.cols, CV_8U);
+
+		str_vec.clear();
+
+		boost::split(str_vec, pot_sensor_map_str, boost::is_any_of(","), boost::token_compress_on);
+
+		std::cout << "str_vec size " << str_vec.size() << "\n";
+		for (auto s : str_vec) std::cout << s<<"-";
+		std::cout << "\n";
+
+		if (str_vec.size() == chamber_config.rows*chamber_config.cols)
 		{
-			chamber_config.hyperspectral = std::stoi(inner_str_vec[1]);
+			str_vec.front() = str_vec.front().substr(1, str_vec.front().length() - 1);
+			str_vec.back() = str_vec.back().substr(0, str_vec.back().length() - 1);
+			for (int i = 0; i < str_vec.size(); i++)
+			{
+				if (str_vec[i] == "0" )
+					chamber_config.pot_sensor_map.data[i] = 0;
+			}
+
+			std::cout << "pot sensor map:\n"<<chamber_config.pot_sensor_map<<std::endl;
 		}
-		else if (inner_str_vec[0] == "thermal:")
+		else
 		{
-			chamber_config.thermal = std::stoi(inner_str_vec[1]);
+			Utilities::to_log_file("pot sensor map size not equal rows*cols");
 		}
-		else if (inner_str_vec[0] == "fluorometer:")
-		{
-			chamber_config.fluorometer = std::stoi(inner_str_vec[1]);
-		}
-		else if (inner_str_vec[0] == "leaves_to_scan_max:")
-		{
-			chamber_config.max_num_leaves_to_scan = std::stoi(inner_str_vec[1]);
-		}
+
+		
+
 	}
 
 	socket.close();
@@ -7542,30 +7662,39 @@ int VisionArmCombo::moveArmInOrOutChamber(int option, int data_collection_mode)
 	}
 
 	for (int i = begin; i != end; i += delta)
-		robot_arm_client_->moveHandJ(in_config_sequence[i].data(), move_joint_speed_, move_joint_acceleration_);
+		robot_arm_client_->moveHandJ(in_config_sequence[i].data(), 0.7, 1.2);
 		
 	return SUCCESS;
 }
 
 // Input: camera_pose (tilt center pose), Output: start_scan_pose
-int VisionArmCombo::tiltLinearScan(Eigen::Matrix4d &camera_pose, cv::Vec6d & start_scan_pose, double angle, int option)
+int VisionArmCombo::tiltLinearScan(Eigen::Matrix4d &camera_pose, cv::Mat& thumbnail, cv::Vec6d & start_scan_pose, double angle, int option)
 {
 	if (option != ONLY_PERFORM_COLLISION_CHECK && option != DIRECT_IMAGING && option != IMAGING_IGNORE_COLLISION)
 		return -1;
 
-	Eigen::Matrix4d start_hand_pose, end_hand_pose;
+	Eigen::Matrix4d start_hand_pose = Eigen::Matrix4d::Identity();
+	Eigen::Matrix4d end_hand_pose = Eigen::Matrix4d::Identity();
 
 	double angle_2 = pcl::deg2rad(angle*0.5);
 
-	Eigen::Matrix4d rot = Eigen::Matrix4d::Identity();
+	//Eigen::Matrix4d rot = Eigen::Matrix4d::Identity();
 
-	rot.block<3, 3>(0, 0) = Eigen::AngleAxisd(angle_2, Eigen::Vector3d::UnitX()).matrix();
+	//rot.block<3, 3>(0, 0) = Eigen::AngleAxisd(angle_2, Eigen::Vector3d::UnitX()).matrix();
 
-	start_hand_pose = (camera_pose*rot)*hand_to_hyperspectral_d_.inverse();
+	start_hand_pose = camera_pose;
 
-	rot.block<3, 3>(0, 0) = Eigen::AngleAxisd(-angle_2, Eigen::Vector3d::UnitX()).matrix();
+	end_hand_pose = camera_pose;
 
-	end_hand_pose = (camera_pose*rot)*hand_to_hyperspectral_d_.inverse();
+	start_hand_pose.topLeftCorner<3, 3>() = camera_pose.topLeftCorner<3, 3>() * Eigen::AngleAxisd(angle_2, Eigen::Vector3d::UnitX()).matrix();
+
+	start_hand_pose = start_hand_pose*hand_to_hyperspectral_d_.inverse();
+
+	//rot.block<3, 3>(0, 0) = Eigen::AngleAxisd(-angle_2, Eigen::Vector3d::UnitX()).matrix();
+
+	end_hand_pose.topLeftCorner<3,3>() = camera_pose.topLeftCorner<3, 3>() * Eigen::AngleAxisd(-angle_2, Eigen::Vector3d::UnitX()).matrix();
+
+	end_hand_pose = end_hand_pose*hand_to_hyperspectral_d_.inverse();
 
 	ArmConfig start_config, end_config;
 
@@ -7610,16 +7739,18 @@ int VisionArmCombo::tiltLinearScan(Eigen::Matrix4d &camera_pose, cv::Vec6d & sta
 
 	if(option != IMAGING_IGNORE_COLLISION && option != DIRECT_IMAGING) moveToConfigGetPointCloud(start_config, SKIP_PATH_PLAN);
 
-	robot_arm_client_->moveHandL(start_vec6, 0.05, 0.05);
+	robot_arm_client_->moveHandL(start_vec6, 0.2, 0.2);
 
 	Sleep(1000);
 
 	hypercam_->start(CONTINUOUS);
 	
-	while (hypercam_->frame_count_ == 0)
+	while (hypercam_->frame_count_.load() == 0)
 		Sleep(2);
 
 	robot_arm_client_->startOrStopRecordPose(true);
+
+	std::cout << "moving...\n";
 
 	robot_arm_client_->moveHandL(end_vec6, 0.1, move_speed, false);
 
@@ -7629,7 +7760,7 @@ int VisionArmCombo::tiltLinearScan(Eigen::Matrix4d &camera_pose, cv::Vec6d & sta
 
 	robot_arm_client_->getCartesianInfo(sync_pose);
 
-	robot_arm_client_->waitTillHandReachDstPose(end_vec6);
+	int result = robot_arm_client_->waitTillHandReachDstPose(end_vec6);
 
 	unsigned int stop_frame_count = hypercam_->frame_count_.load();
 
@@ -7638,6 +7769,8 @@ int VisionArmCombo::tiltLinearScan(Eigen::Matrix4d &camera_pose, cv::Vec6d & sta
 	robot_arm_client_->startOrStopRecordPose(false);
 
 	std::cout << "final_speed " << final_speed << std::endl;
+
+	if (result < 0)	Utilities::to_log_file("movel timeout in tiltLinearScan");
 
 	for (int i = 0; i < 6; i++)
 		start_scan_pose[i] = sync_pose[i];
@@ -7648,6 +7781,7 @@ int VisionArmCombo::tiltLinearScan(Eigen::Matrix4d &camera_pose, cv::Vec6d & sta
 
 	std::cout << "start frame count: " << start_frame_count << " stop frame count: " << stop_frame_count << std::endl;
 
+#if 1
 	// trim end
 	hypercam_->scanlines_.erase(hypercam_->scanlines_.begin() + stop_frame_count - 1, hypercam_->scanlines_.end());
 	hypercam_->timestamps_.erase(hypercam_->timestamps_.begin() + stop_frame_count - 1, hypercam_->timestamps_.end());
@@ -7658,7 +7792,8 @@ int VisionArmCombo::tiltLinearScan(Eigen::Matrix4d &camera_pose, cv::Vec6d & sta
 
 	std::cout << "after erase num frames: " << hypercam_->scanlines_.size() << "\n";
 
-	showHyperspectralImage(hypercam_->scanlines_);
+	thumbnail = showHyperspectralImage(hypercam_->scanlines_);
+#endif
 
 	return SUCCESS;
 }
@@ -7700,14 +7835,12 @@ cv::Mat VisionArmCombo::showHyperspectralImage(std::vector<cv::Mat> & scans)
 	return image_8u;
 }
 
-int VisionArmCombo::getHyperspectralImageAtNearestReachable(cv::Vec3f & pot_xyz, float pot_diameter, cv::Vec6d &start_scan_pose)
+int VisionArmCombo::getHyperspectralImageAtNearestReachable(cv::Vec3f & pot_xyz, float pot_diameter, cv::Vec6d &start_scan_pose, cv::Mat & thumbnail)
 {
 	bool imaging_pose_found = false;
 
 	Eigen::Vector3f camera_moving_dir(chamber_center_x_-pot_xyz[0], -pot_xyz[1], 0.);
 	camera_moving_dir.normalize();
-
-	double best_config_array6[6];
 
 	double dist_to_plant = pot_diameter*0.5/std::tan(pcl::deg2rad(20.));// *1473.71 / 506.289;
 
@@ -7742,9 +7875,8 @@ int VisionArmCombo::getHyperspectralImageAtNearestReachable(cv::Vec3f & pot_xyz,
 			if (camera_pose(2, 3) > 0.8) camera_pose(2, 3) = 0.8;
 
 			cv::Vec6d start_scan_pose;
-			int result = tiltLinearScan(camera_pose, start_scan_pose, hyperspectral_tilt_angle_, ONLY_PERFORM_COLLISION_CHECK);
-
-			ArmConfig arm_config;
+			
+			int result = tiltLinearScan(camera_pose, thumbnail, start_scan_pose, hyperspectral_tilt_angle_, ONLY_PERFORM_COLLISION_CHECK);
 
 			if (result == REACHABLE)
 			{
@@ -7762,16 +7894,38 @@ int VisionArmCombo::getHyperspectralImageAtNearestReachable(cv::Vec3f & pot_xyz,
 
 	if (imaging_pose_found)
 	{
-		tiltLinearScan(best_camera_pose, start_scan_pose, hyperspectral_tilt_angle_, DIRECT_IMAGING);
+		tiltLinearScan(best_camera_pose, thumbnail, start_scan_pose, hyperspectral_tilt_angle_, DIRECT_IMAGING);
 	}
 	else
-		std::cout << "FAIL TO GET HYPERSPECTRAL IMAGE"<<std::endl;
+	{
+		return -1;
+		std::cout << "FAIL TO GET HYPERSPECTRAL IMAGE" << std::endl;
+	}
 
 	return SUCCESS;
 }
 
 int VisionArmCombo::getReferenceHyperspectralData(std::string filename, int rover_position, int mode)
 {
+	if (hypercam_ == NULL)
+	{
+		return -1;
+	}
+	
+	if (data_collection_mode_ == SIDE_VIEW)
+	{
+		ArmConfig calib_config;
+		calib_config.setJointPos(13.52, -90.61, -148.47, -30.94, 90., -166.5);
+		calib_config.toRad();
+		robot_arm_client_->moveHandJ(calib_config.joint_pos_d, move_joint_speed_, move_joint_acceleration_);
+	}
+	else 
+	{
+		double calib_joint_pos[6] = { -3.141592653, 0.0, -1.972222, -2.740167, 1.464331, -3.141592653 };
+		robot_arm_client_->moveHandJ(calib_joint_pos, move_joint_speed_, move_joint_acceleration_);
+	}
+
+
 	//collect dark reference
 	hypercam_->start(CONTINUOUS, false);
 
@@ -7781,6 +7935,7 @@ int VisionArmCombo::getReferenceHyperspectralData(std::string filename, int rove
 	hypercam_->stop();
 
 	std::string time_str = getCurrentDateTimeStr();
+	cv::Mat thumbnail;
 
 	std::string name = filename + "hsr_m_" + std::to_string(mode) + "_d_rp_" + std::to_string(rover_position) + "_" + time_str;
 
@@ -7788,7 +7943,11 @@ int VisionArmCombo::getReferenceHyperspectralData(std::string filename, int rove
 
 	robot_arm_client_->saveCurPose(name);
 
-	showHyperspectralImage(hypercam_->scanlines_);
+	thumbnail = showHyperspectralImage(hypercam_->scanlines_);
+
+	std::string thumbnail_path = name + ".pgm";
+
+	cv::imwrite(thumbnail_path, thumbnail);
 
 	// collect white reference
 
@@ -7797,9 +7956,9 @@ int VisionArmCombo::getReferenceHyperspectralData(std::string filename, int rove
 	else
 		robot_arm_client_->lineLightControl(false);
 
-	robot_arm_client_->probeCylinderControl(true);
+	//robot_arm_client_->probeCylinderControl(true);
 
-	robot_arm_client_->whiteBoardServoControl(true);
+	//robot_arm_client_->whiteBoardServoControl(true);
 
 	hypercam_->start(CONTINUOUS, true);
 
@@ -7814,13 +7973,19 @@ int VisionArmCombo::getReferenceHyperspectralData(std::string filename, int rove
 
 	robot_arm_client_->saveCurPose(name);
 
-	showHyperspectralImage(hypercam_->scanlines_);
+	thumbnail = showHyperspectralImage(hypercam_->scanlines_);
+
+	thumbnail_path = name + ".pgm";
+
+	cv::imwrite(thumbnail_path, thumbnail);
 
 	robot_arm_client_->lineLightControl(false);
 
-	robot_arm_client_->whiteBoardServoControl(false);
+	//robot_arm_client_->whiteBoardServoControl(false);
 	
-	robot_arm_client_->probeCylinderControl(false);
+	//robot_arm_client_->probeCylinderControl(false);
+
+	//moveArmToHome();
 
 	return SUCCESS;
 }
@@ -7896,7 +8061,7 @@ void VisionArmCombo::recordTime()
 
 void VisionArmCombo::printTime(std::string msg)
 {
-	std::cout<<msg<< " "<< (cv::getTickCount() - tick_count_) / cv::getTickFrequency() << std::endl;
+	std::cout<<msg<< " time: "<< (cv::getTickCount() - tick_count_) / cv::getTickFrequency() << std::endl;
 }
 
 int VisionArmCombo::manualMapPotPositions(int x_start, int y_start)
@@ -7904,21 +8069,21 @@ int VisionArmCombo::manualMapPotPositions(int x_start, int y_start)
 	if (tof_cam_ == NULL)
 	{
 		std::cout << "tof not init\n"; std::getchar();
-		exit(0);
+		close();
 	}
 
 	if (robot_arm_client_ == NULL)
 	{
 		std::cout << "arm not init\n"; std::getchar();
-		exit(0);
+		close();
 	}
 
 	Eigen::Matrix4d init_hand_pose;
 
 	getCurHandPoseD(init_hand_pose);
 
-	init_hand_pose.col(0) << 1., 0., 0., 0.;
-	init_hand_pose.col(1) << 0., -1., 0., 0.;
+	init_hand_pose.col(0) << 0., -1., 0., 0.;
+	init_hand_pose.col(1) << -1., 0., 0., 0.;
 	init_hand_pose.col(2) << 0., 0., -1., 0.;
 
 	double array6[6];
@@ -7972,7 +8137,7 @@ int VisionArmCombo::manualMapPotPositions(int x_start, int y_start)
 		}
 	}
 
-	exit(0);
+	close();
 }
 
 // vertical scan, start_pos->y should equal dst_pos->y, so ignore dst_pos->y
@@ -8048,7 +8213,7 @@ int VisionArmCombo::sideViewVerticalLaserScan(PointCloudT::Ptr cloud, Eigen::Vec
 	return 0;
 }
 
-void VisionArmCombo::topViewImagingRoutinePerPlant(int rover_position, int x, int y, int plant_id, cv::Vec3f & pot_xyz)
+void VisionArmCombo::topViewImagingRoutinePerPlant(int rover_position, int x, int y, int plant_id, cv::Vec3f & pot_xyz, int skip_hyperspectral)
 {
 	const float pot_diameter = pot_diameter_vec_[cur_chamber_id_ - 1];
 
@@ -8089,7 +8254,7 @@ void VisionArmCombo::topViewImagingRoutinePerPlant(int rover_position, int x, in
 
 		//viewer_->removeAllPointClouds(); viewer_->addPointCloud(plant_cloud, "plant"); display();
 
-		pcl::compute3DCentroid(*plant_cloud, plant_centroid);
+		//pcl::compute3DCentroid(*plant_cloud, plant_centroid);
 
 		Eigen::Vector4f min, max;
 		pcl::getMinMax3D(*plant_cloud, min, max);
@@ -8151,19 +8316,27 @@ THERMAL_IMAGING:
 
 			unsigned char focus_dist_cm = (unsigned char)(distance_to_pot*100.);
 
-			thermocam_->snapShot(color_map, temperature_map, focus_dist_cm);
+			int result = thermocam_->snapShot(color_map, temperature_map, focus_dist_cm);
 
-			saveThermalImageData(plant_id, camera_pose, color_map, temperature_map);
+			if (result == 0)
+			{
+				saveThermalImageData(plant_id, camera_pose, color_map, temperature_map);
 
-			cv::imshow("thermal", color_map);
-			cv::moveWindow("thermal", 680, 10);
-			cv::waitKey(view_time_);
+				cv::imshow("thermal", color_map);
+				cv::moveWindow("thermal", 680, 10);
+				cv::waitKey(view_time_);
+			}
+			else
+			{
+				Utilities::to_log_file("thermal camera fail once");
+				//close();
+			}
 		}
 	}
 
 	plant_imaging_stage_ = 2; saveTaskProgressToFile();
 RGB_IMAGING:
-	if (rgb_cam_ != NULL
+	if (rgb_cam_ != NULL && cur_chamber_config_.light_status == 1 
 		&& computeImageConfigforPot(pot_xyz, pot_diameter, rgb_camera_matrix_cv_, hand_to_rgb_, imaging_config, distance_to_pot, target_hand_pose)
 		)
 	{
@@ -8183,34 +8356,52 @@ RGB_IMAGING:
 		cv::imshow("rgb", tmp);  cv::moveWindow("rgb", 10, 520); cv::waitKey(view_time_);
 	}
 
-	plant_imaging_stage_ = 3; saveTaskProgressToFile();
-HYPERSPECTRAL_IMAGING:
-	if (hypercam_ != NULL && hyperspectral_topview_)
+	if (skip_hyperspectral == 1)
 	{
-		std::cout << "hperspectral" << std::endl;
-
-		cv::Vec6d start_scan_pose;
-
-		getHyperspectralImageAtNearestReachable(pot_xyz, pot_diameter, start_scan_pose);
-
-		std::string file_path(data_saving_folder_.begin(), data_saving_folder_.end());
-
-		file_path += "hs_" + std::to_string(plant_id) + "_f_0_" + getCurrentDateTimeStr();
-
-		hypercam_->saveData(file_path);
-
-		robot_arm_client_->saveTimeStampPoses(file_path);
+		plant_imaging_stage_ = 0; saveTaskProgressToFile();
+		return;
 	}
 
-	plant_imaging_stage_ = 0; saveTaskProgressToFile();
+	plant_imaging_stage_ = 3; saveTaskProgressToFile();
+HYPERSPECTRAL_IMAGING:
+	if (hypercam_ != NULL && hyperspectral_topview_ 
+		&& computeImageConfigforPot(pot_xyz, pot_diameter, rgb_camera_matrix_cv_, hand_to_rgb_, imaging_config, distance_to_pot, target_hand_pose))
+	{
+		std::cout << "hyperspectral" << std::endl;
+		// since hyperspectral imaging is slow, it is separated from the other imaging
+		// move to the safe RGB pose first
+		moveToConfigGetPointCloud(imaging_config, SKIP_PATH_PLAN);
 
+		cv::Vec6d start_scan_pose;
+		cv::Mat thumbnail;
 
+		if (getHyperspectralImageAtNearestReachable(pot_xyz, pot_diameter, start_scan_pose, thumbnail) == SUCCESS)
+		{
+			std::string file_path(data_saving_folder_.begin(), data_saving_folder_.end());
+
+			file_path += "hs_" + std::to_string(plant_id) + "_f_0_" + getCurrentDateTimeStr();
+		
+			//quality check, sometimes the camera streams but the data are all zeros
+			if (cv::mean(thumbnail).val[0] < 1)
+			{
+				Utilities::to_log_file("hyperspectral streams zeros");
+			}
+			else
+			{
+				hypercam_->saveData(file_path);
+
+				robot_arm_client_->saveTimeStampPoses(file_path);
+
+				std::string thumbnail_path = file_path + ".pgm";
+				cv::imwrite(thumbnail_path, thumbnail);
+			}
+		}
+	}
 }
 
 void VisionArmCombo::topViewProbingRoutinePerPlant(int rover_position, int plant_id, cv::Vec3f & pot_xyz)
 {
 	const double pot_diameter = pot_diameter_vec_[cur_chamber_id_ - 1];
-	double distance_to_pot;
 	double radius = pot_diameter*0.6f;
 	const double height = pot_xyz[2];
 
@@ -8220,15 +8411,12 @@ void VisionArmCombo::topViewProbingRoutinePerPlant(int rover_position, int plant
 
 	file_path += "ls_" + std::to_string(plant_id) + "_f_0";
 
-	if (height < 0.6f)
+	if (height > chamber_floor_z_ + pot_height_ && height < 0.6f)
 	{
 		robot_arm_client_->laserScannerLightControl(true);
 		rotateLaserScanPot(pot_xyz, pcl::deg2rad(60.), cloud, file_path, rover_position);
 		robot_arm_client_->laserScannerLightControl(false);
-	}
 
-	if (height > chamber_floor_z_ + pot_height_ && height < 0.6f)
-	{
 		std::vector<pcl::PointXYZRGBNormal> probe_pn_vec;
 
 		std::cout << "Extract leaf probing points for plant " << plant_id << "\n";
@@ -8245,11 +8433,14 @@ void VisionArmCombo::topViewProbingRoutinePerPlant(int rover_position, int plant
 				hyperscan_arm_config_sequence_vec,
 				hyperscan_leaf_id_vec, plant_id);
 
+		recordTime();
+		int cnt = 0;
 		if (enable_probing_ == 1)
 		{
 			// multiple probing points on a leaf
 			// go through each leaf
 			int num_sampled_leaf = 0;
+			
 			for (int leaf_idx = 0; leaf_idx < leaf_probing_pn_vector_.size() && num_sampled_leaf < max_samples_per_plant_; leaf_idx++)
 			{
 				const int sorted_leaf_idx = leaf_cluster_order_[leaf_idx].id;
@@ -8274,12 +8465,11 @@ void VisionArmCombo::topViewProbingRoutinePerPlant(int rover_position, int plant
 					n.normal_y = leaf_probing_pn_vector_[sorted_leaf_idx][patch_idx].normal_y;
 					n.normal_z = leaf_probing_pn_vector_[sorted_leaf_idx][patch_idx].normal_z;
 
-					//	continue;
-#if 1
+					cnt++;
+	
 					if (probeLeaf(p, n, PAM, plant_id))
 					{
-						if (raman_ != NULL)
-							probeLeaf(p, n, RAMAN_1064, plant_id);
+						//if (raman_ != NULL)	probeLeaf(p, n, RAMAN_1064, plant_id);
 
 						pre_probed_point.x = p.x;
 						pre_probed_point.y = p.y;
@@ -8287,26 +8477,26 @@ void VisionArmCombo::topViewProbingRoutinePerPlant(int rover_position, int plant
 						num_successful_probing++;
 						num_sampled_leaf++;
 					}
-#endif
-					//std::cout << leaf_probing_pn_vector_[sorted_leaf_idx][patch_idx].x << "\n";
 				}
 			}
 		}
+		printTime("probing");
+		std::cout << "probeLeaf called " << cnt << " times\n";
 
-		if (hypercam_ != NULL && leaf_tracing_hyperspectral_) {
-
+		if (hypercam_ != NULL && leaf_tracing_hyperspectral_) 
+		{
 			robot_arm_client_->lineLightControl(true);
 
-			for (int hyperscan_idx = 0; hyperscan_idx < hyperscan_hand_pose_sequence_vec.size() && hyperscan_idx < max_samples_per_plant_; hyperscan_idx++) {
-
+			for (int hyperscan_idx = 0; hyperscan_idx < hyperscan_hand_pose_sequence_vec.size() && hyperscan_idx < max_samples_per_plant_; hyperscan_idx++) 
+			{
 				scanLeafWithHyperspectral(hyperscan_hand_pose_sequence_vec[hyperscan_idx], hyperscan_arm_config_sequence_vec[hyperscan_idx], plant_id);
 			}
 
 			robot_arm_client_->lineLightControl(false);
 		}
-		else {
-
-			std::cout << "Hyperspectral not initialized.\n";
+		else 
+		{
+			std::cout << "Hyperspectral not initialized or leaf tracing hyperspectral imaging disabled.\n";
 		}
 
 	}
@@ -8315,7 +8505,7 @@ void VisionArmCombo::topViewProbingRoutinePerPlant(int rover_position, int plant
 
 }
 
-void VisionArmCombo::sideViewImagingRoutinePerPlant(int plant_id, double pot_y_wrt_rover, int rover_pos)
+void VisionArmCombo::sideViewImagingRoutinePerPlant(int plant_id, double pot_y_wrt_rover, int rover_pos, int skip_hyperspectral)
 {
 	// move to initial pose for depth imaging
 	Eigen::Matrix4d init_cam_pose, cam_pose, hand_pose;
@@ -8327,16 +8517,16 @@ void VisionArmCombo::sideViewImagingRoutinePerPlant(int plant_id, double pot_y_w
 
 	cam_pose = init_cam_pose;
 	cam_pose.topLeftCorner<3, 3>() = cam_pose.topLeftCorner<3, 3>() * Eigen::AngleAxisd(pcl::deg2rad(45.), Eigen::Vector3d::UnitX()).matrix();
-	collectSideViewImageDataGivenPose(cam_pose, plant_id, 0, rover_pos);
+	collectSideViewImageDataGivenPose(cam_pose, plant_id, 0, rover_pos, skip_hyperspectral);
 
 	cam_pose = init_cam_pose;
 	cam_pose.topLeftCorner<3, 3>() = cam_pose.topLeftCorner<3, 3>() * Eigen::AngleAxisd(pcl::deg2rad(20.), Eigen::Vector3d::UnitX()).matrix();
 	cam_pose.col(3)(2) = 0.75;
-	collectSideViewImageDataGivenPose(cam_pose, plant_id, 1, rover_pos);
+	collectSideViewImageDataGivenPose(cam_pose, plant_id, 1, rover_pos, skip_hyperspectral);
 
 	cam_pose = init_cam_pose;
 	cam_pose.col(3)(2) = 0.9;
-	collectSideViewImageDataGivenPose(cam_pose, plant_id, 2, rover_pos);
+	collectSideViewImageDataGivenPose(cam_pose, plant_id, 2, rover_pos, skip_hyperspectral);
 }
 
 void VisionArmCombo::sideViewProbingRoutinePerPlant(int plant_id, double pot_y_wrt_rover, int rover_pos)
@@ -8346,6 +8536,9 @@ void VisionArmCombo::sideViewProbingRoutinePerPlant(int plant_id, double pot_y_w
 
 	if (enable_scanner_)
 	{
+		if (cur_chamber_config_.light_status == 1)
+			controlChamber(cur_chamber_id_, PAUSE_LIGHT);
+
 		std::string file_path(data_saving_folder_.begin(), data_saving_folder_.end());
 
 		file_path += "ls_" + std::to_string(plant_id) + "_f_";
@@ -8367,6 +8560,8 @@ void VisionArmCombo::sideViewProbingRoutinePerPlant(int plant_id, double pot_y_w
 		file_prefix = file_path + "1";
 		sideViewVerticalLaserScan(cloud1, start_pos, dst_pos, 0., 80., file_prefix);
 		robot_arm_client_->laserScannerLightControl(false);
+
+		controlChamber(cur_chamber_id_, RESUME_LIGHT);
 
 		*cloud1 += *cloud0;
 
@@ -8457,9 +8652,22 @@ void VisionArmCombo::sideViewProbingRoutinePerPlant(int plant_id, double pot_y_w
 	}
 }
 
-void VisionArmCombo::collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pose, int plant_id, int image_id, int rover_pos)
+void VisionArmCombo::collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pose, int plant_id, int image_id, int rover_pos, int skip_hyperspectral)
 {
 	double array6d[6];
+
+	switch (plant_imaging_stage_)
+	{
+	case 1:
+		goto THERMAL_IMAGING;
+		break;
+	case 2:
+		goto RGB_IMAGING;
+		break;
+	case 3:
+		goto HYPERSPECTRAL_IMAGING;
+		break;
+	}
 
 	if (enable_tof_)
 	{
@@ -8469,7 +8677,9 @@ void VisionArmCombo::collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pos
 
 		eigenMat4dToArray6(hand_pose, array6d);
 
-		robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
+		int result = robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
+
+		if (result < 0)	Utilities::to_log_file("movel timeout at tof");
 
 		//wait for stop shaking
 		Sleep(1000);
@@ -8500,13 +8710,17 @@ void VisionArmCombo::collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pos
 		preprocessTOFCloud(cloud, box_min, box_max);
 	}
 
+	plant_imaging_stage_ = 1; saveTaskProgressToFile();
+	THERMAL_IMAGING:
 	if (enable_thermo_)
 	{
 		Eigen::Matrix4d hand_pose = cam_pose*hand_to_thermal_d_.inverse();
 
 		eigenMat4dToArray6(hand_pose, array6d);
 
-		robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
+		int result = robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
+
+		if (result < 0)	Utilities::to_log_file("movel timeout at flir");
 
 		//wait for stop shaking
 		Sleep(1000);
@@ -8531,13 +8745,17 @@ void VisionArmCombo::collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pos
 		}
 	}
 
-	if (enable_rgb_)
+	plant_imaging_stage_ = 2; saveTaskProgressToFile();
+	RGB_IMAGING:
+	if (enable_rgb_ && cur_chamber_config_.light_status == 1)
 	{
 		Eigen::Matrix4d hand_pose = cam_pose*hand_to_rgb_.inverse();
 
 		eigenMat4dToArray6(hand_pose, array6d);
 
-		robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
+		int result = robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
+
+		if (result < 0)	Utilities::to_log_file("movel timeout at rgb");
 
 		//wait for stop shaking
 		Sleep(1000);
@@ -8556,7 +8774,16 @@ void VisionArmCombo::collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pos
 		cv::imshow("rgb", tmp);  cv::moveWindow("rgb", 10, 520); cv::waitKey(view_time_);
 	}
 
-	if (hyperspectral_topview_ && enable_hyperspectral_ && image_id != 0)
+	if (skip_hyperspectral == 1)
+	{
+		plant_imaging_stage_ = 0; saveTaskProgressToFile();
+		return;
+	}
+
+	plant_imaging_stage_ = 3; saveTaskProgressToFile();
+
+	HYPERSPECTRAL_IMAGING:
+	if (hyperspectral_topview_ && enable_hyperspectral_ && image_id != 0 && cur_chamber_config_.light_status == 1)
 	{
 		// move to preparation pose
 		Eigen::Matrix4d prepare_cam_pose;
@@ -8570,7 +8797,9 @@ void VisionArmCombo::collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pos
 
 		eigenMat4dToArray6(hand_pose, array6d);
 
-		robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
+		int result = robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
+
+		if (result < 0)	Utilities::to_log_file("movel timeout at specim");
 
 		Sleep(1000);
 
@@ -8578,6 +8807,7 @@ void VisionArmCombo::collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pos
 
 		Eigen::Matrix4d tilt_center_cam_pose;
 		double scan_angle;
+		cv::Mat thumbnail;
 
 		if (image_id == 1)
 		{
@@ -8601,17 +8831,28 @@ void VisionArmCombo::collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pos
 		}
 
 		// start_scan_pose is output
-		tiltLinearScan(tilt_center_cam_pose, start_scan_pose, scan_angle, DIRECT_IMAGING);
+		tiltLinearScan(tilt_center_cam_pose, thumbnail, start_scan_pose, scan_angle, DIRECT_IMAGING);
 
 		std::string file_path(data_saving_folder_.begin(), data_saving_folder_.end());
 
 		file_path += "hs_" + std::to_string(plant_id) + "_f_"+std::to_string(image_id)+"_" + getCurrentDateTimeStr();
+	
+		//quality check, sometimes the camera streams but the data are all zeros
+		if (cv::mean(thumbnail).val[0] < 1)
+		{
+			Utilities::to_log_file("hyperspectral streams zeros");
+		}
+		else
+		{
+			hypercam_->saveData(file_path);
+			robot_arm_client_->saveTimeStampPoses(file_path);
+			std::string thumbnail_path = file_path + ".pgm";
+			cv::imwrite(thumbnail_path, thumbnail);
+		}
 
-		hypercam_->saveData(file_path);
+		result = robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
 
-		robot_arm_client_->saveTimeStampPoses(file_path);
-
-		robot_arm_client_->moveHandL(array6d, move_arm_acceleration_, move_arm_speed_);
+		if (result < 0)	Utilities::to_log_file("movel timeout at homing");
 	}
 }
 
@@ -8693,6 +8934,7 @@ int VisionArmCombo::saveTaskProgressToFile()
 	if (fs.isOpened())
 	{
 		fs << "inside_or_outside_chamber_" << inside_or_outside_chamber_;
+		fs << "rover_run_index_in_chamber_" << rover_run_index_in_chamber_;
 		fs << "rover_pos_in_chamber_" << rover_pos_in_chamber_;
 		fs << "cur_chamber_id_" << cur_chamber_id_;
 		fs << "data_collection_mode_" << data_collection_mode_;
@@ -8702,9 +8944,47 @@ int VisionArmCombo::saveTaskProgressToFile()
 		fs << "data_folder_" << data_folder_;
 		fs << "experiment_id_" << experiment_id_;
 		fs << "pot_processed_map_" << pot_processed_map_;
+		fs << "pot_sensor_map_" << pot_sensor_map_;
 	}
 
 	fs.release();
 
 	return 0;
+}
+
+void VisionArmCombo::moveArmToHome()
+{
+	if (data_collection_mode_ == TOP_VIEW)
+		robot_arm_client_->moveHandJ(home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_);
+	else if(data_collection_mode_ == SIDE_VIEW)
+		robot_arm_client_->moveHandJ(sideview_home_config_.joint_pos_d, move_joint_speed_, move_joint_acceleration_);
+	else
+	{ 
+		Utilities::to_log_file("wrong data_collection_mode_");
+		close();
+	}
+}
+
+void VisionArmCombo::close()
+{
+	if (hypercam_ != NULL)
+		hypercam_->close();
+
+	if (tof_cam_ != NULL)
+		tof_cam_->stop();
+
+	if (line_profiler_ != NULL)
+		line_profiler_->finalize();
+
+	if (rgb_cam_ != NULL)
+		rgb_cam_->finishCamera();
+
+	if(robot_arm_client_ != NULL)
+		robot_arm_client_->stopRecvTCP();
+
+	mir_.~MirClient();
+
+	data_server_manager_.~ServerManager();
+
+	exit(0);
 }

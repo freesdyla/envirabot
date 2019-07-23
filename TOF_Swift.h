@@ -16,6 +16,7 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <atomic>
 #include "utilities.h"
 
 class TOF_Swift {
@@ -43,11 +44,14 @@ public:
 
 	std::string ip_address = "169.254.4.17";
 	std::vector<std::thread> thread_vec_;
-	bool streaming_ = false;
+	std::atomic<bool> streaming_;
+	std::atomic<int64> last_frame_tick_count_;
 
 	PointCloudT::Ptr cloud_;
 
 	std::mutex update_mutex_;
+
+	const int wait_image_timeout_sec_ = 10;
 
 	TOF_Swift();
 	~TOF_Swift();
@@ -59,7 +63,7 @@ public:
 	void startStreaming();
 	void setPower(int power);
 
-	int start();
+	void start();
 	int stop();
 
 	void listNodes();
@@ -71,6 +75,8 @@ public:
 	cv::Mat getIR16U();
 
 	cv::Mat getDepth16U();
+
+	void waitTillLastestFrameArrive();
  };
 
 #endif // !TOF_SWIFT_H_

@@ -15,6 +15,11 @@ KeyenceLineProfiler::KeyenceLineProfiler()
 	init();
 }
 
+KeyenceLineProfiler::~KeyenceLineProfiler()
+{
+	finalize();
+}
+
 void KeyenceLineProfiler::init()
 {
 	req.bySendPos = 2;	// send next available profile after start

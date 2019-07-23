@@ -118,6 +118,8 @@ int HyperspectralCamera::start(int options, bool open_shutter) {
 	else
 		SI_CHK(SI_Command(g_hDevice_, L"Camera.CloseShutter"));
 
+	Sleep(1000);
+
 	if (options == LAST_FRAME)
 	{
 		dFrameRate_ = 30.;
@@ -180,8 +182,17 @@ Error:
 //	SI_Unload();
 }
 
+void HyperspectralCamera::close()
+{
+	stop();
+	SI_Close(g_hDevice_);
+	SI_Unload();
+}
 
 int HyperspectralCamera::onDataCallback(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_64 _nFrameNumber, void* _pContext) {
+
+	if (scanlines_.size() > 6000)
+		return 0;
 
 	frame_count_.store(frame_count_.load() + _nFrameNumber);
 

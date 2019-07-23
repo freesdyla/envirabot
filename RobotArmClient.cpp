@@ -134,7 +134,7 @@ void RobotArmClient::startRecvTCP()
 
 		p[0] = recvbuf[3]; p[1] = recvbuf[2]; p[2] = recvbuf[1]; p[3] = recvbuf[0];
 
-		if ((packageLength == 1108) && (iResult == 1108)) //125Hz	, ur software version > 3.5
+		if ((packageLength == 1116) && (iResult == 1116)) //125Hz	, ur software version > 3.10
 		{
 			updateMutex.lock();
 
@@ -157,7 +157,11 @@ void RobotArmClient::startRecvTCP()
 
 			std::memcpy((char*)&safety_mode_, recvbuf + 812, 8);
 
-			if (safety_mode_ != 0xf03f) exit(0);
+			if (safety_mode_ != 0xf03f)
+			{
+				Utilities::to_log_file("UR streaming fail");
+				exit(0);
+			}
 
 			tcp_speed_ = std::sqrt(cur_tcp_speed_array[0] * cur_tcp_speed_array[0] + cur_tcp_speed_array[1] * cur_tcp_speed_array[1] + cur_tcp_speed_array[2] * cur_tcp_speed_array[2]);
 
@@ -173,9 +177,7 @@ void RobotArmClient::startRecvTCP()
 
 			recv_normal_.store(true);
 
-			//std::cout << package_size << std::endl;
-
-			//std::cout << distanceToDst << std::endl;
+			//std::cout << distanceToDst_ << std::endl;
 
 			//printCartesianInfo(cur_cartesian_info_array);
 		}
@@ -346,12 +348,21 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 {
 	setDstCartesianInfo(dst_pose6);
 
+	int timeout_cnt = 0;
+	const int limit = 1000 * 20;
+
 	while (true)
 	{
 		//std::cout << distanceToDst_.load() << std::endl;
-		if (distanceToDst_.load() < 0.001)	break;
+		if (distanceToDst_.load() < 0.004)	break;
 
 		Sleep(1);
+
+		if (++timeout_cnt > limit)
+		{
+			Utilities::to_log_file("waitTillHandReachDstPose timeout");
+			return -1;
+		}
 	}
 
 	return 0;
@@ -366,6 +377,20 @@ double RobotArmClient::waitTillRotationSpeedDropDownTo(double target_speed)
 		cur_speed = rot_speed_.load();
 		Sleep(1);
 		if ( cur_speed < target_speed)	break;
+	}
+
+	return cur_speed;
+}
+
+double RobotArmClient::waitTillTranslationSpeedDropDownTo(double target_speed)
+{
+	double cur_speed = 0.;
+
+	while (true)
+	{
+		cur_speed = tcp_speed_.load();
+		Sleep(1);
+		if (cur_speed < target_speed)	break;
 	}
 
 	return cur_speed;
@@ -575,7 +600,7 @@ void RobotArmClient::probeCylinderControl(bool extend) {
 		int num_byte = send(ConnectSocket, msg, strlen(msg), 0);
 
 		//wait for finish
-		Sleep(4000);
+		Sleep(1000);
 	}
 }
 

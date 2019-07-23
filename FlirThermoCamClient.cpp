@@ -90,52 +90,46 @@ int FlirThermoCamClient::snapShot(cv::Mat & color_map, cv::Mat & temperature_map
 		isConnected = false;
 		return -1;
 	}
-	else if (recvByte == 1) {
+	else if (recvByte == 1) 
+	{
 		//	std::cout << "Receive confirmation\n";
 
-#if 0
-		bool cSuccess = CopyFileW(_T("c:/users/lietang123/documents/roadfiles/flirthermocamserver/flirthermocamserver/bin/release/thermo.jpg"),
-			_T("c:/users/lietang123/documents/roadfiles/lineprofilerrobotarmtest/thermo.jpg"),
-			false);	// false means overwrite
+		color_map = cv::imread("c:/users/lietang123/documents/roadfiles/flirthermocamserver/flirthermocamserver/bin/release/thermo.jpg", CV_LOAD_IMAGE_COLOR);
+		temperature_map.create(480, 640, CV_64F);
 
-		cSuccess = CopyFileW(_T("c:/users/lietang123/documents/roadfiles/flirthermocamserver/flirthermocamserver/bin/release/temperature.bin"),
-			_T("c:/users/lietang123/documents/roadfiles/lineprofilerrobotarmtest/temperature.bin"),
-			false);	// false means overwrite
-#endif
+		std::streampos size;
+		char * memblock;
 
-		//if (cSuccess)
+		std::ifstream file("c:/users/lietang123/documents/roadfiles/flirthermocamserver/flirthermocamserver/bin/release/temperature.bin", std::ios::in | std::ios::binary | std::ios::ate);
+
+		if (file.is_open())
 		{
-			//std::cout << "copy image success!\n";
-			color_map = cv::imread("c:/users/lietang123/documents/roadfiles/flirthermocamserver/flirthermocamserver/bin/release/thermo.jpg", CV_LOAD_IMAGE_COLOR);
-			temperature_map.create(480, 640, CV_64F);
+			size = file.tellg();
+			memblock = new char[size];
+			file.seekg(0, std::ios::beg);
+			file.read(memblock, size);
+			file.close();
 
-			std::streampos size;
-			char * memblock;
+			//std::cout << "the entire temperature file content is in memory";
 
-			std::ifstream file("c:/users/lietang123/documents/roadfiles/flirthermocamserver/flirthermocamserver/bin/release/temperature.bin", std::ios::in | std::ios::binary | std::ios::ate);
+			std::memcpy(temperature_map.data, (unsigned char*)memblock, size);
 
-			if (file.is_open())
-			{
-				size = file.tellg();
-				memblock = new char[size];
-				file.seekg(0, std::ios::beg);
-				file.read(memblock, size);
-				file.close();
+			delete[] memblock;
 
-				//		std::cout << "the entire temperature file content is in memory";
-
-				std::memcpy(temperature_map.data, (unsigned char*)memblock, size);
-
-				delete[] memblock;
-			}
-			else std::cout << "Unable to open temperature file";
+			return 0;
 		}
-	/*	else
+		else
 		{
-			_tprintf(TEXT("copy image fail! GLE=%d\n"), GetLastError());
+			std::cout << "Unable to open temperature file";
+
 			return -1;
-		}*/
+		}
 	}
-	
+	else
+	{
+		Utilities::to_log_file("thermal camera snapshot fail");
+		exit(0);
+	}
+
 	return 1;
 }

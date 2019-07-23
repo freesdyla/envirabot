@@ -4,7 +4,7 @@
 #include <ctime>
 #include <Windows.h>
 #include "utilities.h"
-#include "RoboteqDevice.h"
+//#include "RoboteqDevice.h"
 
 int main(int argc, char**argv)
 {
@@ -13,8 +13,7 @@ int main(int argc, char**argv)
 	vac.run();
 
 	//vac.sendRoverToChamber(vac.cur_chamber_id_);
-	//vac.sideViewImagingRoutinePerPlant(1, -0.3, 1);
-	//vac.sideViewProbingRoutinePerPlant(1, -0.3, 1);
+
 
 #if 0
 	for (double y = -0.1; y <= 0.1; y += 0.05)
@@ -49,27 +48,11 @@ int main(int argc, char**argv)
 	}
 #endif
 
-	//RoboteqDevice bms;
-	//bms.Connect();
-
-	//int status;
-	//string response;
-	//status = bms.GetBatteryStatus(response);
-	//Utilities::to_log_file("upload done");
-	//std::cout << "done";std::getchar();
-
-	//vac.manualMapPotPositions(0, 0);
-
-	//vac.hyperspectralCameraCalibration(); std::getchar(); exit(0);
-
 	//vac.calibrateToolCenterPoint(4, PAM);
-	
 	//vac.calibrateThermalCamera(); vac.ThermalHandEyeCalibration();
 	//vac.calibrateRGBCamera(30); vac.RGBHandEyeCalibration();
 	//vac.calibrateIRCamera(30); vac.IRHandEyeCalibration();
 
 	//vac.acquireLinesOnPlanes();
-
 	//vac.readCloudAndPoseFromFile(); vac.lineScannerHandEyeCalibration(6); std::getchar();  return 0;
-
 }

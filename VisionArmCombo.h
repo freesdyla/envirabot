@@ -56,7 +56,7 @@
 
 #include "HyperspectralCamera.h"
 #include "FlirThermoCamClient.h"
-#include "Raman.h"
+//#include "Raman.h"
 
 
 #include <Windows.h>
@@ -86,9 +86,10 @@
 #define CLOSE_CURTAIN 3
 #define PAUSE_LIGHT 4
 #define RESUME_LIGHT 5
+#define DIM_LIGHT 6
 
 //marker detection camera
-#define RGB 0
+#define BASLER_RGB 0
 #define IR 1
 
 #define SUCCESS 0
@@ -119,7 +120,6 @@
 #define MOVE_ARM_IN_CHAMBER 0
 #define MOVE_ARM_OUT_CHAMBER 1
 
-#define HYPERSPECTRAL 0
 #define LASER_SCANNER 1
 
 #define CHECK_PATH 0
@@ -141,6 +141,14 @@
 
 #define TOP_VIEW 0
 #define SIDE_VIEW 1
+
+//type of sensors
+#define TOF				1 << 0
+#define THERMO			1 << 1
+#define COLOR			1 << 2
+#define HYPERSPECTRAL	1 << 3
+#define PROFILOMETER	1 << 4
+#define FLUOROMETER		1 << 5
 
 struct VisionArmCombo
 {
@@ -190,6 +198,7 @@ struct VisionArmCombo
 		int pot_count, rows, cols, max_num_leaves_to_scan;
 		float pot_height, pot_width;	// meter
 		int light_status, hyperspectral, thermal, fluorometer;
+		cv::Mat pot_sensor_map;
 
 		ChamberConfig() { reset(); }
 
@@ -234,7 +243,7 @@ struct VisionArmCombo
 
 	FlirThermoCamClient* thermocam_ = NULL;
 
-	Raman* raman_ = NULL;
+	//Raman* raman_ = NULL;
 
 	TOF_Swift* tof_cam_ = NULL;
 
@@ -447,6 +456,7 @@ struct VisionArmCombo
 	bool multi_work_position_ = true;
 
 	cv::Mat pot_processed_map_;
+	cv::Mat pot_sensor_map_; // a mask to decide which plants to measure
 	int cur_processing_pot_x_;
 	int cur_processing_pot_y_;
 
@@ -493,12 +503,17 @@ struct VisionArmCombo
 
 	float probe_patch_max_curvature_ = 0.05;
 
+	float topview_y_access_limit_ = 0.5f;
+	bool work_at_pos_0_needed_;
+	bool work_at_pos_2_needed_;
+
 	MirClient mir_;
 
 	//additional variables for resume work upon program start
 	bool entered_mapWorkspace_ = false;
 	std::string inside_or_outside_chamber_ = "outside";
-	std::string imaging_or_probing_ = "imaging";
+	int imaging_or_probing_ = 0;
+	int rover_run_index_in_chamber_ = 0;
 	int rover_pos_in_chamber_ = -1;
 	int data_collection_done_ = 1;
 	int plant_imaging_stage_ = 0;
@@ -510,7 +525,11 @@ struct VisionArmCombo
 
 	double scheduled_minutes_per_chamber_ = 40.;
 
+	double charing_time_2_work_time_ratio_ = 0.6;
+
 	int close_door_when_rover_inside_ = 1;
+
+	int sensors_to_use_ = 0;
 
 	VisionArmCombo();
 
@@ -627,6 +646,8 @@ struct VisionArmCombo
 
 	int scanPlantCluster(cv::Vec3f &object_center, float max_z, float radius, int plant_id=0);
 
+	int doOneDataAcquisitionRunInChamber(int last_run = 0);
+
 	int sendRoverToChamber(int chamber_id);
 
 	void TCPCalibrationErrorAnalysis(int numPoseNeeded = 4);
@@ -671,9 +692,7 @@ struct VisionArmCombo
 
 	bool checkHandPoseReachableAlongAxis(Eigen::Matrix4d & start_hand_pose, double step, double range, Eigen::Matrix4d & result_hand_pose, std::string axis="x", int option = CHECK_PATH);
 
-	int openOrCloseCurtain(int chamber_id, int option, int data_collection_mode = TOP_VIEW);
-
-	int enterOrExitChamber(int chamber_id, int option);
+	int checkCurtainOpenOrClosed(int chamber_id, int option, int data_collection_mode = TOP_VIEW);
 
 	int getChamberConfig(int chamber_id, ChamberConfig & chamber_config);
 
@@ -683,11 +702,11 @@ struct VisionArmCombo
 
 	int moveArmInOrOutChamber(int option, int data_collection_mode);
 
-	int tiltLinearScan(Eigen::Matrix4d &camera_pose,  cv::Vec6d &start_scan_pose, double angle = 50., int option = DIRECT_IMAGING);
+	int tiltLinearScan(Eigen::Matrix4d &camera_pose, cv::Mat& thumbnail, cv::Vec6d &start_scan_pose, double angle = 50., int option = DIRECT_IMAGING);
 
 	cv::Mat showHyperspectralImage(std::vector<cv::Mat> &scans);
 
-	int getHyperspectralImageAtNearestReachable(cv::Vec3f & pot_xyz, float pot_diameter, cv::Vec6d &start_scan_pose);
+	int getHyperspectralImageAtNearestReachable(cv::Vec3f & pot_xyz, float pot_diameter, cv::Vec6d &start_scan_pose, cv::Mat &thumbnail);
 
 	int getReferenceHyperspectralData(std::string filename, int rover_position, int mode);
 
@@ -701,15 +720,15 @@ struct VisionArmCombo
 
 	void run();
 
-	void sideViewImagingRoutinePerPlant(int plant_id, double pot_y_wrt_rover = 0., int rover_pos = 1);
+	void sideViewImagingRoutinePerPlant(int plant_id, double pot_y_wrt_rover = 0., int rover_pos = 1, int skip_hyperspectral = 1);
 
 	void sideViewProbingRoutinePerPlant(int plant_id, double pot_y_wrt_rover, int rover_pos);
 
-	void topViewImagingRoutinePerPlant(int rover_position, int x, int y, int plant_id, cv::Vec3f & pot_xyz);
+	void topViewImagingRoutinePerPlant(int rover_position, int x, int y, int plant_id, cv::Vec3f & pot_xyz, int skip_hyperspectral = 1);
 
 	void topViewProbingRoutinePerPlant(int rover_position, int plant_id, cv::Vec3f & pot_xyz);
 
-	void collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pose, int plant_id, int image_id, int rover_pos);
+	void collectSideViewImageDataGivenPose(Eigen::Matrix4d & cam_pose, int plant_id, int image_id, int rover_pos, int skip_hyperspectral = 1);
 
 	void preprocessTOFCloud(PointCloudT::Ptr cloud, Eigen::Vector4f & box_min, Eigen::Vector4f & box_max);
 
@@ -720,5 +739,9 @@ struct VisionArmCombo
 	int saveProbingData(PointT & probe_point, pcl::Normal & normal, int probe_id, int plant_id);
 
 	int saveTaskProgressToFile();
+
+	void moveArmToHome();
+
+	void close();
 };
 #endif

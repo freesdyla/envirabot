@@ -87,6 +87,8 @@ struct HyperspectralCamera {
 
 	void stop();
 
+	void close();
+
 	static int onDataCallback(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_64 _nFrameNumber, void* _pContext);
 
 	static int onDataCallbackLastFrame(SI_U8* _pBuffer, SI_64 _nFrameSize, SI_64 _nFrameNumber, void* _pContext);

@@ -14,9 +14,9 @@ laser_scan_frequency_: 2000.0
 scan_speed_: 0.1
 scan_acceleration_: 0.2
 move_arm_speed_: 0.1
-move_arm_acceleration_: 0.05
-move_joint_speed_: 0.5
-move_joint_acceleration_: 0.2
+move_arm_acceleration_: 0.1
+move_joint_speed_: 0.8
+move_joint_acceleration_: 0.3
 seed_resolution_: 0.05
 spatial_importance_: 0.5
 normal_importance_: 1.0
@@ -26,7 +26,7 @@ ror_radius_: 0.005
 ror_num_: 10
 hyperspectral_imaging_dist_: 0.265
 max_samples_per_leaf_: 2
-max_samples_per_plant_: 2
+max_samples_per_plant_: 1
 probe_patch_max_curvature_: 0.01
 probing_patch_rmse_: 0.1
 hyperscan_slice_thickness_: 0.01
@@ -38,7 +38,7 @@ enable_rgb_ : 1
 enable_hyperspectral_: 1
 enable_scanner_: 1
 enable_arm_: 1
-enable_probing_: 1
+enable_probing_: 0
 remap_pot_position_: 0
 only_do_probing_ : 0
 view_time_: 50
@@ -46,8 +46,8 @@ multi_work_position_: 1
 hyperspectral_topview_: 1
 leaf_tracing_hyperspectral_: 1
 enable_imaging_: 1
-upload_data_: 0
-start_time_: "11:20"
-scheduled_minutes_per_chamber_: 50
+start_time_: "5:40"
+scheduled_minutes_per_chamber_: 20
 sideview_camera_x_pos_ : 0.77
-close_door_when_rover_inside_: 0
+close_door_when_rover_inside_: 1
+charing_time_2_work_time_ratio_: 1.25

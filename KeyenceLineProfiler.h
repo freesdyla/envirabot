@@ -70,6 +70,8 @@ struct KeyenceLineProfiler
 
 	KeyenceLineProfiler();
 
+	~KeyenceLineProfiler();
+
 	void init();
 
 	void finalize();

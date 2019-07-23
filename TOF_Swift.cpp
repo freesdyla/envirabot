@@ -2,6 +2,8 @@
 
 TOF_Swift::TOF_Swift()
 {
+	streaming_.store(false);
+
 	cloud_.reset(new PointCloudT);
 	PointT p; p.x = p.y = p.z = 0;
 	cloud_->push_back(p);
@@ -13,24 +15,13 @@ TOF_Swift::TOF_Swift()
 	intensity_img_16u_.create(img_height_, img_width_, CV_16UC1);
 	intensity_img_.create(img_height_, img_width_, CV_8UC1);
 
-	// the first connection fails sometimes
-	for (int i = 0; i < 10; i++)
-	{
-		if (odos::Result::Success == cam_.open(ip_address))
-			break;
-
-		if(i == 9)
-		{
-			Utilities::to_log_file("Fail to connect to odos");
-			exit(0);
-		}
-
-		Sleep(500);
-	}
-		
-	getAsImage(cam_, xMultiplier, yMultiplier, zMultiplier); //getImage() function does not work after firmware update
-	
+#if 0 
+	//test if camera can start
 	start();
+	std::cout << "tof started\n";
+	stop();
+	std::cout << "tof stopped\n";
+#endif
 }
 
 TOF_Swift::~TOF_Swift()
@@ -41,9 +32,31 @@ TOF_Swift::~TOF_Swift()
 	delete[] zMultiplier;
 }
 
-int TOF_Swift::start()
+void TOF_Swift::start()
 {
+	if (streaming_.load()) stop();
+
+	// the first connection fails sometimes
+	for (int i = 0; i < 10; i++)
+	{
+		if (odos::Result::Success == cam_.open(ip_address))
+			break;
+
+		if (i == 9)
+		{
+			Utilities::to_log_file("Fail to connect to odos");
+			exit(0);
+		}
+
+		Sleep(500);
+	}
+
+	getAsImage(cam_, xMultiplier, yMultiplier, zMultiplier); //getImage() function does not work after firmware update
 	thread_vec_.push_back(std::thread(&TOF_Swift::startStreaming, this));
+
+	// wait for streaming start
+	while (!streaming_.load())
+		Sleep(1000);
 }
 
 void TOF_Swift::getAsImage(odos::Camera& camera, const float*& xMultiplier, const float*& yMultiplier, const float*& zMultiplier)
@@ -184,25 +197,27 @@ void TOF_Swift::startStreaming()
 
 	streaming_ = true;
 
-	while (streaming_)
+	last_frame_tick_count_.store(cv::getTickCount());
+
+	while (streaming_.load())
 	{
 		odos::IImage* odos_image_ = nullptr;
 
 		// Wait for images with odos::Camera::waitForImage, if timeout is 1s, it will time out
-		if ((res = cam_.waitForImage(&odos_image_, std::chrono::seconds(15))) != odos::Result::Success)
+		if ((res = cam_.waitForImage(&odos_image_, std::chrono::seconds(wait_image_timeout_sec_))) != odos::Result::Success)
 		{
+#if 1
 			if (res == odos::Result::Timeout)
 			{
 				Utilities::to_log_file("wait for odos image time out");
-				exit(0);
+				//exit(0);
 			}
 			else
 			{
 				Utilities::to_log_file("wait for odos image fail");
-				exit(0);
+				//exit(0);
 			}
-
-			break;
+#endif
 		}
 		else 
 		{
@@ -294,6 +309,8 @@ void TOF_Swift::startStreaming()
 
 				update_mutex_.unlock();
 			}
+
+			last_frame_tick_count_.store(cv::getTickCount());
 		}
 	}
 
@@ -307,11 +324,14 @@ void TOF_Swift::startStreaming()
 
 int TOF_Swift::stop()
 {
-	streaming_ = false;
+	streaming_.store(false);
 
-	thread_vec_[0].join();
+	if(thread_vec_.size() > 0)
+		thread_vec_[0].join();
 
 	thread_vec_.clear();
+
+	cam_.close();
 
 	return 0;
 }
@@ -417,6 +437,7 @@ void TOF_Swift::setupStreaming()
 
 void TOF_Swift::getPointCloud(PointCloudT::Ptr cloud)
 {
+	waitTillLastestFrameArrive();
 	update_mutex_.lock();
 	*cloud = *cloud_;
 	update_mutex_.unlock();
@@ -425,6 +446,7 @@ void TOF_Swift::getPointCloud(PointCloudT::Ptr cloud)
 cv::Mat TOF_Swift::getIR()
 {
 	cv::Mat copy;
+	waitTillLastestFrameArrive();
 	update_mutex_.lock();
 	copy = intensity_img_.clone();
 	update_mutex_.unlock();
@@ -434,6 +456,7 @@ cv::Mat TOF_Swift::getIR()
 cv::Mat TOF_Swift::getIR16U()
 {
 	cv::Mat copy;
+	waitTillLastestFrameArrive();
 	update_mutex_.lock();
 	copy = intensity_img_16u_.clone();
 	update_mutex_.unlock();
@@ -443,8 +466,35 @@ cv::Mat TOF_Swift::getIR16U()
 cv::Mat TOF_Swift::getDepth16U()
 {
 	cv::Mat copy;
+	waitTillLastestFrameArrive();
 	update_mutex_.lock();
 	copy = range_raw_16u_.clone();
 	update_mutex_.unlock();
 	return copy;
+}
+
+void TOF_Swift::waitTillLastestFrameArrive()
+{
+	int retry_cnt = 0;
+
+	while (!streaming_.load()) { Sleep(2000); }
+
+	while (1)
+	{
+		double since_last_frame = ((double)cv::getTickCount() - last_frame_tick_count_.load()) / cv::getTickFrequency();
+
+		if (since_last_frame < (double)wait_image_timeout_sec_)
+			return;
+		else
+		{
+			if (++retry_cnt > 5)
+			{
+				Utilities::to_log_file("tof final restart fail");
+				exit(0);
+			}
+
+			stop();
+			start();
+		}
+	}
 }

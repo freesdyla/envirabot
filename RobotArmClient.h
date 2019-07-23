@@ -125,6 +125,8 @@ struct RobotArmClient
 
 	double waitTillRotationSpeedDropDownTo(double target_speed);
 
+	double waitTillTranslationSpeedDropDownTo(double target_speed);
+
 	int waitTillHandReachDstConfig(double* dst_joint_config);
 
 	double EuclideanDistance(double* pose6_1, double* pose6_2);

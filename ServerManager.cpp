@@ -17,7 +17,6 @@ ServerManager::~ServerManager()
 {
 	if (sftp_session != NULL && session != NULL)
 	{
-
 		libssh2_sftp_shutdown(sftp_session);
 
 		libssh2_session_disconnect(session, "Shut down ssh session");
@@ -133,6 +132,10 @@ int ServerManager::uploadDirectory(std::string folder_name, std::string experime
 
 	std::string absolute_path = data_root_dir_  + chamber_name + "\\" + folder_name;
 
+	makeServerDirectory("experiment_data_");
+
+	experiment_name = "experiment_data_/" + experiment_name;
+
 	int result = makeServerDirectory(experiment_name);
 
 	//std::cout << "make server dir " << result << std::endl;
@@ -233,13 +236,19 @@ int ServerManager::createNewThreadToUploadDirectory(std::string folder_name, std
 	return upload_thread.get();
 }
 
-int ServerManager::deleteOutdatedData() {
+int ServerManager::deleteOutdatedData() 
+{
+	for (auto & p : boost::filesystem::recursive_directory_iterator(data_root_dir_)) 
+	{
+		boost::filesystem::path path{ "C:\\" };
+		boost::filesystem::space_info s = space(path);
+		const double free_GB = ((double)s.free) / std::pow(2., 30.);
+		//std::cout << free_GB << std::endl;
+		if (free_GB > 90.)
+			return 0;
 
-	
-	for (auto & p : boost::filesystem::recursive_directory_iterator(data_root_dir_)) {
-
-		if (boost::filesystem::is_regular_file(p)) {
-
+		if (boost::filesystem::is_regular_file(p)) 
+		{
 			WIN32_FILE_ATTRIBUTE_DATA file_info;
 
 			SYSTEMTIME st;
@@ -264,12 +273,13 @@ int ServerManager::deleteOutdatedData() {
 
 			FileTimeToSystemTime(&file_info.ftCreationTime, &st);
 
-			std::cout << time_difference_s <<" - " << time_difference_s /60.<<" - "<<p.path().string()<<"\n";
+			double time_diff_day = ((double)time_difference_s) / (3600.*24.);
 
-			if (time_difference_s > 60) {
+			//std::cout << time_diff_day <<" - " << p.path().string()<<"\n";
 
+			if (time_diff_day > 2.)
+			{
 				DeleteFile(p.path().wstring().c_str());
-
 			}
 		}
 	}
