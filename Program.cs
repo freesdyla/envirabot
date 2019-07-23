@@ -12,6 +12,7 @@ using Flir.Atlas.Live.Discovery;
 using Flir.Atlas.Image;
 using Flir.Atlas.Image.Palettes;
 using System.Threading;
+using System.Diagnostics;
 
 namespace FlirThermoCamServer
 {
@@ -20,16 +21,19 @@ namespace FlirThermoCamServer
         static void Main(string[] args)
         {
             ThermoCam tc = new ThermoCam();
-            tc.init();
+
+            tc.start();
+
+            tc.snapShot(55);
 
             //for (int i = 0; i < 100; i++)
-            {
-                
-              //  Console.WriteLine("Enter focus distance\n");
-               // string dist = Console.ReadLine();
-               // int numVal = Int32.Parse(dist);
-                tc.snapShot(50);
-            }
+            //{
+            //  Console.WriteLine("Enter focus distance\n");
+            // string dist = Console.ReadLine();
+            // int numVal = Int32.Parse(dist);
+            //System.Threading.Thread.Sleep(1000);
+            //tc.snapShot(i);
+            // }
 
             NamedPipeServerStream namedPipeServer = new NamedPipeServerStream("thermo-pipe");
 
@@ -45,18 +49,16 @@ namespace FlirThermoCamServer
                 {
                     int byteFromClient = namedPipeServer.ReadByte();
 
-                   // if (byteFromClient != -1)
-                     //   Console.WriteLine(byteFromClient);
-
-                    if (byteFromClient > 0) // fire camera
+                    if (byteFromClient > 0)
                     {
-                        tc.snapShot(byteFromClient);
-                       // Console.WriteLine("snap shot");
+                        int result = tc.snapShot(byteFromClient);
 
                         // send confirmation to client when image saved
-                        namedPipeServer.WriteByte(1);
+                        if(result == 0) namedPipeServer.WriteByte(1);
+                        else namedPipeServer.WriteByte(2);
                     }
-
+                    else
+                        namedPipeServer.WriteByte(2);
                 }
                 catch(Exception)
                 {
@@ -77,7 +79,40 @@ namespace FlirThermoCamServer
         public ThermalCamera _camera;
         public Discovery _discovery;
 
-        public int init()
+        public int resetThermalCamNetworkAdapter()
+        {
+            //8C-AE-4C-F4-43-83 mac address
+            System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo("netsh.exe");
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+            psi.UseShellExecute = true;
+            psi.Verb = "runas";
+            psi.Arguments = "interface set interface \"\"\"Ethernet 7\"\"\" disable";
+            System.Diagnostics.Process p = new System.Diagnostics.Process();
+            p.StartInfo = psi;
+            p.Start();
+
+            //System.Threading.Thread.Sleep(1000);
+
+            psi.Arguments = "interface set interface \"\"\"Ethernet 7\"\"\" enable";
+            System.Diagnostics.Process p1 = new System.Diagnostics.Process();
+            p1.StartInfo = psi;
+            p1.Start();
+
+            string path = @"C:\Users\lietang123\Documents\RoAdFiles\LineProfilerRobotArmTest\LineProfilerRobotArmTest\log_file.txt";
+
+            using (StreamWriter sw = File.AppendText(path))
+            {
+                string msg = DateTime.Now.ToString() + ": lost thermal cam connection";
+                sw.WriteLine(msg);
+            }
+
+            //System.Threading.Thread.Sleep(10000);
+            return 0;
+        }
+
+
+
+        public int start()
         {
             _discovery = new Discovery();
             _camera = new ThermalCamera();
@@ -86,7 +121,18 @@ namespace FlirThermoCamServer
 
             _discovery.Start(Interface.Gigabit);
 
-            while (!_camera.ConnectionStatus.Equals(ConnectionStatus.Connected)) ;
+            int timeout_cnt = 0;
+
+            while (!_camera.ConnectionStatus.Equals(ConnectionStatus.Connected))
+            {
+                System.Threading.Thread.Sleep(1000);
+
+                if(++timeout_cnt > 60)
+                {
+                    Console.WriteLine("camera connection timeout");
+                    return -1;
+                }
+            };
 
             Console.WriteLine("camera connected");
 
@@ -97,6 +143,11 @@ namespace FlirThermoCamServer
             return 0;
         }
 
+        public void stop()
+        {
+            _camera.Disconnect();
+        }
+
         public void _discovery_DeviceFound(Object sender, CameraDeviceInfoEventArgs e)
         {
             Console.WriteLine("found device");
@@ -105,32 +156,37 @@ namespace FlirThermoCamServer
             _camera.Connect(e.CameraDevice);
         }
 
-        public void snapShot(int focus_dist_cm)
+        public int snapShot(int focus_dist_cm)
         {
+
+            double focus_dist;
+            bool set_focus_success = false;
+
+            for (int i = 0; i < 5 && !set_focus_success; i++)
+            {
+                try
+                {
+                    //_camera.RemoteControl.Focus.Mode(FocusMode.Auto);
+                    focus_dist = Math.Max(Math.Min((double)focus_dist_cm / 100.0, 2.0), 0.1); _camera.RemoteControl.Focus.SetDistance(focus_dist);
+                    set_focus_success = true;
+                    System.Threading.Thread.Sleep(500);    //important for the motor to finish
+                }
+                catch (Exception exception)
+                {
+                    Console.WriteLine(exception.ToString());
+                    stop();
+                    resetThermalCamNetworkAdapter();
+                    start();
+                    //if (start() != 0) return -1;
+                }
+            }
+
+            Console.WriteLine(focus_dist_cm + " cm");
+
+            _camera.GetImage().EnterLock();
+
             try
             {
-                double focus_dist;
-                bool set_focus_success = false;
-                for (int i = 0; i < 5 && !set_focus_success; i++)
-                {
-                    try
-                    {
-                        //_camera.RemoteControl.Focus.Mode(FocusMode.Auto);
-
-                        focus_dist = Math.Max(Math.Min((double)focus_dist_cm / 100.0, 2.0), 0.1); _camera.RemoteControl.Focus.SetDistance(focus_dist);
-                        set_focus_success = true;
-                        System.Threading.Thread.Sleep(500);    //important for the motor to finish
-                    }
-                    catch (Exception exception)
-                    {
-                        Console.WriteLine(exception.ToString());
-                    }
-                }
-
-                Console.WriteLine(focus_dist_cm + " cm");
-
-                _camera.GetImage().EnterLock();
-
                 String path = "c:/users/lietang123/documents/roadfiles/flirthermocamserver/flirthermocamserver/bin/release/thermo.jpg";
 
                 ThermalImage img = (ThermalImage)_camera.GetImage();
@@ -150,11 +206,20 @@ namespace FlirThermoCamServer
             catch (Exception exception)
             {
                 Console.WriteLine(exception.ToString());
+                stop();
+                resetThermalCamNetworkAdapter();
+                start();
+                _camera.GetImage().ExitLock();
+                return -1;
             }
             finally
             {
-                _camera.GetImage().ExitLock();
+                
             }
+
+            _camera.GetImage().ExitLock();
+
+            return 0;
         }
 
     }
