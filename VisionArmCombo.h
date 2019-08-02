@@ -139,9 +139,6 @@
 #define IMAGING 0
 #define PROBING 1
 
-#define TOP_VIEW 0
-#define SIDE_VIEW 1
-
 //type of sensors
 #define TOF				1 << 0
 #define THERMO			1 << 1
@@ -400,7 +397,8 @@ struct VisionArmCombo
 	const int num_chambers_ = 8;
 
 	// chamber pots configuration
-	cv::Vec<float, 8> pot_diameter_vec_;
+	//cv::Vec<float, 8> pot_diameter_vec_;
+	cv::Mat pot_diameters;
 
 	std::vector<cv::Mat> pot_position_vec_;
 
@@ -437,8 +435,6 @@ struct VisionArmCombo
 	cv::Vec3f plant_center_;
 	Eigen::Vector3f min_point_AABB_, max_point_AABB_;
 
-	int only_do_probing_ = 0;
-
 	int cur_chamber_id_ = 1;
 
 	int cur_plant_id_ = 1;
@@ -452,8 +448,6 @@ struct VisionArmCombo
 	ServerManager data_server_manager_;
 
 	bool remap_pot_position_ = true;
-
-	bool multi_work_position_ = true;
 
 	cv::Mat pot_processed_map_;
 	cv::Mat pot_sensor_map_; // a mask to decide which plants to measure
@@ -475,7 +469,7 @@ struct VisionArmCombo
 	bool enable_rgb_ = true;
 	bool enable_hyperspectral_ = true;
 	bool enable_scanner_ = true;
-	bool leaf_tracing_hyperspectral_ = true;
+	bool leaf_tracing_hyperspectral_ = false;
 	bool enable_arm_ = true;
 
 	PointCloudT::Ptr chamber_occupancy_cloud_;
@@ -486,8 +480,6 @@ struct VisionArmCombo
 	PointCloudT::Ptr probe_points_;
 
 	int max_samples_per_plant_ = 2;
-
-	bool hyperspectral_topview_ = true; 
 
 	bool enable_imaging_ = true;
 
@@ -530,6 +522,10 @@ struct VisionArmCombo
 	int close_door_when_rover_inside_ = 1;
 
 	int sensors_to_use_ = 0;
+
+	int sensor_calibration_ = 0;
+
+	int recreate_path_planner_ = 0;
 
 	VisionArmCombo();
 
@@ -684,7 +680,7 @@ struct VisionArmCombo
 
 	int saveTOFImageData(int plant_id, Eigen::Matrix4d & camera_pose, cv::Mat & ir_img_16u, cv::Mat & depth_img_16u, int image_id = 0);
 
-	bool checkHandPoseReachable(Eigen::Matrix4d & hand_pose, ArmConfig & target_config, int option = CHECK_PATH);
+	bool checkHandPoseReachable(Eigen::Matrix4d & hand_pose, ArmConfig & target_config, int option = CHECK_PATH, int data_collection_mode = 0);
 
 	bool rotateLaserScanPot(cv::Vec3f& pot_xyz, double angular_fov, PointCloudT::Ptr cloud, std::string filename, int rover_position);
 
@@ -743,5 +739,7 @@ struct VisionArmCombo
 	void moveArmToHome();
 
 	void close();
+
+	bool collectFluorometerData(PointT & probe_point, pcl::Normal & normal, int plant_id, int data_collection_mode = 0);
 };
 #endif

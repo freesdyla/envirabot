@@ -36,6 +36,9 @@
 #include <boost/serialization/version.hpp>
 #include <fstream>
 
+#define TOP_VIEW 0
+#define SIDE_VIEW 1
+
 struct PathPlanner
 {
 	typedef pcl::PointXYZRGB PointT;
@@ -52,7 +55,7 @@ struct PathPlanner
 	};
 
 	// ; use setS, no parallel edge
-	typedef boost::adjacency_list < boost::hash_setS, boost::vecS, boost::undirectedS, 
+	typedef boost::adjacency_list < boost::setS, boost::vecS, boost::undirectedS, 
 									boost::no_property,	PRMCEEdge> prmcegraph_t;
 	typedef prmcegraph_t::vertex_descriptor prmcevertex_descriptor;
 	typedef prmcegraph_t::edge_descriptor prmceedge_descriptor;
@@ -62,7 +65,6 @@ struct PathPlanner
 	{
 		int isOccupiedCounter;
 		int sweptVolumneCounter;
-		//std::vector<prmceedge_descriptor> edges;
 		std::vector<std::pair<int, int>> edges;
 
 		friend class boost::serialization::access;
@@ -178,9 +180,7 @@ struct PathPlanner
 		Eigen::Vector3f C;	// center
 		Eigen::Matrix3f A;	// right hand orthonormal axes, rotation matrix
 		Eigen::Vector3f a;	//extents, positive
-	};
-
-	int num_nodes_;
+	};	
 
 	float* random_nodes_buffer_ = NULL;
 
@@ -189,9 +189,21 @@ struct PathPlanner
 
 	float* start_end_ref_points_ = NULL;
 
-	flann::Index<flann::L2<float>>* referen_point_index_; // first half for probing
+	flann::Index<flann::L2<float>>* referen_point_index_;
 
-	
+	prmcegraph_t prmcegraph_;
+
+	int prmce_round_counter_;
+
+	int prmce_swept_volume_counter_;
+
+	bool path_planner_ready_;
+
+	// 3d occupancy grid, unit: cm
+	int grid_width_, grid_depth_, grid_height_, cell_size_, num_cells_;
+	int grid_width_cm_, grid_depth_cm_, grid_height_cm_;
+	int grid_offset_x_, grid_offset_y_, grid_offset_z_;	// UR10 base frame, local to world translation
+	std::vector<Cell> grid_;
 
 	// DH parameters for UR10
 	float a_[6];
@@ -203,9 +215,7 @@ struct PathPlanner
 
 	std::vector<PointT> arm_joint_points_;
 
-	std::vector<std::vector<PointT>> collision_vec_;
-
-	prmcegraph_t prmcegraph_;
+	int num_nodes_;
 
 	int num_ref_points_;
 
@@ -213,17 +223,7 @@ struct PathPlanner
 
 	int num_joints_;
 
-	std::vector<int> connected_component_;
-
 	std::vector<prmcevertex_descriptor> shortest_path_index_vec_;
-
-	// 3d occupancy grid, unit: cm
-	int grid_width_, grid_depth_, grid_height_, cell_size_, num_cells_;
-	int grid_width_cm_, grid_depth_cm_, grid_height_cm_;
-	int grid_offset_x_, grid_offset_y_, grid_offset_z_;	// UR10 base frame, local to world translation
-	std::vector<Cell> grid_;
-
-	float arm_radius_lookup[8] = { 0.08f, 0.08f, 0.06f, 0.06f, 0.045f, 0.045f, 0.045f, 0.045f };
 
 	// UR10 joint range
 	double joint_range_[12] = { -270./180.*M_PI, -90./180.*M_PI,	// base mir rover
@@ -244,18 +244,16 @@ struct PathPlanner
 										-250. / 180.f*M_PI, -90. / 180.f*M_PI // wrist 3, topview
 										};
 
-	int prmce_round_counter_;
 
-	int prmce_swept_volume_counter_;
 
 	bool prmce_collision_found_;	// used for collision check via swept volume
-
-	bool path_planner_ready_;
 
 	const int start_check_obb_idx_ = 9;
 	const int end_check_obb_idx_ = 12;
 
-	float tcp_x_limit_ = -0.3f;
+	float arm_radius_lookup[8] = { 0.08f, 0.08f, 0.06f, 0.06f, 0.045f, 0.045f, 0.045f, 0.045f };
+
+	float tcp_x_limit_ = 0.3f;
 
 	double ik_sols_[8 * 6];
 
@@ -274,6 +272,8 @@ struct PathPlanner
 	double probe_position[3] = { 0.0215, 0.1275, -0.3}; // in robot hand pose
 	double cylinder_back_position[3] = { 0.025, 0.12, -0.31 }; // in robot hand pose
 
+	std::map<int, float> work_pos_offset_map_ = { { 0, 0.5f },{ 2, -0.5f } };
+
 	PathPlanner();
 
 	~PathPlanner();
@@ -283,7 +283,7 @@ struct PathPlanner
 	void forwardKinematicsUR10(float* joint_array6);
 	void forwardKinematicsUR10ROS(float* joint_array6);
 
-	int initGrid(int width, int depth, int height, int cell_size, int offset_x, int offset_y, int offset_z);
+	int initGrid(int depth, int width,  int height, int cell_size, int offset_x, int offset_y, int offset_z);
 
 	void blockCells(PointT & point_in_arm_base);
 
@@ -306,7 +306,7 @@ struct PathPlanner
 
 	int voxelizeOBB(OBB & obb, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume);
 
-	int voxelizeArmConfig(std::vector<OBB> & arm_obbs, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume, bool shorten_probe);
+	int voxelizeArmConfig(std::vector<OBB> & arm_obbs, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume);
 
 	void sweptVolume(float* joint_pos1, float* joint_pos2, std::vector<prmceedge_descriptor> & edge_vec);
 
@@ -335,7 +335,11 @@ struct PathPlanner
 
 	void smoothPath();
 
-	bool collisionCheckForSingleConfig(float* config, bool shorten_probe = false);
+	bool collisionCheckForSingleConfig(float* config);
+
+	void addChamberPointCloudToOccupancyGrid(int rover_position, int data_collection_mode);
+
+	void createBoxCloud(Eigen::Vector3f min, Eigen::Vector3f max, float resolution, PointCloudT::Ptr cloud);
 };
 
 #endif

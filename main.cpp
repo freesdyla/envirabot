@@ -47,12 +47,4 @@ int main(int argc, char**argv)
 		}
 	}
 #endif
-
-	//vac.calibrateToolCenterPoint(4, PAM);
-	//vac.calibrateThermalCamera(); vac.ThermalHandEyeCalibration();
-	//vac.calibrateRGBCamera(30); vac.RGBHandEyeCalibration();
-	//vac.calibrateIRCamera(30); vac.IRHandEyeCalibration();
-
-	//vac.acquireLinesOnPlanes();
-	//vac.readCloudAndPoseFromFile(); vac.lineScannerHandEyeCalibration(6); std::getchar();  return 0;
 }

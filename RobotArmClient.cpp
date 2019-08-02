@@ -349,7 +349,7 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 	setDstCartesianInfo(dst_pose6);
 
 	int timeout_cnt = 0;
-	const int limit = 1000 * 20;
+	const int limit = 1000 * 60;
 
 	while (true)
 	{
@@ -360,7 +360,8 @@ int RobotArmClient::waitTillHandReachDstPose(double* dst_pose6)
 
 		if (++timeout_cnt > limit)
 		{
-			Utilities::to_log_file("waitTillHandReachDstPose timeout");
+			std::string final_distance = std::to_string(distanceToDst_.load());
+			Utilities::to_log_file("waitTillHandReachDstPose timeout: "+final_distance);
 			return -1;
 		}
 	}

@@ -1,20 +1,20 @@
 %YAML 1.0
 ---
 inside_or_outside_chamber_: outside
-rover_run_index_in_chamber_: 2
+rover_run_index_in_chamber_: 3
 rover_pos_in_chamber_: 1
-cur_chamber_id_: 2
-data_collection_mode_: 1
+cur_chamber_id_: 1
+data_collection_mode_: 0
 imaging_or_probing_: 1
-data_collection_done_: 0
+data_collection_done_: 1
 plant_imaging_stage_: 3
-data_folder_: "Enviratron_Data\\chamber_2\\c2_2019_7_23_0_2_8_919\\"
+data_folder_: "Enviratron_Data\\chamber_1\\c1_2019_8_1_15_10_3_745\\"
 experiment_id_: E41
 pot_processed_map_: !!opencv-matrix
    rows: 2
    cols: 7
    dt: u
-   data: [ 0, 0, 3, 3, 1, 0, 0, 0, 0, 3, 3, 0, 0, 0 ]
+   data: [ 0, 0, 3, 3, 3, 0, 0, 0, 0, 3, 3, 3, 0, 0 ]
 pot_sensor_map_: !!opencv-matrix
    rows: 2
    cols: 7

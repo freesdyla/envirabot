@@ -19,6 +19,8 @@ struct MirClient
 	CURLcode ret;
 	CURL *hnd;
 
+	double x_;
+
 	MirClient()
 	{
 		slist_get = NULL;
@@ -310,6 +312,13 @@ struct MirClient
 		return (int)ret;
 	};
 
+	double getRoverX()
+	{
+		std::string mission_text;
+		getStatus(mission_text);
+		return x_;
+	}
+
 	int getStatus(std::string & mission_text)
 	{
 		std::unique_ptr<std::string> httpData(new std::string());
@@ -328,9 +337,7 @@ struct MirClient
 		{
 		//	std::cout << jsonData.toStyledString() << std::endl;
 			mission_text = jsonData["mission_text"].asString();
-			//std::string x_str = jsonData["Position"]["x"].asString();
-			//x = std::stod(x_str);
-		//	std::cout<<jsonData["mission_text"].asString();
+			x_ = jsonData["position"]["x"].asDouble();
 		}
 
 		return (int)ret;

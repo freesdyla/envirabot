@@ -38,16 +38,14 @@ enable_rgb_ : 1
 enable_hyperspectral_: 1
 enable_scanner_: 1
 enable_arm_: 1
-enable_probing_: 0
-remap_pot_position_: 0
-only_do_probing_ : 0
+enable_probing_: 1
+remap_pot_position_: 1
 view_time_: 50
-multi_work_position_: 1
-hyperspectral_topview_: 1
-leaf_tracing_hyperspectral_: 1
 enable_imaging_: 1
-start_time_: "5:40"
+start_time_: "14:58"
 scheduled_minutes_per_chamber_: 20
 sideview_camera_x_pos_ : 0.77
 close_door_when_rover_inside_: 1
 charing_time_2_work_time_ratio_: 1.25
+sensor_calibration_: 0
+recreate_path_planner_: 0

@@ -5,8 +5,6 @@ PathPlanner::PathPlanner() :
 	ref_p_nn_(10),
 	prmcegraph_(num_nodes_),
 	num_joints_(6),
-	//rand_gen_(time(0))
-	//rand_gen_(1),
 	num_ref_points_(9),
 	prmce_round_counter_(1),
 	prmce_swept_volume_counter_(1),
@@ -122,7 +120,7 @@ void PathPlanner::forwardKinematicsUR10ROS(float* joint_array6)
 }
 
 // reset the grid, origin of the 3d grid is at bottom left corner
-int PathPlanner::initGrid(int width, int depth, int height, int cell_size, int offset_x, int offset_y, int offset_z)
+int PathPlanner::initGrid(int depth, int width, int height, int cell_size, int offset_x, int offset_y, int offset_z)
 {
 	if (width % cell_size != 0 || depth % cell_size != 0 || height % cell_size != 0 ||
 		offset_x % cell_size != 0 || offset_y % cell_size != 0 || offset_z % cell_size != 0)
@@ -139,9 +137,10 @@ int PathPlanner::initGrid(int width, int depth, int height, int cell_size, int o
 	grid_offset_x_ = offset_x; grid_offset_y_ = offset_y; grid_offset_z_ = offset_z;
 	num_cells_ = grid_width_*grid_depth_*grid_height_;
 
-	grid_.clear(); grid_.resize(num_cells_);
+	grid_.clear(); 
+	grid_.resize(num_cells_);
 
-	for (auto cell : grid_)
+	for (auto & cell : grid_)
 	{
 		cell.isOccupiedCounter = 0;
 		cell.sweptVolumneCounter = 0;
@@ -156,14 +155,9 @@ int PathPlanner::initGrid(int width, int depth, int height, int cell_size, int o
 void PathPlanner::blockCells(PointT & point_in_arm_base)
 {
 		// convert to cm and floor
-#if 0
-		int x = ((int)(point_in_arm_base.x*100.f) - grid_offset_x_) / cell_size_;
-		int y = ((int)(point_in_arm_base.y*100.f) - grid_offset_y_) / cell_size_;
-		int z = ((int)(point_in_arm_base.z*100.f) - grid_offset_z_) / cell_size_;
-#endif
-		int x = ((int)(-point_in_arm_base.x*100.f) + grid_offset_x_) / cell_size_;
-		int y = ((int)(-point_in_arm_base.y*100.f) + grid_offset_y_) / cell_size_;
-		int z = ((int)(point_in_arm_base.z*100.f) - grid_offset_z_) / cell_size_;
+		int x = ((int)(point_in_arm_base.x*100.f) + grid_offset_x_) / cell_size_;
+		int y = ((int)(point_in_arm_base.y*100.f) + grid_offset_y_) / cell_size_;
+		int z = ((int)(point_in_arm_base.z*100.f) + grid_offset_z_) / cell_size_;
 
 		// check out of boundary
 		if (x >= grid_width_ || x<0 || y >= grid_depth_ || y<0 || z >= grid_height_ || z<0)
@@ -456,7 +450,7 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 	obb.a << 0.05f, 1.3f,  0.3f;
 	arm_obbs.push_back(obb);
 
-	// 5. window top wall in top-view mode y = -0.3, change it to window top wall in side-view mode, use y = 0.76
+	// 5. window top wall in top-view mode
 	obb.C << -0.3f, 0.f, 1.07f + 0.2f;
 	obb.a << 0.05f, 1.3f,  0.2f;
 	arm_obbs.push_back(obb);
@@ -517,11 +511,11 @@ void PathPlanner::getArmOBBModel(std::vector<RefPoint> ref_points, std::vector<E
 	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.03f, 0.04f, 2, obb);
 	arm_obbs.push_back(obb);
 
-	//16. line light
-	for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 1)*0.07f + rot_mats[5](i, 2)*0.13f;
-	for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.10f + rot_mats[5](i, 1)*0.07f + rot_mats[5](i, 2)*0.13f;
-	constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.11f, 0.07f, 0, obb);
-	arm_obbs.push_back(obb);
+	//16. line light (removed)
+	//for (int i = 0; i < 3; i++) tmp_rp.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.20f + rot_mats[5](i, 1)*0.07f + rot_mats[5](i, 2)*0.13f;
+	//for (int i = 0; i < 3; i++) tmp_rp1.coordinates[i] = ref_points[8].coordinates[i] + rot_mats[5](i, 0)*0.10f + rot_mats[5](i, 1)*0.07f + rot_mats[5](i, 2)*0.13f;
+	//constructOBB(tmp_rp1, tmp_rp, rot_mats[5], 0.11f, 0.07f, 0, obb);
+	//arm_obbs.push_back(obb);
 }
 
 bool PathPlanner::selfCollision(float* joint_pos, bool pre_processing_stage)
@@ -580,24 +574,14 @@ int PathPlanner::voxelizeLine(RefPoint & p1, RefPoint & p2, std::vector<RefPoint
 	
 	if (point_in_robot_base_frame)
 	{
-#if 0
 		// convert to cm and floor, to grid coordinates
-		x1 = ((int)(p1.coordinates[0] * 100.f) - grid_offset_x_) / cell_size_;
-		y1 = ((int)(p1.coordinates[1] * 100.f) - grid_offset_y_) / cell_size_;
-		z1 = ((int)(p1.coordinates[2] * 100.f) - grid_offset_z_) / cell_size_;
+		x1 = ((int)(p1.coordinates[0] * 100.f) + grid_offset_x_) / cell_size_;
+		y1 = ((int)(p1.coordinates[1] * 100.f) + grid_offset_y_) / cell_size_;
+		z1 = ((int)(p1.coordinates[2] * 100.f) + grid_offset_z_) / cell_size_;
 
-		x2 = ((int)(p2.coordinates[0] * 100.f) - grid_offset_x_) / cell_size_;
-		y2 = ((int)(p2.coordinates[1] * 100.f) - grid_offset_y_) / cell_size_;
-		z2 = ((int)(p2.coordinates[2] * 100.f) - grid_offset_z_) / cell_size_;
-#endif
-		// convert to cm and floor, to grid coordinates
-		x1 = ((int)(-p1.coordinates[0] * 100.f) + grid_offset_x_) / cell_size_;
-		y1 = ((int)(-p1.coordinates[1] * 100.f) + grid_offset_y_) / cell_size_;
-		z1 = ((int)(p1.coordinates[2] * 100.f) - grid_offset_z_) / cell_size_;
-
-		x2 = ((int)(-p2.coordinates[0] * 100.f) + grid_offset_x_) / cell_size_;
-		y2 = ((int)(-p2.coordinates[1] * 100.f) + grid_offset_y_) / cell_size_;
-		z2 = ((int)(p2.coordinates[2] * 100.f) - grid_offset_z_) / cell_size_;
+		x2 = ((int)(p2.coordinates[0] * 100.f) + grid_offset_x_) / cell_size_;
+		y2 = ((int)(p2.coordinates[1] * 100.f) + grid_offset_y_) / cell_size_;
+		z2 = ((int)(p2.coordinates[2] * 100.f) + grid_offset_z_) / cell_size_;
 
 	}
 	else
@@ -883,15 +867,9 @@ int PathPlanner::voxelizeOBB(OBB & obb, std::vector<prmceedge_descriptor> & edge
 	{
 		// point on the rectangle, transform back to robot base frame
 		RefPoint rp1;
-#if 0
-		rp1.coordinates[0] = ((rectangle_grid_frame[i].coordinates[0]+0.5f)*cell_size_ + (float)grid_offset_x_)*0.01f;
-		rp1.coordinates[1] = ((rectangle_grid_frame[i].coordinates[1]+0.5f)*cell_size_ + (float)grid_offset_y_)*0.01f;
-		rp1.coordinates[2] = ((rectangle_grid_frame[i].coordinates[2]+0.5f)*cell_size_ + (float)grid_offset_z_)*0.01f;
-#endif
-
-		rp1.coordinates[0] = ((-rectangle_grid_frame[i].coordinates[0])*cell_size_ + (float)grid_offset_x_)*0.01f;
-		rp1.coordinates[1] = ((-rectangle_grid_frame[i].coordinates[1])*cell_size_ + (float)grid_offset_y_)*0.01f;
-		rp1.coordinates[2] = ((rectangle_grid_frame[i].coordinates[2])*cell_size_ + (float)grid_offset_z_)*0.01f;
+		rp1.coordinates[0] = ((rectangle_grid_frame[i].coordinates[0])*cell_size_ - (float)grid_offset_x_)*0.01f;
+		rp1.coordinates[1] = ((rectangle_grid_frame[i].coordinates[1])*cell_size_ - (float)grid_offset_y_)*0.01f;
+		rp1.coordinates[2] = ((rectangle_grid_frame[i].coordinates[2])*cell_size_ - (float)grid_offset_z_)*0.01f;
 
 		// end point in robot base frame
 		RefPoint rp2;
@@ -903,15 +881,9 @@ int PathPlanner::voxelizeOBB(OBB & obb, std::vector<prmceedge_descriptor> & edge
 	return num_voxelized;
 }
 
-int PathPlanner::voxelizeArmConfig(std::vector<OBB> & arm_obbs, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume=false, bool shorten_probe=false)
+int PathPlanner::voxelizeArmConfig(std::vector<OBB> & arm_obbs, std::vector<prmceedge_descriptor> & edge_vec, bool set_swept_volume=false)
 {
 	int num_voxelized = 0;
-
-	//for single config collision detection, probe tip touch leaf
-	if (shorten_probe)
-	{
-		arm_obbs[arm_obbs.size() - 1].a(2) -= 0.04f;
-	}
 
 	for (int i = start_check_obb_idx_; i < arm_obbs.size(); i++)
 		num_voxelized += voxelizeOBB(arm_obbs[i], edge_vec, set_swept_volume);
@@ -1208,11 +1180,10 @@ void PathPlanner::double2float(double* array6_d, float* array6_f)
 	for (int i = 0; i < 6; i++) array6_f[i] = array6_d[i];
 }
 
-
 void PathPlanner::PRMCEPreprocessing()
 {
 	// INITIALIZATION
-	clock_t tic = clock();
+	clock_t tic, toc;
 	random_nodes_buffer_ = new float[num_nodes_ * num_joints_];
 
 	// num_nodes*six joints*three coordinates(x,y,z)
@@ -1220,16 +1191,12 @@ void PathPlanner::PRMCEPreprocessing()
 
 	start_end_ref_points_ = new float[2*3*num_ref_points_];
 
-	// initGrid, z shift sign is different from those of x and y
-	initGrid(128, 264, 200, 4, 0, 132, -80);	//growth chamber
-	//initGrid(304, 128, 200, 4, 152, 0, -80);	//offset, base to grid
-	clock_t toc = clock();
-	printf("Init Grid Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
+	//depth, width, height, cell size, offsets (x,y,z)
+	initGrid(264, 264, 200, 4, 128, 132, 80);	
 
-	tic = clock();
 	// GENERATE RANDOM SELF-COLLISION-FREE CONFIGURATIONS
 	// this random configuration generation is not uniform due to non-independent randon numbers
-	std::mt19937 rand_gen_;
+	std::mt19937 rand_gen_(3);
 	std::vector<std::uniform_real_distribution<float>> distri_vec_;
 	distri_vec_.resize(6);
 	// unit: rad, the joint range is different from the joint limit defined in the header file to reduce useless randon configurations
@@ -1275,7 +1242,7 @@ void PathPlanner::PRMCEPreprocessing()
 	bool overflow = false;
 	int config_idx = 0;
 
-	// for imaging
+	// for top-view imaging
 	config_idx = 0;
 	tmp_hand_pose(0, 0) = 0.;
 	tmp_hand_pose(1, 0) = -1.;
@@ -1303,8 +1270,8 @@ void PathPlanner::PRMCEPreprocessing()
 
 					double2float(ik_sols_ + idx * num_joints_, sol_f);
 
-					if (!selfCollision(sol_f)) {
-
+					if (!selfCollision(sol_f)) 
+					{
 						memcpy(random_nodes_buffer_ + config_idx * num_joints_, sol_f, num_joints_ * sizeof(float));
 
 						config_idx++;
@@ -1319,8 +1286,6 @@ void PathPlanner::PRMCEPreprocessing()
 			}
 		}
 	}
-
-	std::cout << "successful manual configs for imaging: " << config_idx<< "\n";
 
 	//manual poses that can bring the sensor head in and out of the chamber, do not clear config_idx
 	if (config_idx < num_nodes_)
@@ -1353,6 +1318,55 @@ void PathPlanner::PRMCEPreprocessing()
 		++config_idx;
 	}
 
+	std::cout << "successful manual configs for top-view imaging: " << config_idx << "\n";
+
+	tmp_hand_pose.col(0) << 0., 1., 0., 0.;
+	tmp_hand_pose.col(1) << 0., 0., 1., 0.;
+	tmp_hand_pose.col(2) << 1., 0., 0., 0.;
+	tmp_hand_pose.col(3) << 0.7, 0., 0.6, 1.;
+
+	tmp_hand_pose.topLeftCorner<3, 3>() = tmp_hand_pose.topLeftCorner<3, 3>() * Eigen::AngleAxisd(45. / 180.*M_PI, Eigen::Vector3d::UnitX()).matrix();
+
+	for (float z = 0.2f; z <= 0.81f && !overflow; z += 0.1f)  // 7
+	{
+		for (float x = 0.6f; x <= 1.01f && !overflow; x += 0.1f) // 5
+		{
+			for (float y = -0.4f; y <= 0.41f && !overflow; y += 0.1f)	// 9
+			{
+				tmp_hand_pose(0, 3) = x;
+				tmp_hand_pose(1, 3) = y;
+				tmp_hand_pose(2, 3) = z;
+
+				std::vector<int> ik_sols_vec;
+
+				//side-view
+				inverseKinematics(tmp_hand_pose, ik_sols_vec, SIDE_VIEW);
+
+				for (auto idx : ik_sols_vec)
+				{
+					float sol_f[6];
+
+					double2float(ik_sols_ + idx * num_joints_, sol_f);
+
+					if (!selfCollision(sol_f))
+					{
+						memcpy(random_nodes_buffer_ + config_idx * num_joints_, sol_f, num_joints_ * sizeof(float));
+
+						config_idx++;
+
+						if (config_idx >= num_nodes_) {
+
+							overflow = true;
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	std::cout << "successful manual configs for side-view imaging: " << config_idx << "\n";
+
 	toc = clock();
 	printf("random configs Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 
@@ -1360,7 +1374,6 @@ void PathPlanner::PRMCEPreprocessing()
 	tic = clock();
 	// FORWARD KINEMATICS FOR ALL RANDOM CONFIGURATIONS AND COMPUTE REFERENCE POINTS ON THE ARM
 	float* tmp_random_nodes_buffer_ptr = random_nodes_buffer_;
-	std::vector<std::vector<RefPoint>> ref_points_vec;
 	std::vector<std::vector<Eigen::Matrix3f>> rot_mats_vec;
 
 	for (int i = 0; i < num_nodes_; i++)
@@ -1368,12 +1381,12 @@ void PathPlanner::PRMCEPreprocessing()
 		std::vector<RefPoint> ref_points;
 		std::vector<Eigen::Matrix3f> rot_mats;
 		
+		// "ref_points" here include two non-moving points: origin and the base joint 
 		computeReferencePointsOnArm(tmp_random_nodes_buffer_ptr, ref_points, rot_mats);
 
-		ref_points_vec.push_back(ref_points);
 		rot_mats_vec.push_back(rot_mats);
 
-		// skip the first 2 ref points, they dont move
+		// skip the first 2 ref points, they dont move; num_ref_points is for moving points 11-2=9
 		for (int j = 0; j < num_ref_points_; j++) 
 		{
 			float* ptr = reference_points_buffer_ + i * num_ref_points_ * 3 + j * 3;
@@ -1429,16 +1442,27 @@ void PathPlanner::PRMCEPreprocessing()
 			float* node_joint_pos = random_nodes_buffer_ + node_id * num_joints_;
 			float* neighbor_joint_pos = random_nodes_buffer_ + neighbor_id * num_joints_;
 
+			//check base joint positions. Do not connect if they are in different imaging mode (side and top)
+			bool same_imaging_mode = (node_joint_pos[0] < -90. / 180.*M_PI) == (neighbor_joint_pos[0] < -90. / 180.*M_PI);
 			// check edge existance first then self collision check
-			if (!boost::edge(node_id, neighbor_id, prmcegraph_).second && !selfCollisionBetweenTwoConfigs(node_joint_pos, neighbor_joint_pos))
+			if (
+				//!boost::edge(node_id, neighbor_id, prmcegraph_).second 
+				//&& 
+				!selfCollisionBetweenTwoConfigs(node_joint_pos, neighbor_joint_pos)
+				&& same_imaging_mode
+				)
 			{
 				// add edge
-				prmceedge_descriptor e; bool inserted;
-				prmceedge edge(node_id, neighbor_id);
+				prmceedge_descriptor e; 
+				bool inserted;
 
-				boost::tie(e, inserted) = boost::add_edge(edge.first, edge.second, prmcegraph_);
-				prmcegraph_[e].weight = l2squared_workspace_dist;
-				prmcegraph_[e].weight_copy = l2squared_workspace_dist;
+				boost::tie(e, inserted) = boost::add_edge(node_id, neighbor_id, prmcegraph_);
+
+				if (inserted)
+				{
+					prmcegraph_[e].weight = l2squared_workspace_dist;
+					prmcegraph_[e].weight_copy = l2squared_workspace_dist;
+				}
 			}
 		}
 	}
@@ -1446,13 +1470,6 @@ void PathPlanner::PRMCEPreprocessing()
 	// check number of edges
 	//std::pair<prmcegraph_t::edge_iterator, prmcegraph_t::edge_iterator> es = boost::edges(prmcegraph_);
 	//std::copy(es.first, es.second, std::ostream_iterator<prmceedge_descriptor>{std::cout, " "}); std::cout << "\n";
-
-	// check connected components
-	//connected_component_.resize(num_nodes_);
-	//int num_cc = boost::connected_components(prmcegraph_, &connected_component_[0]);
-
-	//for (auto label : connected_component_) std::cout << label << " "; std::cout << "\n";
-	//std::cout << "cc num: " << num_cc << "\n";
 
 	toc = clock();
 	printf("add edges Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
@@ -1487,6 +1504,7 @@ void PathPlanner::PRMCEPreprocessing()
 	printf("map edges Elapsed: %f ms\n", (double)(toc - tic) / CLOCKS_PER_SEC * 1000.);
 }
 
+
 void PathPlanner::addPointCloudToOccupancyGrid(PointCloudT::Ptr cloud)
 {
 	if (!path_planner_ready_)
@@ -1518,8 +1536,9 @@ void PathPlanner::viewOccupancyGrid()
 				if (cell.isOccupiedCounter == prmce_round_counter_)
 				{
 					PointT p;
-					//p.x = ((x+0.5f)*cell_size_ + grid_offset_x_)*0.01f; p.y = ((y+0.5f)*cell_size_ + grid_offset_y_)*0.01f; p.z = ((z+0.5f)*cell_size_ + grid_offset_z_)*0.01f;
-					p.x = (grid_offset_x_ - x*cell_size_ )*0.01f; p.y = (grid_offset_y_ - y*cell_size_)*0.01f; p.z = (z*cell_size_ + grid_offset_z_)*0.01f;
+					p.x = ( x*cell_size_ - grid_offset_x_)*0.01f;
+					p.y = ( y*cell_size_ - grid_offset_y_)*0.01f;
+					p.z = ( z*cell_size_ - grid_offset_z_)*0.01f;
 					p.r = p.g = p.b = 200;
 					cloud->points.push_back(p);
 					count++;
@@ -1592,7 +1611,7 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	// index_ for L2 in Cspace !
 	referen_point_index_->knnSearch(query_mat, indices_mat, dists_mat, num_neighbors, flann::SearchParams(128));
 
-	//for (int i = 0; i < 2 * ref_p_nn_; i++) std::cout << "index: " << *(indices_mat.ptr() + i) << " distance " << *(dists_mat.ptr() + i) << "\n";// << " cc label " << connected_component_[*(indices_mat.ptr() + i)] << "\n";
+	//for (int i = 0; i < 2 * ref_p_nn_; i++) std::cout << "index: " << *(indices_mat.ptr() + i) << " distance " << *(dists_mat.ptr() + i) << "\n";
 
 	int start = -1;
 	int goal = -1;
@@ -1602,9 +1621,12 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	{
 		int neighbor = *(indices_mat.ptr() + i);
 
+		bool same_imaging_mode = (start_joint_pos[0] < -90. / 180.*M_PI) == ( (random_nodes_buffer_ + neighbor*num_joints_)[0] < -90. / 180.*M_PI);
+
 		// collision check on edge
 		if (!selfCollisionBetweenTwoConfigs(start_joint_pos, random_nodes_buffer_ + neighbor*num_joints_)
 			//&& !collisionCheckTwoConfigs(start_joint_pos, random_nodes_buffer_ + neighbor*num_joints_)
+			&& same_imaging_mode
 			)
 		{
 			start = neighbor;
@@ -1626,8 +1648,11 @@ bool PathPlanner::planPath(float* start_joint_pos, float* end_joint_pos, bool sm
 	{
 		int neighbor = *(indices_mat.ptr() + num_neighbors + i);
 
+		bool same_imaging_mode = (start_joint_pos[0] < -90. / 180.*M_PI) == ((random_nodes_buffer_ + neighbor*num_joints_)[0] < -90. / 180.*M_PI);
+
 		if (!selfCollisionBetweenTwoConfigs(end_joint_pos, random_nodes_buffer_ + neighbor*num_joints_)
 			//&& !collisionCheckTwoConfigs(end_joint_pos, random_nodes_buffer_ + neighbor*num_joints_)
+			&& same_imaging_mode
 			)
 		{
 			goal = neighbor;
@@ -1956,8 +1981,7 @@ void PathPlanner::smoothPath()
 	shortest_path_index_vec_.swap(smooth_path);
 }
 
-// does not have a shorten_probe flag because "moveToConfigGetKinectPointCloud" could be used for both imaging and probing
-bool PathPlanner::collisionCheckForSingleConfig(float* config, bool shorten_probe)
+bool PathPlanner::collisionCheckForSingleConfig(float* config)
 {
 	if (selfCollision(config))
 	{
@@ -1977,9 +2001,129 @@ bool PathPlanner::collisionCheckForSingleConfig(float* config, bool shorten_prob
 
 	getArmOBBModel(reference_points, rot_mats, arm_obbs);
 
-	int num_voxelized = voxelizeArmConfig(arm_obbs, edge_vec, true, shorten_probe);
+	int num_voxelized = voxelizeArmConfig(arm_obbs, edge_vec, true);
 
 	prmce_swept_volume_counter_++;
 
 	return prmce_collision_found_;
+}
+
+void PathPlanner::createBoxCloud(Eigen::Vector3f min, Eigen::Vector3f max, float resolution, PointCloudT::Ptr cloud)
+{
+	for (float x = min(0); x <= max(0); x += resolution)
+	{
+		for (float y = min(1); y <= max(1); y += resolution)
+		{
+			for (float z = min(2); z <= max(2); z += resolution)
+			{
+				PointT p;
+				p.x = x;
+				p.y = y;
+				p.z = z;
+				p.r = p.g = p.b = 255;
+				cloud->push_back(p);
+			}
+		}
+	}
+	return;
+}
+
+void PathPlanner::addChamberPointCloudToOccupancyGrid(int rover_position, int data_collection_mode)
+{
+	resetOccupancyGrid();
+
+	PointCloudT::Ptr object_cloud(new PointCloudT);
+
+	if (rover_position != 1)	//left or right position
+	{
+		Eigen::Vector3f min_side_panel, max_side_panel, min_side_window, max_side_window;
+
+		float sign;
+
+		if (data_collection_mode == 0) //topview
+		{
+			if (rover_position == 0)	//right (VL marker side)
+				sign = 1.0f;
+			else if (rover_position == 2)	//left (door side)
+				sign = -1.0f;
+
+			// window side 
+			min_side_window << -0.3f - 0.06f, sign*1.3f - 0.3f - work_pos_offset_map_.at(rover_position), 0.45f - 0.8f;
+			max_side_window << -0.3f + 0.06f, sign*1.3f + 0.3f - work_pos_offset_map_.at(rover_position), 0.45f + 0.8f;
+			createBoxCloud(min_side_window, max_side_window, 0.01f, object_cloud);
+
+			// chamber side panel
+			min_side_panel << -1.f, sign*1.24f - 0.05f - work_pos_offset_map_.at(rover_position), 0.17f - 1.4f;
+			max_side_panel << 0.5f, sign*1.24f + 0.05f - work_pos_offset_map_.at(rover_position), 0.17f + 1.4f;
+			createBoxCloud(min_side_panel, max_side_panel, 0.01f, object_cloud);
+		}
+		else if (data_collection_mode == 1) //sideview
+		{
+			if (rover_position == 0)
+				sign = -1.0f;
+			else if (rover_position == 2)
+				sign = 1.0f;
+
+			// window side 
+			min_side_window << 0.88f, sign*1.3f - 0.3f + work_pos_offset_map_.at(rover_position), 0.45f - 0.8f;
+			max_side_window << 1.1f, sign*1.3f + 0.3f + work_pos_offset_map_.at(rover_position), 0.45f + 0.8f;
+			createBoxCloud(min_side_window, max_side_window, 0.01f, object_cloud);
+
+			Eigen::Vector3f min_top_window, max_top_window, min_airlock_back_wall, max_airlock_back_wall, min_airlock_side_wall, max_airlock_side_wall;
+			min_top_window << 0.88f, -0.98, 1.07 - 0.2;
+			max_top_window << 1.1f, 0.98, 1.07 + 0.2;
+			createBoxCloud(min_top_window, max_top_window, 0.01f, object_cloud);
+
+			min_airlock_back_wall << -0.25 - 0.05, -0.98, 0.0;
+			max_airlock_back_wall << -0.25 + 0.05, 0.98, 0.9;
+			createBoxCloud(min_airlock_back_wall, max_airlock_back_wall, 0.01f, object_cloud);
+
+			min_airlock_side_wall << 0.4 - 0.5, sign*1.24f - 0.05f + work_pos_offset_map_.at(rover_position), 0.45f - 0.8f;
+			max_airlock_side_wall << 0.4 + 0.5, sign*1.24f + 0.05f + work_pos_offset_map_.at(rover_position), 0.45f + 0.8f;
+			createBoxCloud(min_airlock_side_wall, max_airlock_side_wall, 0.01f, object_cloud);
+		}
+	}
+	else // center position
+	{
+		if (data_collection_mode == 0)	//topview
+		{
+			Eigen::Vector3f min_side_panel, max_side_panel, min_side_window, max_side_window;
+
+			// right window side 
+			min_side_window << -0.3f - 0.06f, 0.98f, 0.45f - 0.8f;
+			max_side_window << -0.3f + 0.06f, 0.98f + 0.2f, 0.45f + 0.8f;
+			createBoxCloud(min_side_window, max_side_window, 0.01f, object_cloud);
+
+			// left window side
+			min_side_window << -0.3f - 0.06f, -0.98f - 0.2f, 0.45f - 0.8f;
+			max_side_window << -0.3f + 0.06f, -0.98f, 0.45f + 0.8f;
+			createBoxCloud(min_side_window, max_side_window, 0.01f, object_cloud);
+
+			// right chamber side panel
+			min_side_panel << -1.f, 1.24f, 0.17f - 1.4f;
+			max_side_panel << 0.f, 1.24f + 0.1f, 0.17f + 1.4f;
+			createBoxCloud(min_side_panel, max_side_panel, 0.01f, object_cloud);
+
+			// left chamber side panel
+			min_side_panel << -1.f, -1.24f - 0.1f, 0.17f - 1.4f;
+			max_side_panel << 0.f, -1.24f, 0.17f + 1.4f;
+			createBoxCloud(min_side_panel, max_side_panel, 0.01f, object_cloud);
+		}
+		else if (data_collection_mode == 1)	//sideview
+		{
+			// no need for side window because impossible to reach
+			Eigen::Vector3f min_top_window, max_top_window, min_airlock_back_wall, max_airlock_back_wall;
+			min_top_window << 0.88f, -0.98, 1.07 - 0.2;
+			max_top_window << 1.1f, 0.98, 1.07 + 0.2;
+			createBoxCloud(min_top_window, max_top_window, 0.01f, object_cloud);
+
+			min_airlock_back_wall << -0.25 - 0.05, -0.98, 0.0;
+			max_airlock_back_wall << -0.25 + 0.05, 0.98, 0.9;
+			createBoxCloud(min_airlock_back_wall, max_airlock_back_wall, 0.01f, object_cloud);
+		}
+	}
+
+	addPointCloudToOccupancyGrid(object_cloud);
+
+	return;
 }
