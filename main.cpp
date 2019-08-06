@@ -12,8 +12,6 @@ int main(int argc, char**argv)
 
 	vac.run();
 
-	//vac.sendRoverToChamber(vac.cur_chamber_id_);
-
 
 #if 0
 	for (double y = -0.1; y <= 0.1; y += 0.05)

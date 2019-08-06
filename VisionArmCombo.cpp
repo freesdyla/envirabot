@@ -1865,10 +1865,6 @@ int VisionArmCombo::mapWorkspace(int rover_position, int option, int data_collec
 		ref_config.toRad();
 		robot_arm_client_->moveHandJ(ref_config.joint_pos_d, move_joint_speed_, move_joint_acceleration_);
 	}
-	else if (data_collection_mode == SIDE_VIEW)
-	{
-		//TODO not sure where to get white reference data in side view mode
-	}
 
 	imagePots(rover_position, option, data_collection_mode);
 
@@ -4802,7 +4798,8 @@ int VisionArmCombo::doOneDataAcquisitionRunInChamber(int last_run)
 	//go to right position
 	if (cur_chamber_id_ == 2)
 	{
-		if (mir_.stepBackward25CMInChamber() != 0) close();
+		// move the rover closer to the VL marker for chamber 2
+		if (mir_.stepBackward25CMInChamber() != SUCCESS) close();
 	}
 
 	if(mir_.goToChamebrVLMarker(cur_chamber_id_)!=0) close();
@@ -4856,7 +4853,7 @@ CHMABER_LEFT_POSITION:
 	moveArmInOrOutChamber(MOVE_ARM_OUT_CHAMBER, data_collection_mode_);
 
 FINISH:
-	if (last_run == 0)	//not last run
+	if (last_run == 0)	//not last run, move rover to center position
 	{
 		if (only_work_at_center) return SUCCESS;
 
@@ -4944,10 +4941,10 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 			tof_cam_->setPower(256);
 		}
 
-		if (mir_.goToDoor(target_chamber_id) != 0) close();
+		if (mir_.goToDoor(target_chamber_id) != SUCCESS) close();
 
 		//if the chamber door did not open, skip to next chamber
-		if (mir_.goToChamberPosition(target_chamber_id, 2) != 0)
+		if (mir_.goToChamberPosition(target_chamber_id, 2) != SUCCESS)
 		{
 			Utilities::to_log_file("chamber door did not open");
 			mir_.clearError();
@@ -4957,10 +4954,10 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 			return -1;
 		}
 
-		if(mir_.goToChamberPosition(target_chamber_id, 1) != 0) close();
+		if(mir_.goToChamberPosition(target_chamber_id, 1) != SUCCESS) close();
 
 		// go marker first before closing door because the mir robot is less likely to fail to dock with the door open
-		if(mir_.goToChamebrVLMarker(target_chamber_id) != 0) close();
+		if(mir_.goToChamebrVLMarker(target_chamber_id) != SUCCESS) close();
 
 		
 		pot_processed_map_.create(pot_position_vec_[target_chamber_id - 1].rows, pot_position_vec_[target_chamber_id - 1].cols, CV_8U);
@@ -4989,15 +4986,15 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 
 		if (close_door_when_rover_inside_ == 1) controlChamber(target_chamber_id, CLOSE_DOOR);
 
-		if(mir_.stepForwardInChamber() != 0) close();
+		if(mir_.stepForwardInChamber() != SUCCESS) close();
 
 		if (data_collection_mode_ == TOP_VIEW)
 		{
-			if (mir_.moveToTopView() != 0) close();
+			if (mir_.moveToTopView() != SUCCESS) close();
 		}
 		else
 		{
-			if (mir_.moveToSideView() != 0) close();
+			if (mir_.moveToSideView() != SUCCESS) close();
 		}
 
 		// only collect hyperspectral reference data in the center position
@@ -5105,6 +5102,7 @@ int VisionArmCombo::sendRoverToChamber(int target_chamber_id)
 	return 0;
 }
 
+//scheduler, decides when to send the rover to a chamber
 void VisionArmCombo::run()
 {		
 	std::vector<std::string> time_str;
